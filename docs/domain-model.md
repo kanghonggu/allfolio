@@ -1,0 +1,21 @@
+- `User`
+    - `id`, `email`, `nickname`, `createdAt`
+- `Account`
+    - `id`, `userId`, `provider` (UPBIT, KOREA_INVEST, BANK_XXX 등)
+    - `displayName`, `baseCurrency`, `status`
+- `Security`
+    - `id` or `symbol`, `name`, `assetType` (STOCK, CRYPTO, CASH, FUND 등), `baseCurrency`
+- `Transaction`
+    - `id`, `accountId`, `securityId`/`symbol`
+    - `side` (BUY/SELL/DEPOSIT/WITHDRAW)
+    - `quantity`, `price`, `fee`, `currency`
+    - `executedAt`
+- `Position`
+    - `id`, `accountId`, `securityId`/`symbol`
+    - `quantity`, `avgPrice`, `unrealizedPnl`, `updatedAt`
+- `Price/Candle`
+    - `symbol`, `timestamp`, `open`, `high`, `low`, `close`, `volume`
+- `DailyHoldings`
+    - `userId`, `date`, `totalEquity`, `cash`, `invested`, `realizedPnl`, `unrealizedPnl`
+- `DailyPerformance`
+    - `userId`, `date`, `returnRate`, `cumulativeReturn`, `contributions`

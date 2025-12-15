@@ -1,0 +1,13 @@
+- User Service
+    - `GET /me`
+    - `GET /users/{userId}/accounts`
+    - `POST /users/{userId}/external-accounts` (업비트/증권/은행 연결)
+- Trade Service
+    - `POST /accounts/{accountId}/sync` (외부기관 → 원장 동기화)
+    - `GET /accounts/{accountId}/positions`
+    - `GET /accounts/{accountId}/transactions`
+- Report Service
+    - `GET /reports/{userId}/equity`
+    - `GET /reports/{userId}/performance/summary`
+    - `GET /reports/{userId}/allocation`
+    - `GET /reports/{userId}/contributors`
