@@ -1,0 +1,9 @@
+/allfolio-backend/asset/build/
+/allfolio-backend/backend-app/build/
+/allfolio-backend/common/build/
+/allfolio-backend/esg/build/
+/allfolio-backend/gradle/
+/allfolio-backend/portfolio/build/
+/allfolio-backend/report/build/
+/allfolio-backend/risk/build/
+/allfolio-backend/snapshot/build/

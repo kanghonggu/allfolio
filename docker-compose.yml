@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: allfolio-postgres
+    environment:
+      POSTGRES_DB: allfolio
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      # 데이터 영속성을 위한 볼륨
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - allfolio-network
+
+  # Keycloak (인증 서버)
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: allfolio-keycloak
+    environment:
+      # DB 설정 (PostgreSQL 사용)
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: postgres
+      
+      # Admin 계정 (초기 설정)
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin123
+      
+      # 개발 모드 설정
+      KC_HOSTNAME_STRICT: false
+      KC_HTTP_ENABLED: true
+      KC_PROXY: edge
+    
+    ports:
+      - "8080:8080"
+    
+    volumes:
+      # Keycloak 데이터 영속성을 위한 볼륨
+      - keycloak_data:/opt/keycloak/data
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+    
+    command: >
+      start-dev
+      --db=postgres
+      --db-url=jdbc:postgresql://postgres:5432/keycloak
+      --db-username=postgres
+      --db-password=postgres
+    
+    networks:
+      - allfolio-network
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # User 서비스 (Spring Boot)
+  user-service:
+    image: allfolio/user-service:latest
+    container_name: allfolio-user-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/allfolio
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+    
+    ports:
+      - "8081:8080"
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+    
+    networks:
+      - allfolio-network
+
+volumes:
+  # PostgreSQL 데이터 영속성
+  postgres_data:
+    driver: local
+  
+  # Keycloak 데이터 영속성
+  keycloak_data:
+    driver: local
+
+networks:
+  allfolio-network:
+    driver: bridge
