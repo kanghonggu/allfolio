@@ -1,0 +1,90 @@
+{
+  "title": "Trade Pipeline",
+  "uid": "allfolio-trade-pipeline",
+  "tags": ["allfolio", "trade"],
+  "timezone": "browser",
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "type": "stat",
+      "title": "Trade TPS (1m)",
+      "options": { "unit": "reqps" },
+      "targets": [{ "expr": "sum(rate(trade_process_count_total{result='success'}[1m]))", "legendFormat": "TPS" }]
+    },
+    {
+      "id": 2, "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "type": "stat",
+      "title": "Dedup 스킵 (5m)",
+      "options": { "unit": "short" },
+      "targets": [{ "expr": "increase(trade_process_count_total{result='dedup'}[5m])", "legendFormat": "dedup" }]
+    },
+    {
+      "id": 3, "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "type": "stat",
+      "title": "DLQ 적재 (5m)",
+      "options": { "colorMode": "background", "thresholds": { "steps": [
+        { "color": "green",  "value": 0 },
+        { "color": "yellow", "value": 1 },
+        { "color": "red",    "value": 10 }
+      ]}},
+      "targets": [{ "expr": "sum(increase(dlq_push_count_total[5m]))", "legendFormat": "dlq" }]
+    },
+    {
+      "id": 4, "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "type": "stat",
+      "title": "Snapshot 레이턴시 p95",
+      "options": { "unit": "ms", "colorMode": "background", "thresholds": { "steps": [
+        { "color": "green",  "value": 0    },
+        { "color": "yellow", "value": 500  },
+        { "color": "red",    "value": 1000 }
+      ]}},
+      "targets": [{ "expr": "histogram_quantile(0.95, rate(snapshot_process_latency_seconds_bucket[5m])) * 1000", "legendFormat": "p95 ms" }]
+    },
+    {
+      "id": 5, "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "type": "timeseries",
+      "title": "Trade 처리 TPS (브로커별)",
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        { "expr": "sum by(broker)(rate(trade_process_count_total{result='success'}[1m]))", "legendFormat": "{{broker}}" }
+      ]
+    },
+    {
+      "id": 6, "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "type": "timeseries",
+      "title": "Snapshot 생성 레이턴시 (p50/p95/p99)",
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, rate(snapshot_process_latency_seconds_bucket[5m])) * 1000", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, rate(snapshot_process_latency_seconds_bucket[5m])) * 1000", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, rate(snapshot_process_latency_seconds_bucket[5m])) * 1000", "legendFormat": "p99" }
+      ],
+      "alert": {
+        "name": "snapshot_latency_warn",
+        "message": "Snapshot generation p95 > 1s",
+        "conditions": [{ "type": "query", "query": { "params": ["B", "5m", "now"] }, "reducer": { "type": "last" }, "evaluator": { "type": "gt", "params": [1000] } }]
+      }
+    },
+    {
+      "id": 7, "gridPos": { "x": 0, "y": 12, "w": 12, "h": 6 },
+      "type": "timeseries",
+      "title": "DLQ 크기 (브로커별)",
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        { "expr": "dlq_size{queue='active'}", "legendFormat": "{{broker}} active" },
+        { "expr": "dlq_size{queue='dead'}",   "legendFormat": "{{broker}} dead" }
+      ]
+    },
+    {
+      "id": 8, "gridPos": { "x": 12, "y": 12, "w": 12, "h": 6 },
+      "type": "timeseries",
+      "title": "Trade 처리 레이턴시 (브로커별 p95)",
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by(broker, le)(rate(trade_process_latency_seconds_bucket[5m]))) * 1000", "legendFormat": "{{broker}} p95" }
+      ]
+    }
+  ]
+}

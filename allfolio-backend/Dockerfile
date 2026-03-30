@@ -5,7 +5,7 @@ WORKDIR /app
 # bootJar 결과물 복사
 COPY backend-app/build/libs/*.jar app.jar
 
-EXPOSE 8080
+EXPOSE 8090
 
 ENTRYPOINT ["java", \
   # GC: ZGC — 저지연, Java 21 권장

@@ -1,3 +1,17 @@
+server:
+  port: 8090
+  error:
+    include-message: always
+    include-exception: true
+    include-binding-errors: always
+  tomcat:
+    # Virtual Thread 환경에서는 증가 가능 (Java 21)
+    threads:
+      max: 200
+      min-spare: 20
+    accept-count: 100
+    connection-timeout: 10000
+
 spring:
   application:
     name: allfolio-backend
@@ -20,7 +34,6 @@ spring:
           max-active: 10
           max-idle: 5
           min-idle: 2
-
 
   hikari:
       # 커넥션 풀 크기: vCPU × 2 + effective_spindle_count (SSD 기준 = vCPU × 2)
@@ -68,57 +81,11 @@ spring:
         # 통계 (부하 테스트 시 활성화하여 slow query 추적)
         generate_statistics: false
 
-server:
-  port: 8090
-  tomcat:
-    # Virtual Thread 환경에서는 증가 가능 (Java 21)
-    threads:
-      max: 200
-      min-spare: 20
-    accept-count: 100
-    connection-timeout: 10000
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,metrics,hikaricp,prometheus
-  endpoint:
-    health:
-      show-details: always
-    prometheus:
-      enabled: true
-  metrics:
-    export:
-      prometheus:
-        enabled: true
-    tags:
-      application: allfolio-backend
-
-binance:
-  api-key: ${BINANCE_API_KEY:}
-  secret-key: ${BINANCE_API_SECRET:}
-  base-url: https://testnet.binance.vision   # testnet — 실제 운영 시 https://api.binance.com
-  tenant-id: ${BINANCE_TENANT_ID:ffff0000-0000-0000-0000-000000000001}
-  portfolio-id: ${BINANCE_PORTFOLIO_ID:dddd0000-0000-0000-0000-000000000001}
-  symbols: BTCUSDT,ETHUSDT
-
-toss:
-  client-id: ${TOSS_CLIENT_ID:}
-  client-secret: ${TOSS_CLIENT_SECRET:}
-  base-url: https://openapi.toss.im
-  redirect-uri: ${TOSS_REDIRECT_URI:http://localhost:8090/api/broker/toss/callback}
-
-samsung:
-  app-key: ${SAMSUNG_APP_KEY:}
-  app-secret: ${SAMSUNG_APP_SECRET:}
-  base-url: https://openapi.samsungpop.com
-  redirect-uri: ${SAMSUNG_REDIRECT_URI:http://localhost:8090/api/broker/samsung/callback}
-
-# Kafka (optional — 설정 없으면 Redis DLQ + DB Outbox만 사용)
-spring:
+  # Kafka (optional — 설정 없으면 Redis DLQ + DB Outbox만 사용)
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    admin:
+      fail-fast: false   # Kafka 없는 로컬 환경에서 시작 실패 방지
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
@@ -138,9 +105,46 @@ spring:
       enable-auto-commit: false        # 수동 ack — 재처리 정확성 보장
       max-poll-records: 50             # 한 번에 처리할 최대 레코드 수
 
-# Binance WebSocket (binance 설정 있을 때 자동 활성화)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,hikaricp,prometheus
+  endpoint:
+    health:
+      show-details: always
+    prometheus:
+      enabled: true
+  health:
+    kafka:
+      enabled: false   # Kafka 없는 로컬 환경에서 health 500 방지
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: allfolio-backend
+
 binance:
+  api-key: ${BINANCE_API_KEY:}
+  secret-key: ${BINANCE_API_SECRET:}
+  base-url: https://testnet.binance.vision   # testnet — 실제 운영 시 https://api.binance.com
+  tenant-id: ${BINANCE_TENANT_ID:ffff0000-0000-0000-0000-000000000001}
+  portfolio-id: ${BINANCE_PORTFOLIO_ID:dddd0000-0000-0000-0000-000000000001}
+  symbols: BTCUSDT,ETHUSDT
   ws-enabled: ${BINANCE_WS_ENABLED:false}  # WebSocket 시세 수신 활성화 여부
+
+toss:
+  client-id: ${TOSS_CLIENT_ID:}
+  client-secret: ${TOSS_CLIENT_SECRET:}
+  base-url: https://openapi.toss.im
+  redirect-uri: ${TOSS_REDIRECT_URI:http://localhost:8090/api/broker/toss/callback}
+
+samsung:
+  app-key: ${SAMSUNG_APP_KEY:}
+  app-secret: ${SAMSUNG_APP_SECRET:}
+  base-url: https://openapi.samsungpop.com
+  redirect-uri: ${SAMSUNG_REDIRECT_URI:http://localhost:8090/api/broker/samsung/callback}
 
 # FX 환율 자동 수집
 fx:

@@ -1,0 +1,71 @@
+{
+  "title": "Broker API",
+  "uid": "allfolio-broker-api",
+  "tags": ["allfolio", "broker"],
+  "timezone": "browser",
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "type": "stat",
+      "title": "API 에러율 (5m)",
+      "options": { "unit": "percentunit", "colorMode": "background", "thresholds": { "steps": [
+        { "color": "green",  "value": 0    },
+        { "color": "yellow", "value": 0.01 },
+        { "color": "red",    "value": 0.05 }
+      ]}},
+      "targets": [{ "expr": "sum(rate(broker_api_error_count_total[5m])) / (sum(rate(broker_api_latency_seconds_count[5m])) + 1e-9)", "legendFormat": "error rate" }]
+    },
+    {
+      "id": 2, "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "type": "stat",
+      "title": "토큰 갱신 (5m)",
+      "options": { "unit": "short" },
+      "targets": [{ "expr": "increase(token_refresh_count_total[5m])", "legendFormat": "{{broker}}" }]
+    },
+    {
+      "id": 3, "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "type": "timeseries",
+      "title": "Broker API 레이턴시 p95 (브로커별)",
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by(broker, operation, le)(rate(broker_api_latency_seconds_bucket[5m]))) * 1000", "legendFormat": "{{broker}}/{{operation}}" }
+      ]
+    },
+    {
+      "id": 4, "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "type": "timeseries",
+      "title": "Broker API 에러율",
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        { "expr": "sum by(broker, operation)(rate(broker_api_error_count_total[1m]))", "legendFormat": "{{broker}}/{{operation}}" }
+      ],
+      "alert": {
+        "name": "broker_api_error_warn",
+        "message": "Broker API error rate > 5%",
+        "conditions": [{ "type": "query", "reducer": { "type": "last" }, "evaluator": { "type": "gt", "params": [0.05] } }]
+      }
+    },
+    {
+      "id": 5, "gridPos": { "x": 0, "y": 12, "w": 12, "h": 6 },
+      "type": "timeseries",
+      "title": "토큰 갱신 횟수 (브로커별)",
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        { "expr": "rate(token_refresh_count_total{result!='failed'}[5m])", "legendFormat": "{{broker}} success" },
+        { "expr": "rate(token_refresh_count_total{result='failed'}[5m])",  "legendFormat": "{{broker}} failed" }
+      ]
+    },
+    {
+      "id": 6, "gridPos": { "x": 12, "y": 12, "w": 12, "h": 6 },
+      "type": "timeseries",
+      "title": "PnL 계산 / 시세 수신",
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        { "expr": "rate(market_price_update_count_total[1m])", "legendFormat": "{{exchange}} price update/s" },
+        { "expr": "rate(pnl_calculation_count_total[1m])",     "legendFormat": "PnL calc/s" }
+      ]
+    }
+  ]
+}

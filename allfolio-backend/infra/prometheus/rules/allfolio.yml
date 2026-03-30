@@ -1,0 +1,132 @@
+groups:
+  - name: allfolio.outbox
+    interval: 30s
+    rules:
+
+      # ── CRITICAL ──────────────────────────────────────────────
+      - alert: OutboxDeadEventCritical
+        expr: outbox_dead_size > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Outbox DEAD 이벤트 발생 (즉시 확인)"
+          description: "MAX_RETRIES 초과 이벤트 {{ $value }}건. outbox_event 테이블 확인 필요."
+
+      # ── WARNING ───────────────────────────────────────────────
+      - alert: OutboxPendingHigh
+        expr: outbox_pending_size > 1000
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Outbox PENDING 이벤트 1000건 초과"
+          description: "현재 {{ $value }}건. OutboxEventProcessor 또는 TradeEventListener 지연 가능성."
+
+      - alert: OutboxFailedHigh
+        expr: outbox_failed_size > 100
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Outbox FAILED 이벤트 100건 초과"
+          description: "현재 {{ $value }}건. SnapshotTriggerService 에러 확인 필요."
+
+      - alert: OutboxProcessingLatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            rate(outbox_process_latency_seconds_bucket[5m])
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Outbox 처리 레이턴시 p95 > 1s"
+          description: "p95={{ $value | humanizeDuration }}. GenerateDailySnapshotUseCase 성능 저하 의심."
+
+  - name: allfolio.kafka
+    interval: 30s
+    rules:
+
+      - alert: KafkaPublishFailRateHigh
+        expr: |
+          rate(kafka_publish_count_total{result="fail",topic="outbox.trade"}[5m])
+          /
+          (rate(kafka_publish_count_total{topic="outbox.trade"}[5m]) + 1e-9)
+          > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Kafka outbox.trade Publish 실패율 5% 초과"
+          description: "실패율 {{ $value | humanizePercentage }}. Kafka 브로커 상태 확인."
+
+      - alert: KafkaConsumerLagHigh
+        expr: kafka_consumergroup_lag{topic="outbox.trade"} > 10000
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Kafka outbox.trade Consumer Lag > 10000"
+          description: "파티션 {{ $labels.partition }} lag={{ $value }}. Consumer 처리 능력 부족."
+
+      - alert: KafkaDlqDeadMessages
+        expr: kafka_consumergroup_lag{topic="dlq.dead"} > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Kafka dlq.dead 토픽에 메시지 발생"
+          description: "{{ $value }}건. 수동 재처리 필요."
+
+  - name: allfolio.snapshot
+    interval: 30s
+    rules:
+
+      - alert: SnapshotLatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            rate(snapshot_process_latency_seconds_bucket[5m])
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Snapshot 생성 레이턴시 p95 > 1s"
+          description: "p95={{ $value | humanizeDuration }}. 100K 레코드 기준 555ms 목표 초과."
+
+  - name: allfolio.broker
+    interval: 30s
+    rules:
+
+      - alert: BrokerApiErrorRateHigh
+        expr: |
+          sum by (broker)(rate(broker_api_error_count_total[5m]))
+          /
+          (sum by (broker)(rate(broker_api_latency_seconds_count[5m])) + 1e-9)
+          > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Broker API 에러율 5% 초과 (broker={{ $labels.broker }})"
+          description: "에러율 {{ $value | humanizePercentage }}."
+
+      - alert: DlqSizeHigh
+        expr: dlq_size{queue="active"} > 500
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "DLQ 적체 500건 초과 (broker={{ $labels.broker }})"
+          description: "{{ $value }}건. DlqWorker 처리 속도 확인 필요."
