@@ -10,5 +10,6 @@ include(
     ":snapshot",
     ":risk",
     ":esg",
-    ":report"
+    ":report",
+    ":unified-asset"
 )

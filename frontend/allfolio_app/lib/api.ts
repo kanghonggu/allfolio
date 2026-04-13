@@ -1,10 +1,19 @@
 import axios from 'axios'
+import { getSession } from 'next-auth/react'
 import type { PortfolioSnapshot, Position } from '@/types/portfolio'
 import type { Trade } from '@/types/trade'
 
 const api = axios.create({
   baseURL: '/api',  // next.config.mjs rewrites → localhost:8090
   timeout: 10_000,
+})
+
+api.interceptors.request.use(async (config) => {
+  const session = await getSession()
+  if (session?.accessToken) {
+    config.headers.Authorization = `Bearer ${session.accessToken}`
+  }
+  return config
 })
 
 // ── Portfolio ──────────────────────────────────────────────────

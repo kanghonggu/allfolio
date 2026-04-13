@@ -1,3 +1,9 @@
+# 환경변수 (민감정보)
+.env.local
+.env.prod
+*.env
+
+# 빌드 결과물
 /allfolio-backend/asset/build/
 /allfolio-backend/backend-app/build/
 /allfolio-backend/common/build/
@@ -7,3 +13,12 @@
 /allfolio-backend/report/build/
 /allfolio-backend/risk/build/
 /allfolio-backend/snapshot/build/
+/allfolio-backend/unified-asset/build/
+
+# 프론트엔드
+/frontend/allfolio_app/node_modules/
+/frontend/allfolio_app/.next/
+
+# IDE
+.idea/
+*.iml

@@ -2,6 +2,9 @@
 -- Allfolio Schema — INSERT ONLY 설계
 -- ============================================================
 
+-- Keycloak 전용 스키마 (Keycloak 컨테이너 사용)
+CREATE SCHEMA IF NOT EXISTS keycloak;
+
 -- ── trade_raw ─────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS trade_raw (
     id               UUID        NOT NULL,
@@ -172,6 +175,92 @@ CREATE TABLE IF NOT EXISTS kafka_processed_event (
 -- 클린업용 인덱스: processed_at 기준 오래된 레코드 일괄 삭제
 CREATE INDEX IF NOT EXISTS idx_kafka_processed_event_at
     ON kafka_processed_event (processed_at ASC);
+
+-- ── ua_accounts ───────────────────────────────────────────────
+-- 자산 수집 단위: 거래소 계좌 / 지갑 / CSV / 수동
+-- User → Account → Asset 계층 구조의 중간 노드
+CREATE TABLE IF NOT EXISTS ua_accounts (
+    id             UUID        NOT NULL,
+    user_id        UUID        NOT NULL,
+    provider       VARCHAR(20) NOT NULL,  -- BINANCE / STOCK / WALLET / CSV / MANUAL
+    account_type   VARCHAR(20) NOT NULL,  -- EXCHANGE / STOCK / WALLET / BANK / MANUAL
+    account_name   VARCHAR(100) NOT NULL,
+    external_id    VARCHAR(100),          -- 거래소 계좌 ID 등
+    currency       VARCHAR(10) NOT NULL DEFAULT 'USD',
+    status         VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',  -- ACTIVE / SYNCING / ERROR / INACTIVE
+    last_synced_at TIMESTAMP,
+    created_at     TIMESTAMP   NOT NULL DEFAULT NOW(),
+    -- API 계좌 자격증명 (운영 시 암호화 필수)
+    api_key        VARCHAR(500),
+    api_secret     VARCHAR(500),
+    -- 지갑 계좌
+    wallet_address VARCHAR(200),
+    chain          VARCHAR(20),
+    CONSTRAINT pk_ua_accounts PRIMARY KEY (id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ua_accounts_user
+    ON ua_accounts (user_id);
+
+-- ── ua_assets ─────────────────────────────────────────────────
+-- 개별 자산: 반드시 ua_accounts 소속
+-- sourceType이 EXCHANGE_API/WALLET이면 sync 시 전체 교체됨 (full refresh)
+CREATE TABLE IF NOT EXISTS ua_assets (
+    id               UUID        NOT NULL,
+    user_id          UUID        NOT NULL,
+    account_id       UUID        NOT NULL,
+    category         VARCHAR(20) NOT NULL,  -- FINANCIAL / MANUAL
+    type             VARCHAR(20) NOT NULL,  -- STOCK / CRYPTO / REAL_ESTATE / VEHICLE / GOLD / CASH / ETC
+    source_type      VARCHAR(20) NOT NULL,  -- EXCHANGE_API / WALLET / STOCK_API / CSV / MANUAL
+    name             VARCHAR(200) NOT NULL,
+    symbol           VARCHAR(20),
+    quantity         NUMERIC(30, 10) NOT NULL,
+    purchase_price   NUMERIC(30, 10) NOT NULL DEFAULT 0,
+    current_value    NUMERIC(30, 10) NOT NULL,
+    currency         VARCHAR(10) NOT NULL,
+    valuation_method VARCHAR(20) NOT NULL,  -- MARKET_PRICE / BALANCE / USER_INPUT
+    confidence_level VARCHAR(10) NOT NULL,  -- HIGH / MEDIUM / LOW
+    last_updated_at  TIMESTAMP   NOT NULL DEFAULT NOW(),
+    created_at       TIMESTAMP   NOT NULL DEFAULT NOW(),
+    memo             VARCHAR(500),
+    CONSTRAINT pk_ua_assets PRIMARY KEY (id),
+    CONSTRAINT fk_ua_assets_account FOREIGN KEY (account_id)
+        REFERENCES ua_accounts(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_ua_assets_user
+    ON ua_assets (user_id);
+
+CREATE INDEX IF NOT EXISTS idx_ua_assets_account
+    ON ua_assets (account_id);
+
+CREATE INDEX IF NOT EXISTS idx_ua_assets_type
+    ON ua_assets (user_id, type);
+
+-- ── ua_stock_trades ──────────────────────────────────────────────
+-- 증권 계좌의 거래내역 로그 (매수/매도/신용/미수/배당)
+CREATE TABLE IF NOT EXISTS ua_stock_trades (
+    id           UUID        NOT NULL,
+    account_id   UUID        NOT NULL,
+    user_id      UUID        NOT NULL,
+    trade_type   VARCHAR(20) NOT NULL,  -- BUY/SELL/CREDIT_BUY/CREDIT_SELL/MARGIN/DIVIDEND
+    stock_name   VARCHAR(200) NOT NULL,
+    symbol       VARCHAR(20),
+    quantity     NUMERIC(20, 4) NOT NULL DEFAULT 0,
+    price        NUMERIC(20, 4) NOT NULL DEFAULT 0,
+    total_amount NUMERIC(20, 4) NOT NULL DEFAULT 0,
+    fee          NUMERIC(20, 4) NOT NULL DEFAULT 0,
+    tax          NUMERIC(20, 4) NOT NULL DEFAULT 0,
+    traded_at    DATE        NOT NULL,
+    memo         VARCHAR(500),
+    created_at   TIMESTAMP   NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_ua_stock_trades PRIMARY KEY (id),
+    CONSTRAINT fk_ua_stock_trades_account FOREIGN KEY (account_id)
+        REFERENCES ua_accounts(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_ua_stock_trades_account
+    ON ua_stock_trades (account_id, traded_at DESC);
 
 -- ── FILLFACTOR 최적화 ──────────────────────────────────────────
 -- INSERT ONLY 테이블은 UPDATE가 없으므로 fillfactor=100 (기본값)

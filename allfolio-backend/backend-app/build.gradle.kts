@@ -13,6 +13,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation("org.springframework.boot:spring-boot-starter-security")
+    implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
 
     // Kafka DLQ
     implementation("org.springframework.kafka:spring-kafka")
@@ -37,6 +39,8 @@ dependencies {
     implementation(project(":risk"))
     implementation(project(":esg"))
     implementation(project(":report"))
+    implementation(project(":unified-asset"))
+    implementation("com.opencsv:opencsv:5.9")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.kafka:spring-kafka-test")
