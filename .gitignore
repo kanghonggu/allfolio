@@ -22,3 +22,7 @@
 # IDE
 .idea/
 *.iml
+
+# Gradle 빌드 결과물
+**/build/
+**/.gradle/
