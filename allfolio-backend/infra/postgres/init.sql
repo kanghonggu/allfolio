@@ -302,12 +302,10 @@ WHERE type IN ('REAL_ESTATE', 'JEONSE', 'VEHICLE');
 
 -- ── benchmark_daily ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS benchmark_daily (
-    index_type   VARCHAR(10)     NOT NULL,  -- KOSPI / BTC
+    index_type   VARCHAR(20)     NOT NULL,  -- KOSPI / BTC
     date         DATE            NOT NULL,
     close_value  NUMERIC(30, 10) NOT NULL,
     created_at   TIMESTAMP       NOT NULL DEFAULT NOW(),
     CONSTRAINT pk_benchmark_daily PRIMARY KEY (index_type, date)
 );
 
-CREATE INDEX IF NOT EXISTS idx_benchmark_daily_type_date
-    ON benchmark_daily (index_type, date DESC);
