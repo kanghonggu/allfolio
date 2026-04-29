@@ -4,6 +4,7 @@ import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.StockTradeRepository
 import com.allfolio.unifiedasset.application.usecase.*
+import com.allfolio.unifiedasset.application.usecase.ConnectionTestResult
 import com.allfolio.unifiedasset.domain.account.*
 import com.allfolio.unifiedasset.domain.asset.Asset
 import jakarta.validation.Valid
@@ -17,6 +18,13 @@ import java.time.LocalDateTime
 import java.util.UUID
 
 // ── DTOs ─────────────────────────────────────────────────────────
+
+data class TestConnectionRequest(
+    val provider:   AccountProvider,
+    val apiKey:     String,
+    val apiSecret:  String,
+    val passphrase: String? = null,
+)
 
 data class CreateAccountRequest(
     @field:NotBlank val accountName: String,
@@ -47,11 +55,14 @@ data class CreateManualAssetRequest(
     @field:NotBlank val name: String,
     val symbol: String?,
     val type: com.allfolio.unifiedasset.domain.asset.AssetType,
+    val subType: String? = null,          // OWN/JEONSE/MONTHLY/PRESALE/LEASE/RENTAL
     val quantity: java.math.BigDecimal,
     val purchasePrice: java.math.BigDecimal,
     val currentValue: java.math.BigDecimal,
+    val loanAmount: java.math.BigDecimal? = null,
     val currency: String = "KRW",
     val memo: String?,
+    val maturityDate: java.time.LocalDate? = null,
 )
 
 data class CreateStockTradeRequest(
@@ -91,11 +102,23 @@ class AccountController(
     private val createAccountUseCase: CreateAccountUseCase,
     private val syncAccountUseCase: SyncAccountUseCase,
     private val importCsvUseCase: ImportCsvUseCase,
+    private val testConnectionUseCase: TestConnectionUseCase,
     private val accountRepository: AccountRepository,
     private val assetRepository: AssetRepository,
     private val stockTradeRepository: StockTradeRepository,
     private val snapshotService: PerformanceSnapshotService,
 ) {
+    @PostMapping("/test-connection")
+    fun testConnection(
+        @RequestHeader("X-User-Id") userId: UUID,
+        @RequestBody req: TestConnectionRequest,
+    ): ConnectionTestResult = testConnectionUseCase.execute(
+        provider   = req.provider,
+        apiKey     = req.apiKey,
+        apiSecret  = req.apiSecret,
+        passphrase = req.passphrase,
+    )
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     fun create(
@@ -185,6 +208,9 @@ class AccountController(
             currency        = req.currency,
             valuationMethod = com.allfolio.unifiedasset.domain.asset.ValuationMethod.USER_INPUT,
             memo            = req.memo,
+            subType         = req.subType,
+            loanAmount      = req.loanAmount,
+            maturityDate    = req.maturityDate,
         )
         val saved = assetRepository.save(asset)
         val nav = assetRepository.findByUserId(userId).sumOf { it.currentValue }
@@ -317,11 +343,14 @@ data class AssetResponse(
     val name: String,
     val symbol: String?,
     val type: String,
+    val subType: String?,
     val category: String,
     val sourceType: String,
     val quantity: java.math.BigDecimal,
     val purchasePrice: java.math.BigDecimal,
     val currentValue: java.math.BigDecimal,
+    val loanAmount: java.math.BigDecimal?,
+    val netEquity: java.math.BigDecimal,
     val currency: String,
     val valuationMethod: String,
     val confidenceLevel: String,
@@ -329,6 +358,8 @@ data class AssetResponse(
     val returnRate: java.math.BigDecimal,
     val memo: String?,
     val lastUpdatedAt: LocalDateTime,
+    val maturityDate: java.time.LocalDate?,
+    val liquidityType: String,
 )
 
 fun Asset.toResponse() = AssetResponse(
@@ -337,11 +368,14 @@ fun Asset.toResponse() = AssetResponse(
     name             = name,
     symbol           = symbol,
     type             = type.name,
+    subType          = subType,
     category         = category.name,
     sourceType       = sourceType.name,
     quantity         = quantity,
     purchasePrice    = purchasePrice,
     currentValue     = currentValue,
+    loanAmount       = loanAmount,
+    netEquity        = netEquity(),
     currency         = currency,
     valuationMethod  = valuationMethod.name,
     confidenceLevel  = confidenceLevel.name,
@@ -349,4 +383,6 @@ fun Asset.toResponse() = AssetResponse(
     returnRate       = returnRate(),
     memo             = memo,
     lastUpdatedAt    = lastUpdatedAt,
+    maturityDate     = maturityDate,
+    liquidityType    = liquidityType.name,
 )
