@@ -3,6 +3,7 @@ package com.allfolio.unifiedasset.infrastructure.entity
 import com.allfolio.unifiedasset.domain.asset.*
 import jakarta.persistence.*
 import java.math.BigDecimal
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.UUID
 
@@ -33,7 +34,7 @@ class AssetEntity(
     @Column(nullable = false)
     val name: String,
 
-    @Column(length = 20)
+    @Column(length = 200)
     val symbol: String?,
 
     @Column(nullable = false, precision = 30, scale = 10)
@@ -64,11 +65,25 @@ class AssetEntity(
 
     @Column(length = 500)
     val memo: String?,
+
+    @Column(name = "sub_type", length = 30)
+    val subType: String?,
+
+    @Column(name = "loan_amount", precision = 30, scale = 10)
+    val loanAmount: BigDecimal?,
+
+    @Column(name = "maturity_date")
+    val maturityDate: LocalDate?,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "liquidity_type", nullable = false, length = 20)
+    val liquidityType: AssetLiquidityType = AssetLiquidityType.LIQUID,
 ) {
     fun toDomain() = Asset.reconstruct(
         id, userId, accountId, category, type, sourceType, name, symbol,
         quantity, purchasePrice, currentValue, currency, valuationMethod,
-        confidenceLevel, lastUpdatedAt, createdAt, memo
+        confidenceLevel, lastUpdatedAt, createdAt, memo, subType, loanAmount,
+        maturityDate, liquidityType,
     )
 
     companion object {
@@ -76,7 +91,8 @@ class AssetEntity(
             a.id, a.userId, a.accountId, a.category, a.type, a.sourceType,
             a.name, a.symbol, a.quantity, a.purchasePrice, a.currentValue,
             a.currency, a.valuationMethod, a.confidenceLevel,
-            a.lastUpdatedAt, a.createdAt, a.memo
+            a.lastUpdatedAt, a.createdAt, a.memo, a.subType, a.loanAmount,
+            a.maturityDate, a.liquidityType,
         )
     }
 }
