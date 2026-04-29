@@ -213,13 +213,15 @@ CREATE TABLE IF NOT EXISTS ua_assets (
     type             VARCHAR(20) NOT NULL,  -- STOCK / CRYPTO / REAL_ESTATE / VEHICLE / GOLD / CASH / ETC
     source_type      VARCHAR(20) NOT NULL,  -- EXCHANGE_API / WALLET / STOCK_API / CSV / MANUAL
     name             VARCHAR(200) NOT NULL,
-    symbol           VARCHAR(20),
+    symbol           VARCHAR(200),
     quantity         NUMERIC(30, 10) NOT NULL,
     purchase_price   NUMERIC(30, 10) NOT NULL DEFAULT 0,
     current_value    NUMERIC(30, 10) NOT NULL,
     currency         VARCHAR(10) NOT NULL,
     valuation_method VARCHAR(20) NOT NULL,  -- MARKET_PRICE / BALANCE / USER_INPUT
     confidence_level VARCHAR(10) NOT NULL,  -- HIGH / MEDIUM / LOW
+    sub_type         VARCHAR(30),                       -- 세부 유형 (OWN/JEONSE/MONTHLY/PRESALE/LEASE/RENTAL 등)
+    loan_amount      NUMERIC(30, 10),                   -- 대출 잔액 (담보대출, 전세자금대출 등)
     last_updated_at  TIMESTAMP   NOT NULL DEFAULT NOW(),
     created_at       TIMESTAMP   NOT NULL DEFAULT NOW(),
     memo             VARCHAR(500),
@@ -262,6 +264,27 @@ CREATE TABLE IF NOT EXISTS ua_stock_trades (
 CREATE INDEX IF NOT EXISTS idx_ua_stock_trades_account
     ON ua_stock_trades (account_id, traded_at DESC);
 
+-- ── market_price_tick ────────────────────────────────────────────
+-- WebSocket 실시간 시세 틱 데이터
+-- BinanceWsAdapter / KisWsAdapter → MarketPriceBatchWriter → 배치 INSERT
+-- 분석/백테스트용 히스토리 보존 (장기 보존 정책은 별도 파티셔닝으로 처리 예정)
+CREATE TABLE IF NOT EXISTS market_price_tick (
+    id             BIGSERIAL       NOT NULL,
+    exchange       VARCHAR(20)     NOT NULL,  -- BINANCE / KIS
+    symbol         VARCHAR(20)     NOT NULL,  -- BTCUSDT / 005930
+    price          NUMERIC(30, 10) NOT NULL,
+    volume         NUMERIC(30, 10) NOT NULL DEFAULT 0,
+    tick_timestamp TIMESTAMP       NOT NULL,  -- 거래소 발생 시각
+    received_at    TIMESTAMP       NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_market_price_tick PRIMARY KEY (id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mpt_symbol_ts
+    ON market_price_tick (symbol, tick_timestamp DESC);
+
+CREATE INDEX IF NOT EXISTS idx_mpt_exchange_ts
+    ON market_price_tick (exchange, tick_timestamp DESC);
+
 -- ── FILLFACTOR 최적화 ──────────────────────────────────────────
 -- INSERT ONLY 테이블은 UPDATE가 없으므로 fillfactor=100 (기본값)
 -- 인덱스도 fillfactor=100으로 여유 공간 제거 → INSERT 성능 향상
@@ -269,3 +292,22 @@ CREATE INDEX IF NOT EXISTS idx_trade_raw_portfolio_executed_perf
     ON trade_raw (portfolio_id, executed_at ASC)
     WITH (fillfactor = 100);
 
+-- ── Bloomberg Dashboard: ua_assets 컬럼 추가 ─────────────────────
+ALTER TABLE ua_assets ADD COLUMN IF NOT EXISTS maturity_date   DATE;
+ALTER TABLE ua_assets ADD COLUMN IF NOT EXISTS liquidity_type  VARCHAR(20) NOT NULL DEFAULT 'LIQUID';
+
+-- 기존 비유동 자산 백필
+UPDATE ua_assets SET liquidity_type = 'ILLIQUID'
+WHERE type IN ('REAL_ESTATE', 'JEONSE', 'VEHICLE');
+
+-- ── benchmark_daily ───────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS benchmark_daily (
+    index_type   VARCHAR(10)     NOT NULL,  -- KOSPI / BTC
+    date         DATE            NOT NULL,
+    close_value  NUMERIC(30, 10) NOT NULL,
+    created_at   TIMESTAMP       NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_benchmark_daily PRIMARY KEY (index_type, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_benchmark_daily_type_date
+    ON benchmark_daily (index_type, date DESC);
