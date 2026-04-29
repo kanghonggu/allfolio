@@ -1,11 +1,13 @@
 import axios from 'axios'
 import type {
-  Account, CreateAccountPayload,
+  Account, AccountProvider, CreateAccountPayload,
   Asset, CreateManualAssetPayload,
   PortfolioResponse, SyncResult,
   CsvPreviewRow, CsvImportResult,
   StockTrade, CreateStockTradePayload,
+  ConnectionTestResult,
 } from '@/types/unified'
+import type { DashboardResponse } from '@/types/dashboard'
 
 const BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8090'}/api/unified`
 
@@ -20,6 +22,14 @@ export function createUnifiedApi(accessToken: string) {
     accounts: {
       list: async (): Promise<Account[]> =>
         (await api.get<Account[]>('/accounts')).data,
+
+      testConnection: async (payload: {
+        provider: AccountProvider
+        apiKey: string
+        apiSecret: string
+        passphrase?: string
+      }): Promise<ConnectionTestResult> =>
+        (await api.post<ConnectionTestResult>('/accounts/test-connection', payload)).data,
 
       create: async (payload: CreateAccountPayload): Promise<Account> =>
         (await api.post<Account>('/accounts', payload)).data,
@@ -69,6 +79,11 @@ export function createUnifiedApi(accessToken: string) {
     portfolio: {
       get: async (): Promise<PortfolioResponse> =>
         (await api.get<PortfolioResponse>('/portfolio')).data,
+    },
+
+    dashboard: {
+      get: async (): Promise<DashboardResponse> =>
+        (await api.get<DashboardResponse>('/dashboard')).data,
     },
   }
 }

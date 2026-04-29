@@ -1,0 +1,67 @@
+export type MetricGrade = 'EXCELLENT' | 'GOOD' | 'WARN' | 'BAD'
+
+export interface MetricValue {
+  value: number
+  grade: MetricGrade
+  stars: number
+  benchmarkVsKospi: number | null
+  benchmarkVsBtc: number | null
+  dataWarning: string | null
+}
+
+export interface AllocationItem {
+  type: string
+  ratio: number
+  value: number
+  grade: MetricGrade
+}
+
+export interface Position {
+  id: string
+  name: string
+  symbol: string | null
+  type: string
+  currentValue: number
+  returnRate: number
+  weight: number
+  currency: string
+}
+
+export interface RealAsset {
+  id: string
+  name: string
+  type: string
+  value: number
+  currency: string
+  maturityDate: string | null
+  daysUntilMaturity: number | null
+}
+
+export interface DashboardMetrics {
+  returnYtd: MetricValue | null
+  return1m: MetricValue | null
+  return3m: MetricValue | null
+  mdd: MetricValue | null
+  sharpe: MetricValue | null
+  var95: MetricValue | null
+  volatility: MetricValue | null
+}
+
+export interface DashboardResponse {
+  netWorth: {
+    total: number
+    liquid: number
+    illiquid: number
+    debt: number
+    change30d: number
+    changeRate30d: number
+  }
+  portfolio: {
+    totalValue: number
+    currency: string
+    metrics: DashboardMetrics
+    allocation: AllocationItem[]
+    positions: Position[]
+  }
+  realAssets: RealAsset[]
+}
