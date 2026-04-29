@@ -4,7 +4,6 @@ import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.StockTradeRepository
 import com.allfolio.unifiedasset.application.usecase.*
-import com.allfolio.unifiedasset.application.usecase.ConnectionTestResult
 import com.allfolio.unifiedasset.domain.account.*
 import com.allfolio.unifiedasset.domain.asset.Asset
 import jakarta.validation.Valid
