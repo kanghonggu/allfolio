@@ -37,6 +37,7 @@ object MetricsCalculator {
         else                     -> 1
     }
 
+    // ratio: decimal fraction in [0, 1] — e.g. 0.30 means 30%. Do NOT pass percentage form.
     fun concentrationToGrade(ratio: BigDecimal): MetricGrade = when {
         ratio <= BigDecimal("0.30") -> MetricGrade.EXCELLENT
         ratio <= BigDecimal("0.50") -> MetricGrade.GOOD
@@ -64,6 +65,14 @@ object MetricsCalculator {
         annualPct <= BigDecimal("20")  -> MetricGrade.GOOD
         annualPct <= BigDecimal("40")  -> MetricGrade.WARN
         else                           -> MetricGrade.BAD
+    }
+
+    fun volatilityToStars(annualPct: BigDecimal): Int = when {
+        annualPct <= BigDecimal("10")  -> 5
+        annualPct <= BigDecimal("20")  -> 4
+        annualPct <= BigDecimal("30")  -> 3
+        annualPct <= BigDecimal("40")  -> 2
+        else                           -> 1
     }
 
     fun dataWarning(dataDays: Int): String? =
