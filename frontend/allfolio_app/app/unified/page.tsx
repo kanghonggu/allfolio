@@ -7,6 +7,7 @@ import { useLivePrices } from '@/lib/useLivePrices'
 import NetWorthBar from '@/components/dashboard/NetWorthBar'
 import MetricCard from '@/components/dashboard/MetricCard'
 import PositionTable from '@/components/dashboard/PositionTable'
+import AllocationBar from '@/components/dashboard/AllocationBar'
 import type { DashboardResponse } from '@/types/dashboard'
 
 const MDD_DESC = (v: number) =>
@@ -110,6 +111,11 @@ export default function UnifiedDashboard() {
           </div>
         )}
 
+        {portfolio.allocation.length > 0 && (
+          <div className="mb-6">
+            <AllocationBar allocation={portfolio.allocation} />
+          </div>
+        )}
         <PositionTable positions={portfolio.positions} />
       </section>
 
