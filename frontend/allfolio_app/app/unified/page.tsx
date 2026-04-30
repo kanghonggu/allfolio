@@ -111,6 +111,41 @@ export default function UnifiedDashboard() {
           </div>
         )}
 
+        {/* 리스크 지표 카드 (Phase 3) */}
+        {(portfolio.metrics.sharpe || portfolio.metrics.var95 || portfolio.metrics.volatility) && (
+          <div className="mt-4 mb-6">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="h-3 w-1 rounded-full bg-red-500" />
+              <p className="text-xs font-medium uppercase tracking-wider text-gray-500">리스크 분석</p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-3">
+              {portfolio.metrics.sharpe && (
+                <MetricCard
+                  label="샤프 지수 (Sharpe)"
+                  metric={portfolio.metrics.sharpe}
+                  formatValue={(v) => v.toFixed(2)}
+                  description="1.0 이상이면 리스크 대비 수익이 양호해요. (무위험수익률 3.5% 기준)"
+                />
+              )}
+              {portfolio.metrics.var95 && (
+                <MetricCard
+                  label="VaR 95%"
+                  metric={portfolio.metrics.var95}
+                  formatValue={(v) => `₩${Math.abs(v).toLocaleString('ko-KR')}`}
+                  description="최악의 날 (5% 확률) 예상 최대 손실액이에요."
+                />
+              )}
+              {portfolio.metrics.volatility && (
+                <MetricCard
+                  label="연간 변동성"
+                  metric={portfolio.metrics.volatility}
+                  description="포트폴리오의 가격 변동 폭이에요. 낮을수록 안정적이에요."
+                />
+              )}
+            </div>
+          </div>
+        )}
+
         {portfolio.allocation.length > 0 && (
           <div className="mb-6">
             <AllocationBar allocation={portfolio.allocation} />
