@@ -2,6 +2,7 @@ package com.allfolio.config
 
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.http.HttpMethod
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
 import org.springframework.security.config.http.SessionCreationPolicy
@@ -18,9 +19,10 @@ class SecurityConfig {
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .authorizeHttpRequests { auth ->
                 auth
+                    .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()  // CORS preflight
                     .requestMatchers("/actuator/**").permitAll()
                     .requestMatchers("/api/broker/*/callback").permitAll()
-                    .requestMatchers("/api/sse/**").permitAll()             // SSE: EventSource는 커스텀 헤더 불가 → SseTokenFilter에서 ?token= 처리
+                    .requestMatchers("/api/sse/**").permitAll()
                     .anyRequest().authenticated()
             }
             .oauth2ResourceServer { oauth2 ->
