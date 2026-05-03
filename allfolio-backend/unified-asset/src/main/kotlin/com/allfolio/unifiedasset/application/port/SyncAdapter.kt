@@ -1,5 +1,6 @@
 package com.allfolio.unifiedasset.application.port
 
+import com.allfolio.unifiedasset.application.usecase.ConnectionTestResult
 import com.allfolio.unifiedasset.domain.account.Account
 import com.allfolio.unifiedasset.domain.account.AccountProvider
 import com.allfolio.unifiedasset.domain.asset.Asset
@@ -11,4 +12,6 @@ import com.allfolio.unifiedasset.domain.asset.Asset
 interface SyncAdapter {
     val supportedProvider: AccountProvider
     fun sync(account: Account): List<Asset>
+    fun testConnection(account: Account): ConnectionTestResult =
+        ConnectionTestResult(false, "연결 테스트를 지원하지 않는 제공자입니다.")
 }

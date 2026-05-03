@@ -28,7 +28,11 @@ class Asset private constructor(
     val maturityDate: LocalDate?,
     val liquidityType: AssetLiquidityType,
 ) {
-    fun totalPurchaseCost(): BigDecimal = quantity.multiply(purchasePrice)
+    // ILLIQUID(부동산·차량 등): purchasePrice가 총액이므로 수량을 곱하지 않음
+    fun totalPurchaseCost(): BigDecimal =
+        if (liquidityType == AssetLiquidityType.ILLIQUID) purchasePrice
+        else quantity.multiply(purchasePrice)
+
     fun unrealizedPnl(): BigDecimal = currentValue.subtract(totalPurchaseCost())
     fun returnRate(): BigDecimal {
         val cost = totalPurchaseCost()

@@ -3,6 +3,11 @@ package com.allfolio.app
 import com.allfolio.broker.samsung.SamsungProperties
 import com.allfolio.broker.toss.TossProperties
 import com.allfolio.external.crypto.BinanceProperties
+import com.allfolio.market.BithumbWsProperties
+import com.allfolio.market.BybitWsProperties
+import com.allfolio.market.CoinoneWsProperties
+import com.allfolio.market.OkxWsProperties
+import com.allfolio.market.UpbitWsProperties
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.autoconfigure.domain.EntityScan
 import org.springframework.boot.context.properties.EnableConfigurationProperties
@@ -16,7 +21,11 @@ import org.springframework.scheduling.annotation.EnableScheduling
 @EnableJpaRepositories(basePackages = ["com.allfolio"])
 @EnableScheduling
 @EnableAsync
-@EnableConfigurationProperties(BinanceProperties::class, TossProperties::class, SamsungProperties::class)
+@EnableConfigurationProperties(
+    BinanceProperties::class, TossProperties::class, SamsungProperties::class,
+    UpbitWsProperties::class, BithumbWsProperties::class, BybitWsProperties::class,
+    OkxWsProperties::class, CoinoneWsProperties::class,
+)
 class BackendApplication
 
 fun main(args: Array<String>) {

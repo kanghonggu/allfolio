@@ -35,4 +35,12 @@ class ReportController(private val svc: ReportService) {
         @RequestHeader("X-User-Id") userId: UUID,
         @RequestParam(defaultValue = "YTD") period: String,
     ): BenchmarkReport = svc.benchmark(userId, period)
+
+    @GetMapping("/networth")
+    fun networth(@RequestHeader("X-User-Id") userId: UUID): NetWorthReport =
+        svc.networth(userId)
+
+    @GetMapping("/monthly-pnl")
+    fun monthlyPnl(@RequestHeader("X-User-Id") userId: UUID): MonthlyPnlReport =
+        svc.monthlyPnl(userId)
 }

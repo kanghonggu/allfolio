@@ -19,6 +19,8 @@ class SecurityConfig {
             .authorizeHttpRequests { auth ->
                 auth
                     .requestMatchers("/actuator/**").permitAll()
+                    .requestMatchers("/api/broker/*/callback").permitAll()
+                    .requestMatchers("/api/sse/**").permitAll()             // SSE: EventSource는 커스텀 헤더 불가 → SseTokenFilter에서 ?token= 처리
                     .anyRequest().authenticated()
             }
             .oauth2ResourceServer { oauth2 ->

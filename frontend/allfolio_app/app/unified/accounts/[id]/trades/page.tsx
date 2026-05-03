@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useUnifiedApi } from '@/lib/useApi'
+import { useAuth } from '@/contexts/AuthContext'
 import type { StockTrade, StockTradeType, CreateStockTradePayload } from '@/types/unified'
+import { useStockSearch } from '@/lib/useStockSearch'
 
 // ── 거래 유형 설정 ─────────────────────────────────────────────
 
@@ -46,9 +48,24 @@ export default function StockTradesPage() {
   const qc  = useQueryClient()
   const api = useUnifiedApi()
 
-  const [showForm, setShowForm]   = useState(false)
-  const [form, setForm]           = useState<CreateStockTradePayload>(EMPTY_FORM)
-  const [autoCalc, setAutoCalc]   = useState(true)  // 자동 금액 계산
+  const { accessToken } = useAuth()
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm]         = useState<CreateStockTradePayload>(EMPTY_FORM)
+  const [autoCalc, setAutoCalc] = useState(true)
+  const [showSuggest, setShowSuggest] = useState(false)
+  const suggestRef = useRef<HTMLDivElement>(null)
+
+  const { query: stockQuery, setQuery: setStockQuery, results: suggestions, loading: searchLoading } =
+    useStockSearch(accessToken ?? null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (suggestRef.current && !suggestRef.current.contains(e.target as Node))
+        setShowSuggest(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   // 계좌 정보
   const { data: accounts = [] } = useQuery({
@@ -175,11 +192,46 @@ export default function StockTradesPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2 grid grid-cols-3 gap-3">
-              <div className="col-span-2">
-                <label className="mb-1 block text-xs text-gray-400">종목명 *</label>
-                <input required type="text" placeholder="예: 삼성전자"
-                  value={form.stockName} onChange={e => set('stockName', e.target.value)}
-                  className={inputCls} />
+              <div className="col-span-2 relative" ref={suggestRef}>
+                <label className="mb-1 block text-xs text-gray-400">
+                  종목명 *
+                  {searchLoading && <span className="ml-2 text-gray-500">검색 중…</span>}
+                </label>
+                <input
+                  required type="text" placeholder="예: 삼성전자, HANARO 반도체"
+                  value={stockQuery || form.stockName}
+                  onChange={e => {
+                    set('stockName', e.target.value)
+                    setStockQuery(e.target.value)
+                    setShowSuggest(true)
+                  }}
+                  onFocus={() => {
+                    if (form.stockName) setStockQuery(form.stockName)
+                    setShowSuggest(true)
+                  }}
+                  className={inputCls}
+                  autoComplete="off"
+                />
+                {showSuggest && suggestions.length > 0 && (
+                  <ul className="absolute z-10 mt-1 w-full rounded-lg border border-gray-600 bg-gray-800 shadow-xl overflow-hidden">
+                    {suggestions.map(s => (
+                      <li
+                        key={s.symbol}
+                        onMouseDown={() => {
+                          setForm(prev => ({ ...prev, stockName: s.name, symbol: s.symbol }))
+                          setStockQuery('')
+                          setShowSuggest(false)
+                        }}
+                        className="flex items-center justify-between px-3 py-2 text-sm cursor-pointer hover:bg-gray-700 transition-colors"
+                      >
+                        <span className="text-white truncate mr-2">{s.name}</span>
+                        <span className="text-xs text-gray-400 tabular-nums shrink-0">
+                          {s.symbol} <span className="text-gray-600">{s.market}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-xs text-gray-400">종목코드</label>

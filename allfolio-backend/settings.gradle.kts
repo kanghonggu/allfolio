@@ -2,6 +2,7 @@ rootProject.name = "allfolio-backend"
 
 include(
     ":backend-app",
+    ":market-data",
     ":common",
     ":portfolio",
     ":asset",

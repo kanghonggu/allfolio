@@ -137,13 +137,13 @@ export default function PerformancePage() {
               <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6b7280' }} tickLine={false} />
               <YAxis
-                tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                tickFormatter={(v) => `₩${(v / 1_000_000).toFixed(0)}M`}
                 tick={{ fontSize: 11, fill: '#6b7280' }}
                 tickLine={false}
                 axisLine={false}
               />
               <Tooltip
-                formatter={(v: number) => [new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(v)]}
+                formatter={(v: number) => [new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 }).format(v)]}
                 contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
               />
               <Line type="monotone" dataKey="nav" name="NAV" stroke="#10b981" strokeWidth={2} dot={false} />

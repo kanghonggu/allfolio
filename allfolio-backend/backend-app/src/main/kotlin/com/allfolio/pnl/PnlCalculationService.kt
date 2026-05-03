@@ -3,6 +3,7 @@ package com.allfolio.pnl
 import com.allfolio.market.PriceUpdateEvent
 import com.allfolio.metrics.BrokerMetrics
 import com.allfolio.broker.BrokerSyncStateRepository
+import com.allfolio.sse.SseEmitterRegistry
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
@@ -38,6 +39,7 @@ class PnlCalculationService(
     private val positionCacheService: PositionCacheService,
     private val syncStateRepository: BrokerSyncStateRepository,
     private val eventPublisher: ApplicationEventPublisher,
+    private val sseEmitterRegistry: SseEmitterRegistry,
     private val redisTemplate: StringRedisTemplate,
     private val metrics: BrokerMetrics,
     private val objectMapper: ObjectMapper,
@@ -89,8 +91,17 @@ class PnlCalculationService(
                 redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(update), Duration.ofMinutes(5))
             }
 
-            // PortfolioUpdateEvent 발행 (SSE/WebSocket 연동 예정)
+            // ApplicationEvent 발행 (내부 리스너용)
             eventPublisher.publishEvent(update)
+
+            // SSE push — 해당 portfolioId를 구독 중인 모든 클라이언트에 전송
+            runCatching {
+                sseEmitterRegistry.send(
+                    portfolioId = portfolioId,
+                    eventName   = "pnl_update",
+                    data        = objectMapper.writeValueAsString(update),
+                )
+            }
 
             metrics.pnlCalculated(portfolioId.toString())
 

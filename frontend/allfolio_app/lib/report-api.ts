@@ -2,6 +2,7 @@ import axios from 'axios'
 import type {
   SummaryReport, AllocationReport, PerformanceReport,
   RiskReport, PositionsReport, BenchmarkReport,
+  NetWorthReport, MonthlyPnlReport,
 } from '@/types/report'
 
 const BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8090'}/api/reports`
@@ -31,5 +32,11 @@ export function createReportApi(accessToken: string) {
 
     benchmark: async (period = 'YTD'): Promise<BenchmarkReport> =>
       (await api.get<BenchmarkReport>('/benchmark', { params: { period } })).data,
+
+    networth: async (): Promise<NetWorthReport> =>
+      (await api.get<NetWorthReport>('/networth')).data,
+
+    monthlyPnl: async (): Promise<MonthlyPnlReport> =>
+      (await api.get<MonthlyPnlReport>('/monthly-pnl')).data,
   }
 }

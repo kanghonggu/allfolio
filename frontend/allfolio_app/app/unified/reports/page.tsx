@@ -45,6 +45,41 @@ const REPORTS = [
     color: 'border-cyan-700 hover:border-cyan-500',
     badge: '🏁',
   },
+  {
+    href:  '/unified/reports/networth',
+    title: '순자산 추이',
+    desc:  '총 자산 - 부채 = 순자산, 유형별 분해 및 NAV 이력 차트',
+    color: 'border-teal-700 hover:border-teal-500',
+    badge: '🏦',
+  },
+  {
+    href:  '/unified/reports/monthly',
+    title: '월별 손익 정산',
+    desc:  '월별 수익/손실 바차트, 최고·최저 달, 승률 통계',
+    color: 'border-indigo-700 hover:border-indigo-500',
+    badge: '📅',
+  },
+  {
+    href:  '/unified/reports/tax',
+    title: '세금 계산기',
+    desc:  '해외주식 양도세, 금융투자소득세, 배당·이자소득세 예상액',
+    color: 'border-rose-700 hover:border-rose-500',
+    badge: '🧾',
+  },
+  {
+    href:  '/unified/goals',
+    title: '목표 달성 트래커',
+    desc:  '집 마련, 은퇴 등 재무 목표를 설정하고 현재 달성률을 추적',
+    color: 'border-violet-700 hover:border-violet-500',
+    badge: '🎯',
+  },
+  {
+    href:  '/unified/simulator',
+    title: '투자 시뮬레이터',
+    desc:  '복리 효과로 목표까지 걸리는 기간, 필요 월 적립액 역산',
+    color: 'border-sky-700 hover:border-sky-500',
+    badge: '🔭',
+  },
 ]
 
 export default function ReportsHub() {

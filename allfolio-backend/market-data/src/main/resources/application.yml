@@ -1,0 +1,60 @@
+server:
+  port: 8091
+
+spring:
+  application:
+    name: market-data
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/allfolio}
+    username: ${DB_USER:allfolio}
+    password: ${DB_PASS:allfolio}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc.batch_size: 500
+        order_inserts: true
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: 1
+      properties:
+        linger.ms: 10
+        batch.size: 65536
+        compression.type: lz4
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+binance:
+  ws-enabled: ${BINANCE_WS_ENABLED:false}
+  base-url: ${BINANCE_BASE_URL:wss://stream.binance.com:9443}
+  symbols: ${BINANCE_SYMBOLS:BTCUSDT,ETHUSDT}
+
+kis:
+  app-key: ${KIS_APP_KEY:}
+  app-secret: ${KIS_APP_SECRET:}
+  base-url: ${KIS_BASE_URL:https://openapi.koreainvestment.com:9443}
+  ws-url: ${KIS_WS_URL:wss://ops.koreainvestment.com:21000}
+  mock: ${KIS_MOCK:false}
+  ws-enabled: ${KIS_WS_ENABLED:false}
+  symbols: ${KIS_SYMBOLS:}
+
+logging:
+  level:
+    com.allfolio: INFO

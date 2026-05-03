@@ -16,11 +16,13 @@ const STATUS_KO: Record<string, string> = {
   ACTIVE: '정상', SYNCING: '동기화 중', ERROR: '오류', INACTIVE: '비활성',
 }
 const PROVIDER_KO: Record<string, string> = {
-  BINANCE: 'Binance', STOCK: '증권', WALLET: '지갑', CSV: 'CSV', MANUAL: '수동',
+  BINANCE: '바이낸스', UPBIT: '업비트', BITHUMB: '빗썸', COINONE: '코인원',
+  BYBIT: '바이빗', OKX: 'OKX',
+  STOCK: '증권', WALLET: '지갑', MANUAL: '수동',
 }
 
-// Sync를 지원하는 프로바이더 (STOCK·MANUAL·CSV는 API 자동 sync 미지원)
-const SYNCABLE = new Set(['BINANCE', 'WALLET'])
+// Sync를 지원하는 프로바이더
+const SYNCABLE = new Set(['BINANCE', 'UPBIT', 'BITHUMB', 'COINONE', 'BYBIT', 'OKX', 'WALLET'])
 
 export default function AccountsPage() {
   const api = useUnifiedApi()

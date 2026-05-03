@@ -1,165 +1,299 @@
 # ALLFOLIO
 
-멀티 증권사 데이터를 통합하여 포트폴리오를 계산하고 시각화하는 **이벤트 기반 금융 리포트 시스템**
+> **Bloomberg Terminal 수준의 기관투자자 지표를 일반 금융 소비자가 쉽게 볼 수 있도록**
+>
+> 멀티 증권사·거래소 데이터를 통합하고, 실시간 시세와 수익률을 한 화면에서 관리하는 개인 통합 자산 관리 시스템
 
 ---
 
-## 🚀 Overview
+## 목표
 
-ALLFOLIO는 Binance, 증권사 API 데이터를 통합하여
-실시간에 가까운 포트폴리오 상태와 수익률(PnL)을 계산하는 시스템입니다.
+개인 투자자는 주식 계좌·암호화폐·부동산·현금 자산이 여러 플랫폼에 분산되어 있어 전체 포트폴리오를 한눈에 보기 어렵습니다. ALLFOLIO는 이 문제를 해결하기 위해 만들었습니다.
 
-단순 CRUD가 아닌 **Event-driven architecture 기반 금융 계산 엔진**을 목표로 설계되었습니다.
-
----
-
-## 🧩 Key Features
-
-* 멀티 브로커 연동 (Binance, 증권사 API)
-* 실시간 Snapshot 기반 포트폴리오 계산
-* FIFO / AvgCost 포지션 계산 지원
-* KRW / USDT 통화 통합 (자동 환율 적용)
-* Outbox Pattern + Kafka 이벤트 처리
-* DLQ 기반 장애 복구 및 재처리
-* Redis Cache-Aside 전략 적용
-* 프론트 대시보드를 통한 데이터 검증
+- 여러 증권사·거래소 데이터를 **하나의 화면**으로 통합
+- 단순 잔고 조회가 아닌 **수익률·리스크·자산배분 분석**까지
+- 기관 투자자가 쓰는 지표(Sharpe, MDD, VaR, HHI)를 **일반인도 이해할 수 있는 언어**로
 
 ---
 
-## 🏗️ Architecture
+## 주요 기능
 
-```text
-Broker API
-  → TradeRaw
-  → Outbox (DB)
-      → AFTER_COMMIT
-          → Snapshot
-          → Kafka Publish
-              → Consumer (확장 가능)
+### 자산 통합
+- **멀티 브로커 연동** — Binance, KIS(한국투자증권), 키움증권, 삼성증권, 토스증권, Upbit, Bithumb, Coinone, Bybit, OKX
+- **수동 자산 등록** — 부동산(소유/전세/월세/분양권), 자동차, 금, 현금, 비상장주식 등
+- **국내 주식 거래내역 직접 입력** — 종목 자동완성(Yahoo Finance 검색), 평균단가 자동계산
+- **CSV 임포트** — 증권사 거래내역 파일 일괄 등록
 
-+ Redis Cache (Position / FX)
-+ DLQ (Redis + Kafka)
-```
+### 실시간 시세
+- **WebSocket 연동** — Binance, Upbit, Bithumb, Coinone, Bybit, OKX, KIS 실시간 체결가
+- **Yahoo Finance** — 국내주식(KOSPI/KOSDAQ) 및 해외주식 현재가 자동 조회
+- **SSE(Server-Sent Events)** — 브라우저에 실시간 PnL 스트리밍
+
+### 수익률 계산
+- **가중평균법(Weighted Average Cost)** 기반 평균 매입단가
+- **FIFO** 포지션 계산 지원
+- ILLIQUID 자산(부동산·차량 등)은 총액 기준, LIQUID 자산은 단가×수량 기준으로 분리 계산
+
+### 보고서 (Bloomberg Phase 1~3)
+| 보고서 | 주요 지표 |
+|--------|----------|
+| 포트폴리오 요약 | NAV, 총 매입원가, 미실현손익, 수익률, 자산 유형별 비중 |
+| 자산 배분 | 유형별·통화별 파이차트, HHI 집중도, 상위 보유 자산 |
+| 수익률 분석 | 기간별 수익률(1W/1M/3M/YTD/1Y), 누적 수익률 시계열, TWR |
+| 포지션 & 손익 | 자산별 평균매입가·현재가·미실현손익·수익률, 정렬·필터 |
+| 리스크 분석 | 변동성(일/연환산), VaR 95%, MDD, Sharpe Ratio, Calmar Ratio |
+| 벤치마크 비교 | 내 포트폴리오 vs S&P 500 / BTC / KOSPI 초과수익(알파) |
+
+### 이벤트 기반 인프라
+- **Outbox Pattern** — 거래 저장 + 이벤트 발행을 단일 트랜잭션으로 보장
+- **Kafka + DLQ** — 비동기 이벤트 처리, 최대 5회 재시도 후 Dead Letter 보존
+- **Redis Cache** — FX 환율 캐시(1분 갱신), 포지션 캐시
+- **멱등성** — brokerType + externalTradeId 복합 유니크 인덱스로 중복 방지
 
 ---
 
-## ⚙️ Tech Stack
+## 기술 스택
 
 ### Backend
-
-* Kotlin / Spring Boot
-* PostgreSQL
-* Redis
-* Kafka
+| 항목 | 내용 |
+|------|------|
+| 언어/프레임워크 | Kotlin / Spring Boot 3 |
+| 데이터베이스 | PostgreSQL 16 |
+| 캐시 | Redis 7 |
+| 메시지 큐 | Apache Kafka 7.6 |
+| 인증 | Keycloak 24 (JWT / OpenID Connect) |
+| HTTP 클라이언트 | WebClient (WebFlux), OkHttp |
+| 빌드 | Gradle (멀티모듈) |
 
 ### Frontend
-
-* Next.js
-* TypeScript
-* Tailwind CSS
-* TanStack Query
-
----
-
-## 📊 Performance
-
-* Trade 처리: **3,000+ TPS**
-* Snapshot 생성: **100K / 555ms**
-* Redis 기반 캐싱으로 DB 부하 최소화
+| 항목 | 내용 |
+|------|------|
+| 프레임워크 | Next.js 15 (App Router) |
+| 언어 | TypeScript |
+| 스타일 | Tailwind CSS |
+| 상태 관리 | TanStack Query v5 |
+| 차트 | Recharts |
+| 인증 | Keycloak JS (Public Client) |
 
 ---
 
-## 💡 Core Design
+## 아키텍처
 
-### 1. Event-driven Architecture
+```
+┌─────────────────────────────────────────────────────┐
+│                    Frontend (Next.js)                │
+│  /unified  /accounts  /reports  /reports/summary ... │
+└────────────────────┬────────────────────────────────┘
+                     │ REST / SSE
+┌────────────────────▼────────────────────────────────┐
+│                  backend-app                         │
+│  ┌──────────┐  ┌──────────┐  ┌───────────────────┐  │
+│  │  Broker  │  │  Market  │  │    Dashboard /     │  │
+│  │  OAuth   │  │  WebSocket│  │    Report API     │  │
+│  │  Adapters│  │  + SSE   │  │                   │  │
+│  └──────────┘  └──────────┘  └───────────────────┘  │
+│  ┌──────────────────────────────────────────────┐    │
+│  │  Outbox → Kafka → DLQ → 재처리               │    │
+│  └──────────────────────────────────────────────┘    │
+└────────────────────┬────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────┐
+│                 unified-asset                        │
+│  Account → SyncAdapter → Asset 생성/갱신             │
+│  ReportService (Summary / Allocation / Performance   │
+│                 Risk / Positions / Benchmark)        │
+└───────────┬────────────────────────────────────────┘
+            │
+    ┌───────┴────────┐
+    │  PostgreSQL 16  │  Redis 7  │  Kafka  │  Keycloak
+    └────────────────┘
+```
 
-* Outbox Pattern 기반 이벤트 처리
-* AFTER_COMMIT으로 데이터 정합성 보장
+### 멀티모듈 구조
 
-### 2. Financial Calculation Engine
-
-* FIFO / AvgCost 동시 지원
-* 포지션 lot 기반 계산 구조
-
-### 3. Fault Tolerance
-
-* DLQ + Retry 구조
-* Kafka + DB 이중 안전 구조
-
-### 4. Currency Normalization
-
-* USDT → KRW 자동 환산
-* Redis 기반 환율 캐싱
-
----
-
-## 📡 API Examples
-
-```http
-GET /portfolio/summary
-GET /portfolio/{id}/positions
-GET /trades
+```
+allfolio-backend/
+├── backend-app       # 진입점 (브로커 연동, Kafka, WebSocket, SSE, FX, 대시보드)
+├── unified-asset     # 통합 자산 관리 (계좌, 자산 CRUD, 동기화, 보고서)
+├── trade             # 거래 도메인 (TradeRaw, Outbox Event)
+├── snapshot          # 스냅샷 계산 (Position, Performance, Risk 일별 집계)
+├── market-data       # 시세 어댑터 (Binance/KIS WebSocket)
+├── portfolio         # 포트폴리오 도메인
+├── asset             # 자산 정의 도메인
+├── common            # 공통 (BaseEntity, Money)
+├── risk              # 리스크 계산 엔진
+├── report            # 보고서 도메인
+├── benchmark         # 벤치마크 (S&P 500, BTC, KOSPI)
+└── esg               # ESG 스코어 (예정)
 ```
 
 ---
 
-## 🖥️ Frontend
+## 브로커 연동 현황
 
-간단한 대시보드를 통해 다음을 확인할 수 있습니다:
-
-* 총 자산 / 수익률
-* 자산 비중 (차트)
-* 거래 내역
-
----
-
-## 📌 What I Focused On
-
-* 금융 데이터 정합성 (PnL, 평균단가)
-* 고성능 처리 (TPS, 캐싱)
-* 확장 가능한 구조 (멀티 브로커)
-* 장애 대응 (DLQ, 재처리)
+| 브로커 | 유형 | 연동 방식 | 상태 |
+|--------|------|----------|------|
+| Binance | 해외 거래소 | REST API + WebSocket | 완료 |
+| KIS (한국투자증권) | 국내 증권사 | OAuth2 + WebSocket | 완료 |
+| 키움증권 | 국내 증권사 | OAuth2 | 완료 |
+| 삼성증권 | 국내 증권사 | OAuth2 | 완료 |
+| 토스증권 | 국내 증권사 | OAuth2 | 완료 |
+| Upbit | 국내 거래소 | WebSocket | 완료 |
+| Bithumb | 국내 거래소 | WebSocket | 완료 |
+| Coinone | 국내 거래소 | WebSocket | 완료 |
+| Bybit | 해외 거래소 | WebSocket | 완료 |
+| OKX | 해외 거래소 | WebSocket | 완료 |
 
 ---
 
-## 🔥 Lessons Learned
+## API 목록
 
-* 단순 CRUD가 아닌 이벤트 기반 설계의 중요성
-* 금융 데이터에서 계산 정확도의 중요성
-* 캐시 전략이 성능에 미치는 영향
-* 분산 시스템에서의 장애 대응 설계
+```
+# 계좌 & 자산
+POST   /api/unified/accounts                # 계좌 생성
+GET    /api/unified/accounts                # 계좌 목록
+DELETE /api/unified/accounts/{id}           # 계좌 삭제
+POST   /api/unified/accounts/{id}/sync      # 계좌 동기화 (자산 갱신)
+GET    /api/unified/accounts/{id}/assets    # 보유 자산 목록
+POST   /api/unified/accounts/{id}/assets    # 수동 자산 추가
+POST   /api/unified/accounts/{id}/csv       # CSV 임포트
+
+# 국내 주식 거래내역
+GET    /api/unified/accounts/{id}/stock-trades       # 거래내역 조회
+POST   /api/unified/accounts/{id}/stock-trades       # 거래내역 추가
+DELETE /api/unified/accounts/{id}/stock-trades/{tid} # 거래내역 삭제
+
+# 종목 검색 (Yahoo Finance 프록시)
+GET    /api/unified/stocks/search?q={query}
+
+# 포트폴리오
+GET    /api/unified/portfolio               # 통합 포트폴리오 조회
+GET    /api/unified/dashboard               # 대시보드 KPI
+
+# 보고서
+GET    /api/reports/summary
+GET    /api/reports/allocation
+GET    /api/reports/performance?period=1M
+GET    /api/reports/risk
+GET    /api/reports/positions
+GET    /api/reports/benchmark?period=YTD
+
+# 실시간 시세
+GET    /api/prices/stream                   # SSE 가격 스트림
+GET    /api/pnl/stream                      # SSE 실시간 PnL
+
+# 브로커 OAuth
+GET    /api/broker/{broker}/authorize
+GET    /api/broker/{broker}/callback
+
+# 거래 (Outbox 기반)
+POST   /api/trades
+GET    /api/portfolios/{id}/positions
+```
 
 ---
 
-## 📷 Screenshots
+## 프론트엔드 페이지
 
-> (여기에 실제 UI 캡처 추가)
+```
+/                                      # 랜딩 (로그인 시 /unified 리다이렉트)
+/login                                 # Keycloak 로그인
+/unified                               # 통합 자산 대시보드 (KPI 카드, 자산 요약)
+/unified/accounts                      # 계좌 목록
+/unified/accounts/new                  # 계좌 추가
+/unified/accounts/{id}                 # 계좌 상세 (자산별 매입가·현재가·수익률)
+/unified/accounts/{id}/trades          # 국내주식 거래내역 (종목 자동완성)
+/unified/accounts/{id}/csv             # CSV 일괄 임포트
+/unified/reports                       # 보고서 허브
+/unified/reports/summary               # 포트폴리오 요약
+/unified/reports/allocation            # 자산 배분 (파이차트, HHI)
+/unified/reports/performance           # 수익률 분석 (기간별, 시계열)
+/unified/reports/risk                  # 리스크 지표 (VaR, MDD, Sharpe)
+/unified/reports/positions             # 포지션 & 손익
+/unified/reports/benchmark             # 벤치마크 비교 (S&P 500, BTC, KOSPI)
+```
 
 ---
 
-## 🛠️ Getting Started
+## 실행 방법
 
+### 사전 준비
+- Docker, Java 21, Node.js 20+
+
+### 인프라 실행
 ```bash
-# backend
-./gradlew bootRun
+cd allfolio-backend
+docker compose up -d   # PostgreSQL, Redis, Kafka, Keycloak
+```
 
-# frontend
+### 백엔드 실행
+```bash
+cd allfolio-backend
+./gradlew :backend-app:bootJar -x test
+java -jar backend-app/build/libs/backend-app-0.0.1-SNAPSHOT.jar \
+  --spring.profiles.active=local
+# → http://localhost:8090
+```
+
+### 프론트엔드 실행
+```bash
 cd frontend/allfolio_app
 npm install
 npm run dev
+# → http://localhost:3000
+```
+
+### 환경 변수
+
+**backend** (`application.yml` 또는 환경변수)
+```
+KEYCLOAK_ISSUER_URI=http://localhost:8180/realms/allfolio
+BINANCE_API_KEY=...
+BINANCE_API_SECRET=...
+KIS_APP_KEY=...
+KIS_APP_SECRET=...
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092   # kafka.enabled=false 로 비활성화 가능
+```
+
+**frontend** (`.env.local`)
+```
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8090
+NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:8180
+NEXT_PUBLIC_KEYCLOAK_REALM=allfolio
+NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=allfolio-frontend
+```
+
+### Keycloak 초기 설정
+```bash
+# 컨테이너 실행 후 한 번만
+docker exec allfolio-keycloak /opt/keycloak/bin/kcadm.sh \
+  config credentials --server http://localhost:8080 \
+  --realm master --user admin --password admin
+
+# allfolio realm 생성 → allfolio-frontend 클라이언트(Public) 생성 → 테스트 계정 추가
 ```
 
 ---
 
-## 📈 Future Work
+## 구현 현황
 
-* 실시간 시세 WebSocket 연동
-* 실시간 PnL 계산
-* 알림 시스템
-* 세금 계산 로직
-
----
-
-## 👨‍💻 Author
-
-* ALLFOLIO 프로젝트 개발
+| 항목 | 상태 |
+|------|------|
+| 멀티 브로커 OAuth 연동 (KIS, 키움, 삼성, 토스) | 완료 |
+| 암호화폐 거래소 WebSocket (Binance, Upbit, Bithumb, Coinone, Bybit, OKX) | 완료 |
+| Outbox Pattern + Kafka + DLQ | 완료 |
+| JWT 인증 (Keycloak) | 완료 |
+| 통합 자산 관리 (계좌, 자산 CRUD, Sync) | 완료 |
+| 국내주식 거래내역 입력 + 평균단가 계산 | 완료 |
+| Yahoo Finance 실시간 시세 (KOSPI/KOSDAQ/해외) | 완료 |
+| SSE 실시간 PnL 스트리밍 | 완료 |
+| 보고서 6종 (Summary/Allocation/Performance/Risk/Positions/Benchmark) | 완료 |
+| Bloomberg Dashboard (KPI 카드, 수익률·배분·리스크 시각화) | 완료 |
+| 계좌 상세 매입가·현재가·수익률 표시 | 완료 |
+| ILLIQUID 자산 수익률 분리 계산 | 완료 |
+| CSV 임포트 | 완료 |
+| 순자산 추이 보고서 | 예정 |
+| 세금 계산기 (양도세, 금투세, 배당세) | 예정 |
+| 목표 자산 트래커 | 예정 |
+| 배당금 보고서 | 예정 |
+| ESG 스코어 | 예정 |

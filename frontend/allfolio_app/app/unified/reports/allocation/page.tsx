@@ -16,7 +16,7 @@ const TYPE_KO: Record<string, string> = {
 }
 const CURRENCY_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899']
 
-function fmt(n: number, currency = 'USD') {
+function fmt(n: number, currency = 'KRW') {
   return new Intl.NumberFormat('ko-KR', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n)
 }
 

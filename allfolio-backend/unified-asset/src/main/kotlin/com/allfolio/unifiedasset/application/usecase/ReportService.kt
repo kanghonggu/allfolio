@@ -10,6 +10,7 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlin.math.*
 
@@ -141,6 +142,52 @@ data class BenchmarkSeries(
     val sp500: BigDecimal,
     val btc: BigDecimal,
     val kospi: BigDecimal,
+)
+
+// ── NetWorth ───────────────────────────────────────────────────
+
+data class NetWorthBreakdown(
+    val type: String,
+    val assets: BigDecimal,
+    val loan: BigDecimal,
+    val netWorth: BigDecimal,
+    val pct: BigDecimal,   // netWorth / totalNetWorth * 100
+)
+
+data class NetWorthPoint(
+    val date: LocalDate,
+    val nav: BigDecimal,
+)
+
+data class NetWorthReport(
+    val userId: UUID,
+    val generatedAt: LocalDateTime,
+    val totalAssets: BigDecimal,
+    val totalLoan: BigDecimal,
+    val netWorth: BigDecimal,
+    val byType: List<NetWorthBreakdown>,
+    val trend: List<NetWorthPoint>,
+)
+
+// ── MonthlyPnl ─────────────────────────────────────────────────
+
+data class MonthlyPnlRow(
+    val yearMonth: String,   // "2026-04"
+    val startNav: BigDecimal,
+    val endNav: BigDecimal,
+    val absolutePnl: BigDecimal,   // endNav - startNav
+    val returnPct: BigDecimal,     // (endNav - startNav) / startNav * 100, startNav=0이면 0
+)
+
+data class MonthlyPnlReport(
+    val userId: UUID,
+    val generatedAt: LocalDateTime,
+    val months: List<MonthlyPnlRow>,  // 오래된 순서 정렬
+    val bestMonth: MonthlyPnlRow?,
+    val worstMonth: MonthlyPnlRow?,
+    val totalAbsolutePnl: BigDecimal,
+    val winMonths: Int,
+    val loseMonths: Int,
 )
 
 // ── Service ────────────────────────────────────────────────────
@@ -333,6 +380,128 @@ class ReportService(
         )
     }
 
+    @Transactional(readOnly = true)
+    fun networth(userId: UUID): NetWorthReport {
+        val assets = assetRepository.findByUserId(userId)
+        val totalAssets = assets.sumOf { it.currentValue }
+        val totalLoan = assets.sumOf { it.loanAmount ?: BigDecimal.ZERO }
+        val netWorth = totalAssets - totalLoan
+
+        val byType = assets.groupBy { it.type.name }
+            .map { (type, list) ->
+                val typeAssets = list.sumOf { it.currentValue }
+                val typeLoan = list.sumOf { it.loanAmount ?: BigDecimal.ZERO }
+                val typeNetWorth = typeAssets - typeLoan
+                val typePct = if (netWorth != BigDecimal.ZERO)
+                    typeNetWorth.divide(netWorth, 4, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
+                else BigDecimal.ZERO
+                NetWorthBreakdown(
+                    type = type,
+                    assets = typeAssets,
+                    loan = typeLoan,
+                    netWorth = typeNetWorth,
+                    pct = typePct,
+                )
+            }
+            .sortedByDescending { it.netWorth }
+
+        val since = LocalDate.now().minusDays(365)
+        val trend = try {
+            jdbc.query(
+                """SELECT date, nav FROM performance_daily WHERE portfolio_id = ? AND date >= ? ORDER BY date ASC""",
+                { rs, _ ->
+                    NetWorthPoint(
+                        date = rs.getDate("date").toLocalDate(),
+                        nav = rs.getBigDecimal("nav"),
+                    )
+                },
+                userId, since,
+            )
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+        return NetWorthReport(
+            userId = userId,
+            generatedAt = LocalDateTime.now(),
+            totalAssets = totalAssets,
+            totalLoan = totalLoan,
+            netWorth = netWorth,
+            byType = byType,
+            trend = trend,
+        )
+    }
+
+    @Transactional(readOnly = true)
+    fun monthlyPnl(userId: UUID): MonthlyPnlReport {
+        val fmt = DateTimeFormatter.ofPattern("yyyy-MM")
+
+        val allPoints = try {
+            jdbc.query(
+                """SELECT date, nav FROM performance_daily WHERE portfolio_id = ? ORDER BY date ASC""",
+                { rs, _ ->
+                    NetWorthPoint(
+                        date = rs.getDate("date").toLocalDate(),
+                        nav = rs.getBigDecimal("nav"),
+                    )
+                },
+                userId,
+            )
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+        val grouped = allPoints.groupBy { it.date.format(fmt) }
+            .toSortedMap()
+
+        val sortedMonths = grouped.keys.toList()
+
+        val rows = mutableListOf<MonthlyPnlRow>()
+        sortedMonths.forEachIndexed { idx, yearMonth ->
+            val monthPoints = grouped[yearMonth] ?: return@forEachIndexed
+            val endNav = monthPoints.last().nav
+
+            val startNav = if (idx == 0) {
+                monthPoints.first().nav
+            } else {
+                val prevMonth = sortedMonths[idx - 1]
+                grouped[prevMonth]?.last()?.nav ?: monthPoints.first().nav
+            }
+
+            val absolutePnl = endNav - startNav
+            val returnPct = if (startNav != BigDecimal.ZERO)
+                absolutePnl.divide(startNav, 4, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
+            else BigDecimal.ZERO
+
+            rows.add(MonthlyPnlRow(
+                yearMonth = yearMonth,
+                startNav = startNav,
+                endNav = endNav,
+                absolutePnl = absolutePnl,
+                returnPct = returnPct,
+            ))
+        }
+
+        val bestMonth = rows.maxByOrNull { it.returnPct }
+        val worstMonth = rows.minByOrNull { it.returnPct }
+        val totalAbsolutePnl = rows.sumOf { it.absolutePnl }
+        val winMonths = rows.count { it.returnPct > BigDecimal.ZERO }
+        val loseMonths = rows.count { it.returnPct < BigDecimal.ZERO }
+
+        return MonthlyPnlReport(
+            userId = userId,
+            generatedAt = LocalDateTime.now(),
+            months = rows,
+            bestMonth = bestMonth,
+            worstMonth = worstMonth,
+            totalAbsolutePnl = totalAbsolutePnl,
+            winMonths = winMonths,
+            loseMonths = loseMonths,
+        )
+    }
+
     // ── Private helpers ────────────────────────────────────────
 
     private fun buildTypeBreakdown(assets: List<Asset>, totalValue: BigDecimal): List<TypeBreakdown> =
@@ -432,7 +601,7 @@ class ReportService(
     }
 
     private fun computePeriodReturns(series: List<DailyPerf>, totalReturn: BigDecimal): Map<String, BigDecimal?> {
-        if (series.isEmpty()) return mapOf(
+        if (series.size < 2) return mapOf(
             "1W" to null, "1M" to null, "3M" to null, "YTD" to null, "1Y" to totalReturn,
         )
         val now = LocalDate.now()
@@ -440,6 +609,7 @@ class ReportService(
             val cutoff = now.minusDays(days.toLong())
             val start = series.firstOrNull { !it.date.isBefore(cutoff) } ?: return null
             val end = series.last()
+            if (start.date == end.date) return null  // 같은 날이면 이력 부족
             if (start.nav <= BigDecimal.ZERO) return null
             return (end.nav - start.nav).divide(start.nav, 4, RoundingMode.HALF_UP)
                 .multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)

@@ -61,11 +61,9 @@ class BinanceWsAdapter(
 
     @PostConstruct
     override fun connect() {
-        if (!binanceProperties.isConfigured()) {
-            log.info("[BinanceWs] API key not configured — WS disabled")
-            return
-        }
-        subscribe(binanceProperties.symbolList())
+        val symbols = binanceProperties.symbolList()
+        if (symbols.isEmpty()) { log.info("[BinanceWs] no symbols configured"); return }
+        subscribe(symbols)
     }
 
     @PreDestroy
@@ -160,15 +158,8 @@ class BinanceWsAdapter(
      * testnet: wss://testnet.binance.vision/stream?streams=...
      * prod:    wss://stream.binance.com:9443/stream?streams=...
      */
-    private fun buildWsUrl(streams: String): String {
-        val wsBase = when {
-            binanceProperties.baseUrl.contains("testnet") ->
-                "wss://testnet.binance.vision/stream"
-            else ->
-                "wss://stream.binance.com:9443/stream"
-        }
-        return "$wsBase?streams=$streams"
-    }
+    private fun buildWsUrl(streams: String): String =
+        "wss://stream.binance.com:9443/stream?streams=$streams"
 
     // ── DTO ───────────────────────────────────────────────────────
 

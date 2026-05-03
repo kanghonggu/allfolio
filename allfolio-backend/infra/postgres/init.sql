@@ -161,6 +161,24 @@ CREATE TABLE IF NOT EXISTS broker_auth (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_broker_auth_user_broker
     ON broker_auth (user_id, broker_type);
 
+-- ── ua_goals ──────────────────────────────────────────────────
+-- 목표 달성 트래커: 사용자의 재무 목표(은퇴, 내 집 마련 등)
+CREATE TABLE IF NOT EXISTS ua_goals (
+    id             UUID         NOT NULL,
+    user_id        UUID         NOT NULL,
+    name           VARCHAR(100) NOT NULL,
+    description    VARCHAR(500),
+    target_amount  NUMERIC(30, 10) NOT NULL,
+    target_date    DATE,
+    category       VARCHAR(30)  NOT NULL DEFAULT 'OTHER',
+    created_at     TIMESTAMP    NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMP    NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_ua_goals PRIMARY KEY (id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ua_goals_user
+    ON ua_goals (user_id);
+
 -- ── kafka_processed_event ──────────────────────────────────────
 -- Kafka Consumer 멱등성 마커
 -- SELECT 없이 INSERT PK 충돌로 중복 감지 (race condition 없음)

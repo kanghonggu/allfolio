@@ -1,9 +1,9 @@
 server:
   port: 8090
   error:
-    include-message: always
-    include-exception: true
-    include-binding-errors: always
+    include-message: never
+    include-exception: false
+    include-binding-errors: never
   tomcat:
     # Virtual Thread 환경에서는 증가 가능 (Java 21)
     threads:
@@ -93,7 +93,7 @@ spring:
       max-file-size: 10MB
       max-request-size: 10MB
 
-  # Kafka (optional — 설정 없으면 Redis DLQ + DB Outbox만 사용)
+  # Kafka (optional — kafka.enabled=true 시 consumer/producer 활성화)
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     admin:
@@ -101,21 +101,24 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
-      acks: all                # 모든 ISR 복제 완료 후 ack — 메시지 유실 방지
+      acks: all
       retries: 3
       properties:
-        enable.idempotence: true       # Producer 멱등성: exactly-once 쓰기 (acks=all 필요)
-        max.in.flight.requests.per.connection: 5  # idempotence 허용 최대값
-        linger.ms: 5                   # micro-batching 5ms
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        linger.ms: 5
         batch.size: 16384
-        delivery.timeout.ms: 30000    # 총 재시도 포함 최대 30s
+        delivery.timeout.ms: 30000
     consumer:
       group-id: allfolio-dlq
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       auto-offset-reset: earliest
-      enable-auto-commit: false        # 수동 ack — 재처리 정확성 보장
-      max-poll-records: 50             # 한 번에 처리할 최대 레코드 수
+      enable-auto-commit: false
+      max-poll-records: 50
+
+kafka:
+  enabled: false   # true로 변경 시 Kafka consumer/producer/topic 활성화
 
 management:
   endpoints:
@@ -161,6 +164,45 @@ samsung:
   app-secret: ${SAMSUNG_APP_SECRET:}
   base-url: https://openapi.samsungpop.com
   redirect-uri: ${SAMSUNG_REDIRECT_URI:http://localhost:8090/api/broker/samsung/callback}
+
+# 한국투자증권 (KIS) Open API
+kis:
+  app-key: ${KIS_APP_KEY:}
+  app-secret: ${KIS_APP_SECRET:}
+  base-url: ${KIS_BASE_URL:https://openapi.koreainvestment.com:9443}
+  ws-url: ${KIS_WS_URL:wss://ops.koreainvestment.com:21000}
+  mock: ${KIS_MOCK:false}           # true = 모의투자 환경
+  ws-enabled: ${KIS_WS_ENABLED:false}
+  symbols: ${KIS_SYMBOLS:}          # 실시간 구독 종목 ex) 005930,000660
+
+# 키움증권 Open API
+kiwoom:
+  app-key: ${KIWOOM_APP_KEY:}
+  app-secret: ${KIWOOM_APP_SECRET:}
+  base-url: ${KIWOOM_BASE_URL:https://openapi.kiwoom.com}
+  redirect-uri: ${KIWOOM_REDIRECT_URI:http://localhost:8090/api/broker/kiwoom/callback}
+
+# 암호화폐 거래소 WebSocket (국내)
+upbit:
+  ws-enabled: ${UPBIT_WS_ENABLED:false}
+  symbols: ${UPBIT_SYMBOLS:KRW-BTC,KRW-ETH}
+
+bithumb:
+  ws-enabled: ${BITHUMB_WS_ENABLED:false}
+  symbols: ${BITHUMB_SYMBOLS:BTC_KRW,ETH_KRW}
+
+coinone:
+  ws-enabled: ${COINONE_WS_ENABLED:false}
+  symbols: ${COINONE_SYMBOLS:BTC,ETH}
+
+# 암호화폐 거래소 WebSocket (해외)
+bybit:
+  ws-enabled: ${BYBIT_WS_ENABLED:false}
+  symbols: ${BYBIT_SYMBOLS:BTCUSDT,ETHUSDT}
+
+okx:
+  ws-enabled: ${OKX_WS_ENABLED:false}
+  symbols: ${OKX_SYMBOLS:BTC-USDT,ETH-USDT}
 
 # FX 환율 자동 수집
 fx:

@@ -29,7 +29,7 @@ import org.springframework.stereotype.Component
  * - concurrency=3: 파티션당 1 스레드
  */
 @Component
-@ConditionalOnProperty(name = ["spring.kafka.bootstrap-servers"], matchIfMissing = false)
+@ConditionalOnProperty(name = ["kafka.enabled"], havingValue = "true", matchIfMissing = false)
 class KafkaDlqConsumer(
     private val recordTradeUseCase: RecordTradeUseCase,
     private val kafkaDlqProducer: KafkaDlqProducer,

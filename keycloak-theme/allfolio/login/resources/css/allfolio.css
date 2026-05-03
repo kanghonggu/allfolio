@@ -1,0 +1,246 @@
+/* Allfolio Dark Theme for Keycloak Login */
+
+/* Reset background */
+body,
+#kc-header,
+.login-pf body {
+  background-color: #030712 !important;
+  color: #f9fafb !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+/* Center wrapper */
+#kc-container-wrapper,
+.login-pf #kc-container-wrapper {
+  background-color: #030712 !important;
+}
+
+/* Remove top blue bar */
+#kc-header,
+.login-pf-header {
+  background-color: #030712 !important;
+  border-bottom: none !important;
+}
+
+/* Hide realm name header (we show logo in card) */
+#kc-header-wrapper {
+  display: none !important;
+}
+
+/* Main card */
+#kc-form-wrapper,
+.card-pf,
+.login-pf-page .card-pf {
+  background-color: #111827 !important;
+  border: 1px solid #1f2937 !important;
+  border-radius: 16px !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5) !important;
+  padding: 32px !important;
+}
+
+/* Logo / title area above form */
+#kc-page-title,
+.login-pf-page h1 {
+  color: #f9fafb !important;
+  font-size: 1.25rem !important;
+  font-weight: 700 !important;
+  text-align: center !important;
+  margin-bottom: 4px !important;
+}
+
+/* Subtitle */
+.subtitle {
+  color: #6b7280 !important;
+  text-align: center !important;
+}
+
+/* Form inputs */
+.form-control,
+input[type="text"],
+input[type="email"],
+input[type="password"] {
+  background-color: #1f2937 !important;
+  border: 1px solid #374151 !important;
+  border-radius: 10px !important;
+  color: #f9fafb !important;
+  padding: 10px 14px !important;
+  font-size: 0.875rem !important;
+  transition: border-color 0.2s !important;
+}
+
+.form-control:focus,
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+  outline: none !important;
+  background-color: #1f2937 !important;
+}
+
+/* Input placeholder */
+.form-control::placeholder {
+  color: #6b7280 !important;
+}
+
+/* Labels */
+label,
+.control-label {
+  color: #d1d5db !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+  margin-bottom: 6px !important;
+}
+
+/* Primary button */
+.btn-primary,
+input[type="submit"],
+button[type="submit"] {
+  background-color: #2563eb !important;
+  border: none !important;
+  border-radius: 10px !important;
+  color: #fff !important;
+  font-size: 0.875rem !important;
+  font-weight: 600 !important;
+  padding: 12px 20px !important;
+  width: 100% !important;
+  cursor: pointer !important;
+  transition: background-color 0.2s !important;
+}
+
+.btn-primary:hover,
+input[type="submit"]:hover,
+button[type="submit"]:hover {
+  background-color: #1d4ed8 !important;
+}
+
+.btn-primary:active {
+  background-color: #1e40af !important;
+}
+
+/* Secondary / link buttons */
+.btn-default,
+.btn-secondary {
+  background-color: transparent !important;
+  border: 1px solid #374151 !important;
+  border-radius: 10px !important;
+  color: #9ca3af !important;
+  font-size: 0.875rem !important;
+  padding: 10px 20px !important;
+  cursor: pointer !important;
+  transition: border-color 0.2s, color 0.2s !important;
+}
+
+.btn-default:hover {
+  border-color: #6b7280 !important;
+  color: #f9fafb !important;
+}
+
+/* Links */
+a,
+a:visited {
+  color: #60a5fa !important;
+  text-decoration: none !important;
+}
+
+a:hover {
+  color: #93c5fd !important;
+  text-decoration: underline !important;
+}
+
+/* Alert / error messages */
+.alert,
+.pf-c-alert {
+  border-radius: 10px !important;
+  font-size: 0.875rem !important;
+}
+
+.alert-error,
+.pf-m-danger {
+  background-color: rgba(239, 68, 68, 0.1) !important;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+  color: #fca5a5 !important;
+}
+
+.alert-warning {
+  background-color: rgba(245, 158, 11, 0.1) !important;
+  border: 1px solid rgba(245, 158, 11, 0.3) !important;
+  color: #fcd34d !important;
+}
+
+.alert-success {
+  background-color: rgba(16, 185, 129, 0.1) !important;
+  border: 1px solid rgba(16, 185, 129, 0.3) !important;
+  color: #6ee7b7 !important;
+}
+
+/* Social login buttons */
+.zocial,
+.pf-c-button.pf-m-control {
+  background-color: #1f2937 !important;
+  border: 1px solid #374151 !important;
+  border-radius: 10px !important;
+  color: #d1d5db !important;
+  margin-bottom: 8px !important;
+}
+
+/* Divider */
+.separator {
+  border-color: #374151 !important;
+}
+
+/* Checkbox */
+input[type="checkbox"] {
+  accent-color: #2563eb !important;
+}
+
+/* Remember me text */
+#rememberMe ~ span,
+.checkbox label {
+  color: #9ca3af !important;
+  font-size: 0.875rem !important;
+}
+
+/* Forgot password */
+#kc-form-options .checkbox,
+#forgot-password {
+  color: #60a5fa !important;
+}
+
+/* Register link */
+#kc-registration,
+#kc-registration a {
+  color: #9ca3af !important;
+  font-size: 0.875rem !important;
+  text-align: center !important;
+}
+
+#kc-registration a {
+  color: #60a5fa !important;
+}
+
+/* Password visibility toggle */
+.kc-password-toggle {
+  color: #6b7280 !important;
+}
+
+/* Branding: add Allfolio logo before form */
+#kc-content::before {
+  content: 'Allfolio';
+  display: block;
+  text-align: center;
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #f9fafb;
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+}
+
+#kc-content-wrapper::before {
+  content: '모든 자산을 한 곳에서';
+  display: block;
+  text-align: center;
+  font-size: 0.813rem;
+  color: #6b7280;
+  margin-bottom: 24px;
+}

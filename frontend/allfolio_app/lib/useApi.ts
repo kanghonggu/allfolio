@@ -1,22 +1,31 @@
 'use client'
 
-import { useSession } from 'next-auth/react'
 import { useMemo } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
 import { createUnifiedApi } from './unified-api'
 import { createReportApi } from './report-api'
+import { createGoalApi } from './goal-api'
 
 export function useUnifiedApi() {
-  const { data: session } = useSession()
+  const { accessToken } = useAuth()
   return useMemo(
-    () => (session?.accessToken ? createUnifiedApi(session.accessToken) : null),
-    [session?.accessToken],
+    () => (accessToken ? createUnifiedApi(accessToken) : null),
+    [accessToken],
   )
 }
 
 export function useReportApi() {
-  const { data: session } = useSession()
+  const { accessToken } = useAuth()
   return useMemo(
-    () => (session?.accessToken ? createReportApi(session.accessToken) : null),
-    [session?.accessToken],
+    () => (accessToken ? createReportApi(accessToken) : null),
+    [accessToken],
+  )
+}
+
+export function useGoalApi() {
+  const { accessToken } = useAuth()
+  return useMemo(
+    () => (accessToken ? createGoalApi(accessToken) : null),
+    [accessToken],
   )
 }

@@ -146,3 +146,49 @@ export interface BenchmarkReport {
   benchmarks:      BenchmarkItem[]
   series:          BenchmarkSeries[]
 }
+
+// ── NetWorth ───────────────────────────────────────────────────
+
+export interface NetWorthBreakdown {
+  type:     string
+  assets:   number
+  loan:     number
+  netWorth: number
+  pct:      number
+}
+
+export interface NetWorthPoint {
+  date: string
+  nav:  number
+}
+
+export interface NetWorthReport {
+  userId:       string
+  generatedAt:  string
+  totalAssets:  number
+  totalLoan:    number
+  netWorth:     number
+  byType:       NetWorthBreakdown[]
+  trend:        NetWorthPoint[]
+}
+
+// ── MonthlyPnl ────────────────────────────────────────────────
+
+export interface MonthlyPnlRow {
+  yearMonth:   string
+  startNav:    number
+  endNav:      number
+  absolutePnl: number
+  returnPct:   number
+}
+
+export interface MonthlyPnlReport {
+  userId:          string
+  generatedAt:     string
+  months:          MonthlyPnlRow[]
+  bestMonth:       MonthlyPnlRow | null
+  worstMonth:      MonthlyPnlRow | null
+  totalAbsolutePnl: number
+  winMonths:       number
+  loseMonths:      number
+}

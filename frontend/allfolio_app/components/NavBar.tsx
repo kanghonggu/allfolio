@@ -1,10 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { useSession, signIn, signOut } from 'next-auth/react'
+import { useAuth } from '@/contexts/AuthContext'
 
 export default function NavBar() {
-  const { data: session, status } = useSession()
+  const { initialized, authenticated, userName, userEmail, logout } = useAuth()
 
   return (
     <nav className="border-b border-gray-800 bg-gray-900">
@@ -13,7 +13,7 @@ export default function NavBar() {
           ALLFOLIO
         </Link>
 
-        {session && (
+        {authenticated && (
           <>
             <Link href="/unified" className="text-sm text-gray-400 hover:text-white transition-colors">
               통합 자산
@@ -27,26 +27,23 @@ export default function NavBar() {
           </>
         )}
 
-        {/* 우측: 사용자 정보 + 로그인/아웃 */}
         <div className="ml-auto flex items-center gap-4">
-          {status === 'loading' && (
+          {!initialized && (
             <div className="h-4 w-20 animate-pulse rounded bg-gray-800" />
           )}
-          {status === 'unauthenticated' && (
-            <button
-              onClick={() => signIn('keycloak')}
+          {initialized && !authenticated && (
+            <Link
+              href="/login"
               className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium hover:bg-blue-500 transition-colors"
             >
               로그인
-            </button>
+            </Link>
           )}
-          {status === 'authenticated' && session && (
+          {initialized && authenticated && (
             <div className="flex items-center gap-3">
-              <span className="text-xs text-gray-400">
-                {session.user?.email ?? session.user?.name}
-              </span>
+              <span className="text-xs text-gray-400">{userEmail ?? userName}</span>
               <button
-                onClick={() => signOut({ callbackUrl: '/' })}
+                onClick={logout}
                 className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-400 hover:border-gray-500 hover:text-white transition-colors"
               >
                 로그아웃

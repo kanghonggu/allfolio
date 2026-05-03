@@ -1,6 +1,6 @@
 // ── Account ───────────────────────────────────────────────────
 
-export type AccountProvider = 'BINANCE' | 'STOCK' | 'WALLET' | 'CSV' | 'MANUAL'
+export type AccountProvider = 'BINANCE' | 'UPBIT' | 'BITHUMB' | 'COINONE' | 'BYBIT' | 'OKX' | 'KIS' | 'KIWOOM' | 'STOCK' | 'WALLET' | 'CSV' | 'MANUAL'
 export type AccountType     = 'EXCHANGE' | 'STOCK' | 'WALLET' | 'BANK' | 'MANUAL'
 export type AccountStatus   = 'ACTIVE' | 'SYNCING' | 'ERROR' | 'INACTIVE'
 
@@ -29,11 +29,20 @@ export interface CreateAccountPayload {
   externalId?:   string
 }
 
+export interface ConnectionTestResult {
+  success:    boolean
+  message:    string
+  assetCount: number
+}
+
 // ── Asset ─────────────────────────────────────────────────────
 
 export type AssetType     = 'STOCK' | 'CRYPTO' | 'REAL_ESTATE' | 'VEHICLE' | 'GOLD' | 'CASH' | 'ETC'
 export type AssetCategory = 'FINANCIAL' | 'MANUAL'
 export type AssetSourceType = 'EXCHANGE_API' | 'WALLET' | 'STOCK_API' | 'CSV' | 'MANUAL'
+
+export type RealEstateSubType = 'OWN' | 'JEONSE' | 'MONTHLY' | 'PRESALE'
+export type VehicleSubType   = 'OWN' | 'LEASE' | 'RENTAL'
 
 export interface Asset {
   id:               string
@@ -41,11 +50,14 @@ export interface Asset {
   name:             string
   symbol:           string | null
   type:             AssetType
+  subType:          string | null
   category:         AssetCategory
   sourceType:       AssetSourceType
   quantity:         number
   purchasePrice:    number
   currentValue:     number
+  loanAmount:       number | null
+  netEquity:        number
   currency:         string
   valuationMethod:  string
   confidenceLevel:  string
@@ -59,9 +71,11 @@ export interface CreateManualAssetPayload {
   name:          string
   symbol?:       string
   type:          AssetType
+  subType?:      string
   quantity:      number
   purchasePrice: number
   currentValue:  number
+  loanAmount?:   number | null
   currency?:     string
   memo?:         string
 }
@@ -82,12 +96,17 @@ export interface AssetSummary {
   name:            string
   symbol:          string | null
   type:            AssetType
+  subType:         string | null
   quantity:        number
   currentValue:    number
+  loanAmount:      number | null
+  netEquity:       number
   currency:        string
   unrealizedPnl:   number
   returnRate:      number
   confidenceLevel: string
+  exchange?:       string
+  avgCost?:        number
 }
 
 export interface PortfolioResponse {

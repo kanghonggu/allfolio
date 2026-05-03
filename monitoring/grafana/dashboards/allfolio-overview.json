@@ -1,0 +1,120 @@
+{
+  "title": "Allfolio Overview",
+  "uid": "allfolio-overview",
+  "tags": ["allfolio", "spring-boot"],
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+      "title": "API 요청 수 (1m)",
+      "type": "stat",
+      "datasource": {"uid": "prometheus"},
+      "targets": [{
+        "expr": "round(sum(rate(http_server_requests_seconds_count{application='allfolio-backend'}[1m])) * 60)",
+        "legendFormat": "req/min"
+      }],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}]}}}
+    },
+    {
+      "id": 2, "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
+      "title": "에러율 (5xx)",
+      "type": "stat",
+      "datasource": {"uid": "prometheus"},
+      "targets": [{
+        "expr": "sum(rate(http_server_requests_seconds_count{application='allfolio-backend',status=~'5..'}[5m])) / sum(rate(http_server_requests_seconds_count{application='allfolio-backend'}[5m])) * 100",
+        "legendFormat": "%"
+      }],
+      "fieldConfig": {"defaults": {"unit": "percent", "color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}, {"color": "red", "value": 5}]}}}
+    },
+    {
+      "id": 3, "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
+      "title": "평균 응답시간",
+      "type": "stat",
+      "datasource": {"uid": "prometheus"},
+      "targets": [{
+        "expr": "sum(rate(http_server_requests_seconds_sum{application='allfolio-backend'}[5m])) / sum(rate(http_server_requests_seconds_count{application='allfolio-backend'}[5m])) * 1000",
+        "legendFormat": "ms"
+      }],
+      "fieldConfig": {"defaults": {"unit": "ms", "color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 500}, {"color": "red", "value": 2000}]}}}
+    },
+    {
+      "id": 4, "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
+      "title": "JVM 힙 사용량",
+      "type": "stat",
+      "datasource": {"uid": "prometheus"},
+      "targets": [{
+        "expr": "sum(jvm_memory_used_bytes{application='allfolio-backend',area='heap'}) / sum(jvm_memory_max_bytes{application='allfolio-backend',area='heap'}) * 100",
+        "legendFormat": "%"
+      }],
+      "fieldConfig": {"defaults": {"unit": "percent", "color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 70}, {"color": "red", "value": 90}]}}}
+    },
+    {
+      "id": 5, "gridPos": {"h": 4, "w": 4, "x": 16, "y": 0},
+      "title": "DB 커넥션 풀",
+      "type": "stat",
+      "datasource": {"uid": "prometheus"},
+      "targets": [{
+        "expr": "hikaricp_connections_active{application='allfolio-backend'}",
+        "legendFormat": "active"
+      }],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 15}, {"color": "red", "value": 19}]}}}
+    },
+    {
+      "id": 6, "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "title": "HTTP 요청 처리량 (엔드포인트별)",
+      "type": "timeseries",
+      "datasource": {"uid": "prometheus"},
+      "targets": [{
+        "expr": "sum by(uri, method) (rate(http_server_requests_seconds_count{application='allfolio-backend',uri!~'/actuator.*'}[1m]))",
+        "legendFormat": "{{method}} {{uri}}"
+      }]
+    },
+    {
+      "id": 7, "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "title": "응답시간 P50/P95/P99",
+      "type": "timeseries",
+      "datasource": {"uid": "prometheus"},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum by(le) (rate(http_server_requests_seconds_bucket{application='allfolio-backend'}[5m]))) * 1000", "legendFormat": "p50"},
+        {"expr": "histogram_quantile(0.95, sum by(le) (rate(http_server_requests_seconds_bucket{application='allfolio-backend'}[5m]))) * 1000", "legendFormat": "p95"},
+        {"expr": "histogram_quantile(0.99, sum by(le) (rate(http_server_requests_seconds_bucket{application='allfolio-backend'}[5m]))) * 1000", "legendFormat": "p99"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "ms"}}
+    },
+    {
+      "id": 8, "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
+      "title": "에러 로그 (컨테이너별 필터링 가능)",
+      "type": "logs",
+      "datasource": {"uid": "loki"},
+      "targets": [{
+        "expr": "{container=~\"allfolio-.*\"} |= \"ERROR\"",
+        "legendFormat": ""
+      }],
+      "options": {
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true,
+        "enableLogDetails": true
+      }
+    },
+    {
+      "id": 9, "gridPos": {"h": 8, "w": 24, "x": 0, "y": 20},
+      "title": "전체 로그 탐색기",
+      "type": "logs",
+      "datasource": {"uid": "loki"},
+      "targets": [{
+        "expr": "{container=~\"allfolio-.*\"}",
+        "legendFormat": ""
+      }],
+      "options": {
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": false,
+        "enableLogDetails": true
+      }
+    }
+  ]
+}

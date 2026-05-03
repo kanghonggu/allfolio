@@ -12,6 +12,8 @@ enum class BrokerType(
     BINANCE("Binance", isCrypto = true),
     TOSS("토스증권"),
     SAMSUNG("삼성증권"),
+    KIS("한국투자증권"),
+    KIWOOM("키움증권"),
     ;
 
     companion object {

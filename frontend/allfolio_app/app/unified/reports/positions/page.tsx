@@ -15,7 +15,7 @@ const TYPE_KO: Record<string, string> = {
   VEHICLE: '자동차', GOLD: '금', CASH: '현금', ETC: '기타',
 }
 
-function fmt(n: number, currency = 'USD') {
+function fmt(n: number, currency = 'KRW') {
   return new Intl.NumberFormat('ko-KR', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n)
 }
 

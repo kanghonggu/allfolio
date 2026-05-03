@@ -14,7 +14,7 @@ import org.springframework.kafka.config.TopicBuilder
  * replicas=1: 단일 노드 기본값 (운영 시 3으로 증가)
  */
 @Configuration
-@ConditionalOnProperty(name = ["spring.kafka.bootstrap-servers"], matchIfMissing = false)
+@ConditionalOnProperty(name = ["kafka.enabled"], havingValue = "true", matchIfMissing = false)
 class KafkaTopicConfig {
 
     @Bean

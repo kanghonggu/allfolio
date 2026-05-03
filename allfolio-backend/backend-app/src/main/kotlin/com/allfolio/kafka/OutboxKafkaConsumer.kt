@@ -36,7 +36,7 @@ import org.springframework.stereotype.Component
  * - kafka.consumer.process.latency 타이머로 p95/p99 측정
  */
 @Component
-@ConditionalOnProperty(name = ["spring.kafka.bootstrap-servers"], matchIfMissing = false)
+@ConditionalOnProperty(name = ["kafka.enabled"], havingValue = "true", matchIfMissing = false)
 class OutboxKafkaConsumer(
     private val idempotencyService: KafkaIdempotencyService,
     private val metrics: BrokerMetrics,

@@ -1,0 +1,212 @@
+'use client'
+
+import { useState } from 'react'
+import Link from 'next/link'
+
+function fmt(n: number) {
+  return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 }).format(n)
+}
+function digitsOnly(s: string) { return s.replace(/[^\d]/g, '') }
+function fmtComma(n: number) { return n > 0 ? Math.round(n).toLocaleString('ko-KR') : '' }
+
+function MoneyInput({ label, value, onChange, hint }: {
+  label: string; value: number; onChange: (v: number) => void; hint?: string
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs text-gray-400">{label}</label>
+      <input
+        type="text" inputMode="numeric"
+        placeholder="0"
+        value={fmtComma(value)}
+        onChange={e => { const d = digitsOnly(e.target.value); onChange(d ? parseInt(d) : 0) }}
+        className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
+      />
+      {hint && <p className="mt-1 text-xs text-gray-600">{hint}</p>}
+    </div>
+  )
+}
+
+function TaxCard({ label, base, tax, rate, desc, color = 'border-gray-700' }: {
+  label: string; base: number; tax: number; rate: string; desc: string; color?: string
+}) {
+  return (
+    <div className={`rounded-xl border ${color} bg-gray-900 p-5`}>
+      <p className="text-xs text-gray-500">{label}</p>
+      <p className="mt-1 text-xs text-gray-600">{desc}</p>
+      <div className="mt-3 space-y-1">
+        <div className="flex justify-between text-xs text-gray-500">
+          <span>과세 기준</span>
+          <span className="tabular-nums">{fmt(base)}</span>
+        </div>
+        <div className="flex justify-between text-xs text-gray-500">
+          <span>세율</span>
+          <span>{rate}</span>
+        </div>
+        <div className="mt-2 flex justify-between border-t border-gray-800 pt-2">
+          <span className="text-sm font-medium text-gray-300">예상 세액</span>
+          <span className={`text-lg font-bold tabular-nums ${tax > 0 ? 'text-red-400' : 'text-gray-500'}`}>
+            {tax > 0 ? fmt(tax) : '없음'}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function TaxPage() {
+  // 해외주식
+  const [overseasGain, setOverseasGain] = useState(0)
+  // 국내주식 (금융투자소득세, 2025년 시행)
+  const [domesticGain, setDomesticGain] = useState(0)
+  // 배당소득
+  const [dividend, setDividend] = useState(0)
+  // 이자소득
+  const [interest, setInterest] = useState(0)
+
+  // ── 세액 계산 ──────────────────────────────────────────────────
+
+  // 해외주식 양도소득세: (차익 - 250만) × 22% (지방세 포함)
+  const OVERSEAS_DEDUCTION = 2_500_000
+  const overseasBase = Math.max(0, overseasGain - OVERSEAS_DEDUCTION)
+  const overseasTax = Math.round(overseasBase * 0.22)
+
+  // 국내주식 금융투자소득세: (차익 - 5000만) × 22%
+  const DOMESTIC_DEDUCTION = 50_000_000
+  const domesticBase = Math.max(0, domesticGain - DOMESTIC_DEDUCTION)
+  const domesticTax = Math.round(domesticBase * 0.22)
+
+  // 배당소득세: 15.4% (소득세 14% + 지방소득세 1.4%)
+  // 금융소득 2,000만 초과 시 종합과세 (기본 계산은 분리과세 기준)
+  const dividendTax = Math.round(dividend * 0.154)
+  const combinedFinancial = dividend + interest
+  const isComprehensive = combinedFinancial > 20_000_000
+
+  // 이자소득세: 15.4%
+  const interestTax = Math.round(interest * 0.154)
+
+  const totalTax = overseasTax + domesticTax + dividendTax + interestTax
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-center gap-3">
+        <Link href="/unified/reports" className="text-sm text-gray-500 hover:text-gray-300">← 보고서</Link>
+        <h1 className="text-2xl font-bold">세금 계산기</h1>
+      </div>
+
+      <div className="rounded-xl border border-amber-800 bg-amber-950/20 p-4 text-xs text-amber-400">
+        예상 세액은 참고용입니다. 실제 납부 세액은 개인 상황(다른 소득, 공제 항목 등)에 따라 달라질 수 있으니 세무사 확인을 권장합니다.
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* 입력 */}
+        <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 space-y-4">
+          <h2 className="text-sm font-semibold text-gray-300">소득 입력</h2>
+
+          <MoneyInput
+            label="해외주식 양도차익 (연간 합계)"
+            value={overseasGain}
+            onChange={setOverseasGain}
+            hint="미국주식, ETF 등 해외 자산 매도 차익의 합계"
+          />
+          <MoneyInput
+            label="국내주식 양도차익 (연간 합계)"
+            value={domesticGain}
+            onChange={setDomesticGain}
+            hint="2025년부터 시행 — 금융투자소득세 적용"
+          />
+          <MoneyInput
+            label="배당소득 (연간 합계)"
+            value={dividend}
+            onChange={setDividend}
+            hint="국내·해외 주식 배당금 합계 (세전)"
+          />
+          <MoneyInput
+            label="이자소득 (연간 합계)"
+            value={interest}
+            onChange={setInterest}
+            hint="예금·채권 이자 합계 (세전)"
+          />
+        </div>
+
+        {/* 결과 */}
+        <div className="space-y-4">
+          <div className="rounded-xl border border-blue-800 bg-blue-950/20 p-5">
+            <p className="text-xs text-gray-500">예상 총 세액</p>
+            <p className={`mt-2 text-3xl font-bold tabular-nums ${totalTax > 0 ? 'text-red-400' : 'text-gray-400'}`}>
+              {totalTax > 0 ? fmt(totalTax) : '없음'}
+            </p>
+            {totalTax > 0 && (
+              <p className="mt-1 text-xs text-gray-600">
+                실효세율 약 {(totalTax / (overseasGain + domesticGain + dividend + interest) * 100 || 0).toFixed(1)}%
+              </p>
+            )}
+          </div>
+
+          <TaxCard
+            label="해외주식 양도소득세"
+            base={overseasBase}
+            tax={overseasTax}
+            rate="22% (소득세 20% + 지방세 2%)"
+            desc={`연 250만원 기본공제 후 과세`}
+            color={overseasTax > 0 ? 'border-red-900' : 'border-gray-700'}
+          />
+          <TaxCard
+            label="국내주식 금융투자소득세"
+            base={domesticBase}
+            tax={domesticTax}
+            rate="22% (소득세 20% + 지방세 2%)"
+            desc="연 5,000만원 공제 후 과세 (2025년 시행)"
+            color={domesticTax > 0 ? 'border-red-900' : 'border-gray-700'}
+          />
+          <TaxCard
+            label="배당소득세"
+            base={dividend}
+            tax={dividendTax}
+            rate="15.4% (소득세 14% + 지방세 1.4%)"
+            desc="분리과세 기준"
+            color={dividendTax > 0 ? 'border-red-900' : 'border-gray-700'}
+          />
+          <TaxCard
+            label="이자소득세"
+            base={interest}
+            tax={interestTax}
+            rate="15.4% (소득세 14% + 지방세 1.4%)"
+            desc="분리과세 기준"
+            color={interestTax > 0 ? 'border-red-900' : 'border-gray-700'}
+          />
+
+          {isComprehensive && (
+            <div className="rounded-xl border border-orange-800 bg-orange-950/30 p-4 text-xs text-orange-400">
+              배당+이자 합계 {fmt(combinedFinancial)}으로 금융소득 2,000만원을 초과합니다.
+              <br />초과분은 <strong>종합과세</strong> 대상으로, 다른 소득과 합산하여 최대 49.5% 세율이 적용될 수 있습니다.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 절세 가이드 */}
+      <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
+        <h2 className="mb-4 text-sm font-semibold text-gray-300">절세 가이드</h2>
+        <div className="grid gap-3 sm:grid-cols-2 text-xs text-gray-500">
+          <div>
+            <span className="font-medium text-gray-400">ISA 계좌</span> — 비과세 한도 200만원(서민형 400만원),
+            초과 시 9.9% 분리과세. 해외주식도 편입 가능.
+          </div>
+          <div>
+            <span className="font-medium text-gray-400">해외주식 손익 통산</span> — 해외주식 손실과 이익을
+            같은 해에 통산해 양도세 절감. 손실 종목을 연말 전 매도하고 재매수.
+          </div>
+          <div>
+            <span className="font-medium text-gray-400">연금저축·IRP</span> — 납입액 최대 900만원
+            세액공제(16.5%), 운용 수익 과세이연.
+          </div>
+          <div>
+            <span className="font-medium text-gray-400">250만원 공제 활용</span> — 해외주식 매도 차익이
+            250만원 이하면 세금 없음. 소액 차익 실현 시 연간 250만원 한도 내 분산 매도.
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

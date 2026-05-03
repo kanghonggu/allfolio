@@ -1,6 +1,7 @@
 package com.allfolio.unifiedasset.infrastructure.adapter
 
 import com.allfolio.unifiedasset.application.port.SyncAdapter
+import com.allfolio.unifiedasset.application.usecase.ConnectionTestResult
 import com.allfolio.unifiedasset.domain.account.Account
 import com.allfolio.unifiedasset.domain.account.AccountProvider
 import com.allfolio.unifiedasset.domain.asset.*
@@ -78,6 +79,36 @@ class BinanceSyncAdapter(private val objectMapper: ObjectMapper) : SyncAdapter {
                 currency        = "USD",
                 valuationMethod = ValuationMethod.MARKET_PRICE,
             )
+        }
+    }
+
+    override fun testConnection(account: Account): ConnectionTestResult {
+        if (account.apiKey.isNullOrBlank() || account.apiSecret.isNullOrBlank())
+            return ConnectionTestResult(false, "API Key와 Secret을 입력하세요.")
+        return try {
+            val timestamp   = System.currentTimeMillis()
+            val queryString = "timestamp=$timestamp"
+            val signature   = hmacSha256(account.apiSecret!!, queryString)
+            val client = WebClient.builder().baseUrl("https://api.binance.com")
+                .defaultHeader("X-MBX-APIKEY", account.apiKey).build()
+            val json = client.get()
+                .uri("/api/v3/account?$queryString&signature=$signature")
+                .retrieve()
+                .onStatus({ it.value() == 401 }) { throw RuntimeException("API Key 또는 Secret이 올바르지 않습니다.") }
+                .onStatus({ it.value() == 403 }) { throw RuntimeException("API 권한이 부족합니다. 읽기 권한을 확인하세요.") }
+                .onStatus({ it.is5xxServerError }) { throw RuntimeException("Binance 서버 오류") }
+                .bodyToMono(String::class.java).block() ?: throw RuntimeException("응답 없음")
+            val root = objectMapper.readTree(json)
+            val code = root["code"]?.asInt()
+            if (code != null && code < 0) throw RuntimeException(root["msg"]?.asText() ?: "인증 실패")
+            val nonZero = root["balances"]?.count { node ->
+                val free   = node["free"]?.asText()?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO
+                val locked = node["locked"]?.asText()?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO
+                (free + locked) > java.math.BigDecimal.ZERO
+            } ?: 0
+            ConnectionTestResult(true, "연결 성공! ${nonZero}개 코인 잔고 확인", nonZero)
+        } catch (e: Exception) {
+            ConnectionTestResult(false, e.message ?: "연결 실패")
         }
     }
 

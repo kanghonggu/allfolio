@@ -1,0 +1,21 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Spring Boot Actuator
+  # 프로덕션: backend:8090 (같은 Docker 네트워크)
+  # 로컬 테스트: host.docker.internal:8090
+  - job_name: allfolio-backend
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - 'backend:8090'            # 프로덕션 (docker-compose.prod.yml)
+          - 'host.docker.internal:8090'  # 로컬 테스트
+        labels:
+          service: backend
+          env: production
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']

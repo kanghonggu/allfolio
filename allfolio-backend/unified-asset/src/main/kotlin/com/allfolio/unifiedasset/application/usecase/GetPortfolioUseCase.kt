@@ -31,9 +31,14 @@ data class AssetSummary(
     val accountName: String,
     val name: String,
     val symbol: String?,
+    val exchange: String?,
     val type: AssetType,
+    val subType: String?,
     val quantity: BigDecimal,
+    val avgCost: BigDecimal?,
     val currentValue: BigDecimal,
+    val loanAmount: BigDecimal?,
+    val netEquity: BigDecimal,
     val currency: String,
     val unrealizedPnl: BigDecimal,
     val returnRate: BigDecimal,
@@ -49,9 +54,17 @@ class GetPortfolioUseCase(
     fun execute(userId: UUID): PortfolioResponse {
         val assets = assetRepository.findByUserId(userId)
         val accounts = accountRepository.findByUserId(userId).associateBy { it.id }
-        val totalValue = assets.sumOf { it.currentValue }
 
-        val byType = assets
+        // 가장 비중이 큰 통화를 기준 통화로 사용
+        val primaryCurrency = assets
+            .groupBy { it.currency }
+            .maxByOrNull { (_, list) -> list.sumOf { it.currentValue } }
+            ?.key ?: "KRW"
+
+        val primaryAssets = assets.filter { it.currency == primaryCurrency }
+        val totalValue = primaryAssets.sumOf { it.currentValue }
+
+        val byType = primaryAssets
             .groupBy { it.type }
             .mapValues { (type, list) ->
                 val typeValue = list.sumOf { it.currentValue }
@@ -65,15 +78,21 @@ class GetPortfolioUseCase(
 
         val summaries = assets.map { asset ->
             val accountName = accounts[asset.accountId]?.accountName ?: "Unknown"
+            val account     = accounts[asset.accountId]
             AssetSummary(
                 id               = asset.id,
                 accountId        = asset.accountId,
                 accountName      = accountName,
                 name             = asset.name,
                 symbol           = asset.symbol,
+                exchange         = resolveExchange(asset.type, account?.provider?.name),
                 type             = asset.type,
+                subType          = asset.subType,
                 quantity         = asset.quantity,
+                avgCost          = asset.purchasePrice,
                 currentValue     = asset.currentValue,
+                loanAmount       = asset.loanAmount,
+                netEquity        = asset.netEquity(),
                 currency         = asset.currency,
                 unrealizedPnl    = asset.unrealizedPnl(),
                 returnRate       = asset.returnRate(),
@@ -84,9 +103,16 @@ class GetPortfolioUseCase(
         return PortfolioResponse(
             userId     = userId,
             totalValue = totalValue,
-            currency   = "USD",
+            currency   = primaryCurrency,
             byType     = byType,
             assets     = summaries,
         )
+    }
+
+    // 자산 유형 + provider → SSE 구독 exchange 키 결정
+    private fun resolveExchange(type: AssetType, provider: String?): String? = when (type) {
+        AssetType.STOCK -> "STOCK"
+        AssetType.CRYPTO -> provider  // BINANCE, UPBIT 등 provider 이름 그대로
+        else -> null
     }
 }

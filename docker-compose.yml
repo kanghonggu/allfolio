@@ -48,7 +48,9 @@ services:
     volumes:
       # Keycloak 데이터 영속성을 위한 볼륨
       - keycloak_data:/opt/keycloak/data
-    
+      # Allfolio 커스텀 테마
+      - ./keycloak-theme/allfolio:/opt/keycloak/themes/allfolio
+
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,6 +61,8 @@ services:
       --db-url=jdbc:postgresql://postgres:5432/keycloak
       --db-username=postgres
       --db-password=postgres
+      --spi-theme-welcome-theme=allfolio
+      --spi-login-protocol-openid-connect-legacy-logout-redirect-uri=true
     
     networks:
       - allfolio-network
@@ -69,6 +73,93 @@ services:
       timeout: 5s
       retries: 5
 
+  # Kafka (KRaft 모드 — Zookeeper 없음)
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: allfolio-kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - allfolio-network
+
+  # Redis (시세 캐시, PnL 캐시)
+  redis:
+    image: redis:7-alpine
+    container_name: allfolio-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - allfolio-network
+
+  # backend-app (거래 API, PnL 계산)
+  backend-app:
+    build:
+      context: ./allfolio-backend
+      dockerfile: backend-app/Dockerfile
+    container_name: allfolio-backend
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/allfolio
+      DB_USER: postgres
+      DB_PASS: postgres
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_ENABLED: "true"
+      KEYCLOAK_ISSUER_URI: http://keycloak:8080/realms/allfolio
+    ports:
+      - "8090:8090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - allfolio-network
+
+  # market-data (WebSocket 시세 수신 → Kafka)
+  market-data:
+    build:
+      context: ./allfolio-backend
+      dockerfile: market-data/Dockerfile
+    container_name: allfolio-market-data
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/allfolio
+      DB_USER: postgres
+      DB_PASS: postgres
+      KAFKA_BOOTSTRAP: kafka:9092
+      BINANCE_WS_ENABLED: "true"
+      BINANCE_SYMBOLS: BTCUSDT,ETHUSDT
+      KIS_WS_ENABLED: "false"
+    ports:
+      - "8091:8091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - allfolio-network
+
   # User 서비스 (Spring Boot)
   user-service:
     image: allfolio/user-service:latest
@@ -78,24 +169,22 @@ services:
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
       SPRING_JPA_HIBERNATE_DDL_AUTO: validate
-    
     ports:
       - "8081:8080"
-    
     depends_on:
       postgres:
         condition: service_healthy
-    
     networks:
       - allfolio-network
 
 volumes:
-  # PostgreSQL 데이터 영속성
   postgres_data:
     driver: local
-  
-  # Keycloak 데이터 영속성
   keycloak_data:
+    driver: local
+  kafka_data:
+    driver: local
+  redis_data:
     driver: local
 
 networks:
