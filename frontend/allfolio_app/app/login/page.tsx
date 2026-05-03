@@ -122,7 +122,7 @@ export default function LoginPage() {
         <p className="text-center text-xs text-gray-600">
           계정이 없으신가요?{' '}
           <a
-            href={`${process.env.NEXT_PUBLIC_KEYCLOAK_URL}/realms/${process.env.NEXT_PUBLIC_KEYCLOAK_REALM}/protocol/openid-connect/registrations?client_id=${process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin + '/unified' : '')}`}
+            href={`${process.env.NEXT_PUBLIC_KEYCLOAK_URL}/realms/${process.env.NEXT_PUBLIC_KEYCLOAK_REALM}/protocol/openid-connect/registrations?client_id=${process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent((process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000') + '/unified')}`}
             className="text-blue-400 hover:text-blue-300"
           >
             회원가입

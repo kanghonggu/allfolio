@@ -23,7 +23,10 @@
   "failureFactor": 30,
   "defaultLocale": "ko",
   "internationalizationEnabled": true,
-  "supportedLocales": ["ko", "en"],
+  "supportedLocales": [
+    "ko",
+    "en"
+  ],
   "accessTokenLifespan": 3600,
   "accessTokenLifespanForImplicitFlow": 900,
   "ssoSessionIdleTimeout": 1800,
@@ -75,10 +78,12 @@
       "authorizationServicesEnabled": false,
       "protocol": "openid-connect",
       "redirectUris": [
-        "http://localhost:3000/*"
+        "http://localhost:3000/*",
+        "https://allfolio.vercel.app/*"
       ],
       "webOrigins": [
-        "http://localhost:3000"
+        "http://localhost:3000",
+        "https://allfolio.vercel.app"
       ],
       "rootUrl": "",
       "baseUrl": "",
@@ -140,7 +145,9 @@
     ],
     "client": {}
   },
-  "defaultRoles": ["user"],
+  "defaultRoles": [
+    "user"
+  ],
   "users": [
     {
       "username": "testuser",
@@ -150,7 +157,9 @@
       "enabled": true,
       "emailVerified": true,
       "attributes": {
-        "locale": ["ko"]
+        "locale": [
+          "ko"
+        ]
       },
       "credentials": [
         {
@@ -159,7 +168,9 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["user"],
+      "realmRoles": [
+        "user"
+      ],
       "clientRoles": {}
     }
   ],
@@ -177,7 +188,9 @@
   },
   "smtpServer": {},
   "eventsEnabled": false,
-  "eventsListeners": ["jboss-logging"],
+  "eventsListeners": [
+    "jboss-logging"
+  ],
   "enabledEventTypes": [],
   "adminEventsEnabled": false,
   "adminEventsDetailsEnabled": false,
