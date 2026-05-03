@@ -199,8 +199,7 @@ export default function NewAccountPage() {
             <p className="text-sm font-medium text-blue-400">
               {category === 'EXCHANGE' ? `${exchangeInfo?.label} 연동` :
                category === 'STOCK'    ? '증권 계좌' :
-               category === 'WALLET'   ? '블록체인 지갑' :
-               category === 'CSV'      ? 'CSV 업로드' : '수동 입력'}
+               category === 'WALLET'   ? '블록체인 지갑' : '수동 입력'}
             </p>
           </div>
 

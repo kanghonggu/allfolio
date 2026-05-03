@@ -28,7 +28,7 @@ export default function BenchmarkPage() {
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['report', 'benchmark', period],
-    queryFn: () => reportApi.benchmark(period),
+    queryFn: () => reportApi!.benchmark(period),
     enabled: !!reportApi,
   })
 

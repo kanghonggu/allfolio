@@ -24,7 +24,7 @@ export default function PerformancePage() {
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['report', 'performance', period],
-    queryFn: () => reportApi.performance(period),
+    queryFn: () => reportApi!.performance(period),
     enabled: !!reportApi,
   })
 

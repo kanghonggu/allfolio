@@ -21,7 +21,7 @@ export interface PnlStreamState {
   error: string | null
 }
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8090'
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8090'
 const RECONNECT_DELAY_MS = 3000
 
 /**
