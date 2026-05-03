@@ -1,4 +1,0 @@
-{"type":"server-started","port":61807,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:61807","screen_dir":"/Users/hong9/IdeaProjects/allfolio/.superpowers/brainstorm/23069-1777468039/content","state_dir":"/Users/hong9/IdeaProjects/allfolio/.superpowers/brainstorm/23069-1777468039/state"}
-{"type":"screen-added","file":"/Users/hong9/IdeaProjects/allfolio/.superpowers/brainstorm/23069-1777468039/content/dashboard-layout.html"}
-{"type":"screen-added","file":"/Users/hong9/IdeaProjects/allfolio/.superpowers/brainstorm/23069-1777468039/content/metric-ux.html"}
-{"type":"server-stopped","reason":"idle timeout"}

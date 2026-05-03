@@ -23,6 +23,10 @@
 .idea/
 *.iml
 
+# Claude Code / Superpowers 내부 파일
+.claude/
+.superpowers/
+
 # Gradle 빌드 결과물
 **/build/
 **/.gradle/
