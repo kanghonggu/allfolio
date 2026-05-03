@@ -69,7 +69,7 @@
       "name": "Allfolio Frontend",
       "description": "Allfolio Frontend Client",
       "enabled": true,
-      "publicClient": false,
+      "publicClient": true,
       "secret": "allfolio-frontend-secret",
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
