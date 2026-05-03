@@ -72,8 +72,8 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
-      KEYCLOAK_ISSUER_URI: http://keycloak:8080/realms/allfolio
-      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://keycloak:8080/realms/allfolio
+      KEYCLOAK_ISSUER_URI: https://auth.allfolio.me/realms/allfolio
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: https://auth.allfolio.me/realms/allfolio
     depends_on:
       postgres:
         condition: service_healthy
