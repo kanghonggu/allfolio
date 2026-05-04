@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { createUnifiedApi } from './unified-api'
 import { createReportApi } from './report-api'
 import { createGoalApi } from './goal-api'
+import { createAiApi } from './ai-api'
 
 export function useUnifiedApi() {
   const { accessToken } = useAuth()
@@ -26,6 +27,14 @@ export function useGoalApi() {
   const { accessToken } = useAuth()
   return useMemo(
     () => (accessToken ? createGoalApi(accessToken) : null),
+    [accessToken],
+  )
+}
+
+export function useAiApi() {
+  const { accessToken } = useAuth()
+  return useMemo(
+    () => (accessToken ? createAiApi(accessToken) : null),
     [accessToken],
   )
 }

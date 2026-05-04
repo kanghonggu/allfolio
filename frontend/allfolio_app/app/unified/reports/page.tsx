@@ -87,6 +87,13 @@ const REPORTS = [
     color: 'border-yellow-700 hover:border-yellow-500',
     badge: '💰',
   },
+  {
+    href:  '/unified/advisor',
+    title: 'AI 금융 상담사',
+    desc:  '포트폴리오 데이터 기반 LLM 금융 상담',
+    color: 'border-green-700 hover:border-green-500',
+    badge: '🤖',
+  },
 ]
 
 export default function ReportsHub() {

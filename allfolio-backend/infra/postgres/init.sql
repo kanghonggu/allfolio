@@ -327,3 +327,13 @@ CREATE TABLE IF NOT EXISTS benchmark_daily (
     CONSTRAINT pk_benchmark_daily PRIMARY KEY (index_type, date)
 );
 
+-- ── ua_ai_configs ─────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ua_ai_configs (
+    user_id     UUID          NOT NULL,
+    base_url    VARCHAR(500)  NOT NULL,
+    api_key     VARCHAR(1000) NOT NULL,
+    model       VARCHAR(200)  NOT NULL,
+    updated_at  TIMESTAMP     NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_ua_ai_configs PRIMARY KEY (user_id)
+);
+
