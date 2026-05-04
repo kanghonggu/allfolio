@@ -4,6 +4,7 @@ import type {
   RiskReport, PositionsReport, BenchmarkReport,
   NetWorthReport, MonthlyPnlReport,
 } from '@/types/report'
+import type { DividendReport } from '@/types/dividend'
 
 const BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8090'}/api/reports`
 
@@ -38,5 +39,8 @@ export function createReportApi(accessToken: string) {
 
     monthlyPnl: async (): Promise<MonthlyPnlReport> =>
       (await api.get<MonthlyPnlReport>('/monthly-pnl')).data,
+
+    dividend: async (period = 'YTD'): Promise<DividendReport> =>
+      (await api.get<DividendReport>('/dividend', { params: { period } })).data,
   }
 }
