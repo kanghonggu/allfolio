@@ -138,7 +138,14 @@ class DividendReportService(private val jdbc: JdbcTemplate) {
         val elapsedMonths = if (since != null) {
             java.time.temporal.ChronoUnit.MONTHS.between(since, LocalDate.now()).coerceAtLeast(1)
         } else {
-            val oldest = recentHistory.minByOrNull { it.tradedAt }?.tradedAt
+            val oldest = runCatching {
+                jdbc.query(
+                    """SELECT MIN(traded_at) AS oldest FROM ua_stock_trades
+                       WHERE user_id = ? AND trade_type = 'DIVIDEND'""",
+                    { rs, _ -> rs.getDate("oldest")?.toLocalDate() },
+                    userId,
+                ).firstOrNull()
+            }.getOrElse { null }
             if (oldest != null)
                 java.time.temporal.ChronoUnit.MONTHS.between(oldest, LocalDate.now()).coerceAtLeast(1)
             else 1L
