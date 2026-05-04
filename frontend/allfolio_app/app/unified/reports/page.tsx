@@ -80,6 +80,13 @@ const REPORTS = [
     color: 'border-sky-700 hover:border-sky-500',
     badge: '🔭',
   },
+  {
+    href:  '/unified/reports/dividend',
+    title: '배당금 보고서',
+    desc:  '수령 배당금 합계, 월별 추이, 종목별 배당 이력',
+    color: 'border-yellow-700 hover:border-yellow-500',
+    badge: '💰',
+  },
 ]
 
 export default function ReportsHub() {
