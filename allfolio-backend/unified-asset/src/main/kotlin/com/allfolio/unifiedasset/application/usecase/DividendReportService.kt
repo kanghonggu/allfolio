@@ -46,6 +46,7 @@ data class DividendEntry(
 
 @Service
 class DividendReportService(private val jdbc: JdbcTemplate) {
+    private val log = org.slf4j.LoggerFactory.getLogger(javaClass)
 
     @Transactional(readOnly = true)
     fun report(userId: UUID, period: String): DividendReport {
@@ -169,6 +170,7 @@ class DividendReportService(private val jdbc: JdbcTemplate) {
     private fun periodStart(period: String): LocalDate? = when (period) {
         "YTD" -> LocalDate.of(LocalDate.now().year, 1, 1)
         "1Y"  -> LocalDate.now().minusYears(1)
-        else  -> null   // 전체
+        "전체" -> null
+        else  -> null.also { log.warn("Unknown period '{}', defaulting to all-time", period) }
     }
 }
