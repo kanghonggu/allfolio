@@ -6,7 +6,10 @@ import java.util.UUID
 
 @RestController
 @RequestMapping("/api/reports")
-class ReportController(private val svc: ReportService) {
+class ReportController(
+    private val svc: ReportService,
+    private val dividendSvc: DividendReportService,
+) {
 
     @GetMapping("/summary")
     fun summary(@RequestHeader("X-User-Id") userId: UUID): SummaryReport =
@@ -43,4 +46,10 @@ class ReportController(private val svc: ReportService) {
     @GetMapping("/monthly-pnl")
     fun monthlyPnl(@RequestHeader("X-User-Id") userId: UUID): MonthlyPnlReport =
         svc.monthlyPnl(userId)
+
+    @GetMapping("/dividend")
+    fun dividend(
+        @RequestHeader("X-User-Id") userId: UUID,
+        @RequestParam(defaultValue = "YTD") period: String,
+    ): DividendReport = dividendSvc.report(userId, period)
 }
