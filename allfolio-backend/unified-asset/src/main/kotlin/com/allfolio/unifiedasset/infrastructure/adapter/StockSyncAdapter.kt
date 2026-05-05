@@ -23,12 +23,13 @@ import java.math.RoundingMode
  * - 순 수량(BUY - SELL) > 0 인 종목만 자산으로 등록
  * - 평균 매수가: 이동평균법 — BUY 시 (보유금액 + 매수금액) / (보유수량 + 매수수량)
  *   SELL 시 평균가 유지, 전량 매도 후 재매수 시 신규 평균가로 초기화
- * - currentValue = 종목코드(symbol)가 있으면 Yahoo Finance 실시간 시세, 없으면 평균 매수가
+ * - currentValue: 6자리 숫자 종목코드 → FSC API(금융위원회), 해외종목 → Yahoo Finance, 없으면 평균 매수가
  */
 @Component
 class StockSyncAdapter(
     private val stockTradeRepository: StockTradeRepository,
     private val yahooFinanceClient: YahooFinanceClient,
+    private val fscStockClient: FscStockClient,
 ) : SyncAdapter {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -81,12 +82,7 @@ class StockSyncAdapter(
             .filter { it.quantity > BigDecimal.ZERO }
             .map { pos ->
                 val livePrice = pos.symbol?.let { sym ->
-                    yahooFinanceClient.getPrice(sym).also { price ->
-                        if (price == null) log.warn(
-                            "[StockSync] 실시간 시세 조회 실패: symbol={}, stockName={}, accountId={}",
-                            sym, pos.stockName, account.id,
-                        )
-                    }
+                    fetchLivePrice(sym, pos.stockName, account.id.toString())
                 } ?: run {
                     log.warn(
                         "[StockSync] symbol 없음 — 원가를 현재가로 사용 (수익률 0%): stockName={}, accountId={}. " +
@@ -114,5 +110,21 @@ class StockSyncAdapter(
                     valuationMethod = if (livePrice != null) ValuationMethod.MARKET_PRICE else ValuationMethod.USER_INPUT,
                 )
             }
+    }
+
+    // 6자리 숫자 코드 → FSC API(KR), 그 외 → Yahoo Finance
+    private fun fetchLivePrice(symbol: String, stockName: String, accountId: String): BigDecimal? {
+        val isKrCode = symbol.matches(Regex("\\d{6}"))
+        val price = if (isKrCode) {
+            fscStockClient.getPrice(symbol) ?: yahooFinanceClient.getPrice("$symbol.KS")
+                ?: yahooFinanceClient.getPrice("$symbol.KQ")
+        } else {
+            yahooFinanceClient.getPrice(symbol)
+        }
+        if (price == null) log.warn(
+            "[StockSync] 실시간 시세 조회 실패: symbol={}, stockName={}, accountId={}",
+            symbol, stockName, accountId,
+        )
+        return price
     }
 }

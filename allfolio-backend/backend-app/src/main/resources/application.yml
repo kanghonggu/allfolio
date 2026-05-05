@@ -140,6 +140,9 @@ management:
     tags:
       application: allfolio-backend
 
+fsc:
+  api-key: ${FSC_API_KEY:}
+
 unified-asset:
   moralis:
     api-key: ${MORALIS_API_KEY:}
