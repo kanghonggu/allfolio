@@ -53,6 +53,7 @@ class AiConsultantService(
             "messages" to allMessages,
         )
 
+        log.info("[AI] chat start userId={} model={}", userId, config.model)
         val emitter = SseEmitter(0L)
         val client = WebClient.builder().build()
 
@@ -72,7 +73,7 @@ class AiConsultantService(
             .retrieve()
             .bodyToFlux(String::class.java)
             .subscribe(
-                { line -> handleLine(line, emitter) },
+                { line -> log.info("[AI] line: {}", line.take(80)); handleLine(line, emitter) },
                 { e ->
                     log.error("[AI] stream error userId={}: {}", userId, e.message)
                     runCatching {
