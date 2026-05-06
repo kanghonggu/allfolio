@@ -56,9 +56,17 @@ class AiConsultantService(
         val emitter = SseEmitter(0L)
         val client = WebClient.builder().build()
 
+        val isAnthropic = config.baseUrl.contains("anthropic.com")
         client.post()
             .uri("${config.baseUrl}/chat/completions")
-            .header("Authorization", "Bearer ${config.apiKey}")
+            .apply {
+                if (isAnthropic) {
+                    header("x-api-key", config.apiKey)
+                    header("anthropic-version", "2023-06-01")
+                } else {
+                    header("Authorization", "Bearer ${config.apiKey}")
+                }
+            }
             .header("Content-Type", "application/json")
             .bodyValue(body)
             .retrieve()
