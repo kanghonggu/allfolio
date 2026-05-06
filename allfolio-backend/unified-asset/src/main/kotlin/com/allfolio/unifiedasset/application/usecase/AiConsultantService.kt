@@ -67,7 +67,19 @@ class AiConsultantService(
                 { line -> handleLine(line, emitter) },
                 { e ->
                     log.error("[AI] stream error userId={}: {}", userId, e.message)
-                    emitter.completeWithError(e)
+                    runCatching {
+                        val msg = when (e) {
+                            is org.springframework.web.reactive.function.client.WebClientResponseException ->
+                                when (e.statusCode.value()) {
+                                    429 -> "[오류] 요청 한도 초과(429). API 키 사용량을 확인해주세요."
+                                    401 -> "[오류] API 키가 올바르지 않습니다(401)."
+                                    else -> "[오류] LLM 서버 오류: ${e.statusCode}"
+                                }
+                            else -> "[오류] ${e.message}"
+                        }
+                        emitter.send(msg)
+                    }
+                    emitter.complete()
                 },
                 { emitter.complete() },
             )
