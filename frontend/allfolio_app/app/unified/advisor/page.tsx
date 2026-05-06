@@ -93,7 +93,8 @@ export default function AdvisorPage() {
       <div className="flex items-center gap-3 mb-4">
         <Link href="/unified/reports" className="text-gray-400 hover:text-white text-sm">← 보고서</Link>
         <h1 className="text-xl font-bold">AI 금융 상담사</h1>
-        <span className="ml-auto text-xs text-gray-500">{config.model}</span>
+        <span className="text-xs text-gray-500">{config.model}</span>
+        <Link href="/unified/settings/ai" className="ml-auto text-xs text-gray-500 hover:text-gray-300">⚙ 설정</Link>
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-4 rounded-xl border border-gray-800 bg-gray-900 p-4">
