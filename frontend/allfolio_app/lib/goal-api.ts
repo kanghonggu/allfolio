@@ -12,10 +12,10 @@ export function createGoalApi(accessToken: string) {
 
   return {
     list: async (): Promise<GoalsResponse> =>
-      (await api.get<GoalsResponse>('/')).data,
+      (await api.get<GoalsResponse>('')).data,
 
     create: async (req: GoalRequest): Promise<GoalResponse> =>
-      (await api.post<GoalResponse>('/', req)).data,
+      (await api.post<GoalResponse>('', req)).data,
 
     update: async (id: string, req: GoalRequest): Promise<GoalResponse> =>
       (await api.put<GoalResponse>(`/${id}`, req)).data,
