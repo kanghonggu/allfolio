@@ -1,6 +1,7 @@
 package com.allfolio.unifiedasset.api
 
 import com.allfolio.unifiedasset.application.usecase.*
+import jakarta.servlet.http.HttpServletResponse
 import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
@@ -30,5 +31,10 @@ class AiConsultantController(private val svc: AiConsultantService) {
     fun chat(
         @RequestHeader("X-User-Id") userId: UUID,
         @RequestBody req: ChatRequest,
-    ): SseEmitter = svc.chat(userId, req.messages)
+        response: HttpServletResponse,
+    ): SseEmitter {
+        response.setHeader("X-Accel-Buffering", "no")
+        response.setHeader("Cache-Control", "no-cache")
+        return svc.chat(userId, req.messages)
+    }
 }
