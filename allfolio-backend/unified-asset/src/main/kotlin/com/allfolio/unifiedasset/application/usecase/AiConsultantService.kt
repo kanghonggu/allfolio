@@ -13,10 +13,19 @@ import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.UUID
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 
 data class AiConfigResponse(val baseUrl: String, val model: String, val hasKey: Boolean)
 data class SaveAiConfigRequest(val baseUrl: String, val apiKey: String, val model: String)
 data class ChatMessage(val role: String, val content: String)
+data class ChatJobResult(
+    val status: String,
+    val content: String? = null,
+    val error: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+)
 
 @Service
 class AiConsultantService(
@@ -25,6 +34,8 @@ class AiConsultantService(
     private val objectMapper: ObjectMapper,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
+    private val executor = Executors.newCachedThreadPool()
+    private val jobs = ConcurrentHashMap<String, ChatJobResult>()
 
     fun getConfig(userId: UUID): AiConfigResponse? =
         configRepo.findById(userId).orElse(null)?.let {
@@ -38,6 +49,25 @@ class AiConsultantService(
     }
 
     fun deleteConfig(userId: UUID) = configRepo.deleteById(userId)
+
+    fun submitChat(userId: UUID, messages: List<ChatMessage>): String {
+        val jobId = UUID.randomUUID().toString()
+        jobs[jobId] = ChatJobResult("pending")
+        val cutoff = System.currentTimeMillis() - 600_000
+        jobs.entries.removeIf { it.value.createdAt < cutoff }
+        CompletableFuture.runAsync({
+            try {
+                val content = chat(userId, messages)
+                jobs[jobId] = ChatJobResult("done", content = content)
+            } catch (e: Exception) {
+                jobs[jobId] = ChatJobResult("error", error = e.message ?: "오류가 발생했습니다")
+            }
+        }, executor)
+        return jobId
+    }
+
+    fun getChatResult(jobId: String): ChatJobResult =
+        jobs[jobId] ?: throw IllegalArgumentException("Job not found")
 
     fun chat(userId: UUID, messages: List<ChatMessage>): String {
         val config = configRepo.findById(userId).orElse(null)
