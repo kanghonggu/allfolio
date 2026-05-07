@@ -35,38 +35,38 @@ export function createAiApi(accessToken: string) {
       onError: (e: Error) => void,
     ): AbortController => {
       const controller = new AbortController()
+      const xhr = new XMLHttpRequest()
+      let processed = 0
 
-      fetch(`${BASE_URL}/chat`, {
-        method: 'POST',
-        signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ messages }),
-      })
-        .then(async (res) => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          const reader = res.body?.getReader()
-          if (!reader) throw new Error('no response body')
-          const decoder = new TextDecoder()
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
-            const chunk = decoder.decode(value, { stream: true })
-            for (const line of chunk.split('\n')) {
-              if (line.startsWith('data:')) {
-                const token = line.slice(5)
-                if (token) onToken(token)
-              }
-            }
+      xhr.open('POST', `${BASE_URL}/chat`, true)
+      xhr.setRequestHeader('Content-Type', 'application/json')
+      xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`)
+
+      xhr.onprogress = () => {
+        const newText = xhr.responseText.slice(processed)
+        processed = xhr.responseText.length
+        for (const line of newText.split('\n')) {
+          if (line.startsWith('data:')) {
+            const token = line.slice(5)
+            if (token) onToken(token)
           }
+        }
+      }
+
+      xhr.onload = () => {
+        if (xhr.status >= 400) {
+          onError(new Error(`HTTP ${xhr.status}`))
+        } else {
           onDone()
-        })
-        .catch((e: unknown) => {
-          if (e instanceof Error && e.name === 'AbortError') return
-          onError(e instanceof Error ? e : new Error(String(e)))
-        })
+        }
+      }
+
+      xhr.onerror = () => onError(new Error(`Network error (${xhr.status})`))
+      xhr.ontimeout = () => onError(new Error('Request timeout'))
+
+      controller.signal.addEventListener('abort', () => xhr.abort())
+
+      xhr.send(JSON.stringify({ messages }))
 
       return controller
     },
