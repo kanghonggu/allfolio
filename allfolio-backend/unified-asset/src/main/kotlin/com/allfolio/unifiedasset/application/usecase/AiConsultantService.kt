@@ -55,6 +55,7 @@ class AiConsultantService(
 
         log.info("[AI] chat start userId={} model={}", userId, config.model)
         val emitter = SseEmitter(0L)
+        runCatching { emitter.send(SseEmitter.event().comment("ok")) }
         val client = WebClient.builder().build()
 
         val isAnthropic = config.baseUrl.contains("anthropic.com")
