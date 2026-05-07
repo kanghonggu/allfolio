@@ -6,7 +6,7 @@ const BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:80
 export function createAiApi(accessToken: string) {
   const api = axios.create({
     baseURL: BASE_URL,
-    timeout: 15_000,
+    timeout: 120_000,
     headers: { Authorization: `Bearer ${accessToken}` },
   })
 
@@ -28,47 +28,9 @@ export function createAiApi(accessToken: string) {
       await api.delete('/config')
     },
 
-    chat: (
-      messages: ChatMessage[],
-      onToken: (token: string) => void,
-      onDone: () => void,
-      onError: (e: Error) => void,
-    ): AbortController => {
-      const controller = new AbortController()
-      const xhr = new XMLHttpRequest()
-      let processed = 0
-
-      xhr.open('POST', `${BASE_URL}/chat`, true)
-      xhr.setRequestHeader('Content-Type', 'application/json')
-      xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`)
-
-      xhr.onprogress = () => {
-        const newText = xhr.responseText.slice(processed)
-        processed = xhr.responseText.length
-        for (const line of newText.split('\n')) {
-          if (line.startsWith('data:')) {
-            const token = line.slice(5)
-            if (token) onToken(token)
-          }
-        }
-      }
-
-      xhr.onload = () => {
-        if (xhr.status >= 400) {
-          onError(new Error(`HTTP ${xhr.status}`))
-        } else {
-          onDone()
-        }
-      }
-
-      xhr.onerror = () => onError(new Error(`Network error (${xhr.status})`))
-      xhr.ontimeout = () => onError(new Error('Request timeout'))
-
-      controller.signal.addEventListener('abort', () => xhr.abort())
-
-      xhr.send(JSON.stringify({ messages }))
-
-      return controller
+    chat: async (messages: ChatMessage[]): Promise<string> => {
+      const res = await api.post<{ content: string }>('/chat', { messages })
+      return res.data.content
     },
   }
 }

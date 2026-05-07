@@ -8,7 +8,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
+import org.springframework.web.reactive.function.client.WebClientResponseException
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -39,7 +39,7 @@ class AiConsultantService(
 
     fun deleteConfig(userId: UUID) = configRepo.deleteById(userId)
 
-    fun chat(userId: UUID, messages: List<ChatMessage>): SseEmitter {
+    fun chat(userId: UUID, messages: List<ChatMessage>): String {
         val config = configRepo.findById(userId).orElse(null)
             ?: throw IllegalStateException("LLM 설정이 없습니다")
 
@@ -49,68 +49,40 @@ class AiConsultantService(
 
         val body = mapOf(
             "model" to config.model,
-            "stream" to true,
+            "stream" to false,
             "messages" to allMessages,
         )
 
-        log.info("[AI] chat start userId={} model={}", userId, config.model)
-        val emitter = SseEmitter(0L)
-        runCatching { emitter.send(SseEmitter.event().comment("ok")) }
-        val client = WebClient.builder().build()
-
+        log.info("[AI] chat userId={} model={}", userId, config.model)
         val isAnthropic = config.baseUrl.contains("anthropic.com")
-        client.post()
-            .uri("${config.baseUrl}/chat/completions")
-            .apply {
-                if (isAnthropic) {
-                    header("x-api-key", config.apiKey)
-                    header("anthropic-version", "2023-06-01")
-                } else {
-                    header("Authorization", "Bearer ${config.apiKey}")
-                }
-            }
-            .header("Content-Type", "application/json")
-            .bodyValue(body)
-            .retrieve()
-            .bodyToFlux(String::class.java)
-            .subscribe(
-                { line -> log.info("[AI] line: {}", line.take(80)); handleLine(line, emitter) },
-                { e ->
-                    log.error("[AI] stream error userId={}: {}", userId, e.message)
-                    runCatching {
-                        val msg = when (e) {
-                            is org.springframework.web.reactive.function.client.WebClientResponseException ->
-                                when (e.statusCode.value()) {
-                                    429 -> "[오류] 요청 한도 초과(429). API 키 사용량을 확인해주세요."
-                                    401 -> "[오류] API 키가 올바르지 않습니다(401)."
-                                    else -> "[오류] LLM 서버 오류: ${e.statusCode}"
-                                }
-                            else -> "[오류] ${e.message}"
-                        }
-                        emitter.send(msg)
+
+        return try {
+            val response = WebClient.builder().build()
+                .post()
+                .uri("${config.baseUrl}/chat/completions")
+                .apply {
+                    if (isAnthropic) {
+                        header("x-api-key", config.apiKey)
+                        header("anthropic-version", "2023-06-01")
+                    } else {
+                        header("Authorization", "Bearer ${config.apiKey}")
                     }
-                    emitter.complete()
-                },
-                { emitter.complete() },
-            )
+                }
+                .header("Content-Type", "application/json")
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(ChatCompletionResponse::class.java)
+                .block() ?: throw IllegalStateException("Empty response from LLM")
 
-        return emitter
-    }
-
-    private fun handleLine(line: String, emitter: SseEmitter) {
-        val trimmed = line.trim()
-        if (!trimmed.startsWith("data:")) return
-        val payload = trimmed.removePrefix("data:").trim()
-        if (payload == "[DONE]") {
-            emitter.complete()
-            return
-        }
-        runCatching {
-            val chunk = objectMapper.readValue(payload, StreamChunk::class.java)
-            val content = chunk.choices?.firstOrNull()?.delta?.content ?: return
-            if (content.isNotEmpty()) emitter.send(content)
-        }.onFailure { e ->
-            log.debug("[AI] parse error: {} | line={}", e.message, line)
+            response.choices?.firstOrNull()?.message?.content
+                ?: throw IllegalStateException("No content in LLM response")
+        } catch (e: WebClientResponseException) {
+            log.error("[AI] error userId={} status={}: {}", userId, e.statusCode.value(), e.message)
+            when (e.statusCode.value()) {
+                429 -> throw IllegalStateException("[오류] 요청 한도 초과(429). API 키 사용량을 확인해주세요.")
+                401 -> throw IllegalStateException("[오류] API 키가 올바르지 않습니다(401).")
+                else -> throw IllegalStateException("[오류] LLM 서버 오류: ${e.statusCode}")
+            }
         }
     }
 
@@ -220,11 +192,11 @@ $topAssetRows
         }.getOrNull()
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    data class StreamChunk(val choices: List<Choice>? = null)
+    data class ChatCompletionResponse(val choices: List<CompletionChoice>? = null)
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    data class Choice(val delta: Delta? = null)
+    data class CompletionChoice(val message: CompletionMessage? = null)
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    data class Delta(val content: String? = null)
+    data class CompletionMessage(val content: String? = null)
 }

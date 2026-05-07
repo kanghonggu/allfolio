@@ -1,13 +1,11 @@
 package com.allfolio.unifiedasset.api
 
 import com.allfolio.unifiedasset.application.usecase.*
-import jakarta.servlet.http.HttpServletResponse
-import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.*
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import java.util.UUID
 
 data class ChatRequest(val messages: List<ChatMessage>)
+data class ChatResponse(val content: String)
 
 @RestController
 @RequestMapping("/api/ai")
@@ -27,14 +25,9 @@ class AiConsultantController(private val svc: AiConsultantService) {
     fun deleteConfig(@RequestHeader("X-User-Id") userId: UUID) =
         svc.deleteConfig(userId)
 
-    @PostMapping("/chat", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
+    @PostMapping("/chat")
     fun chat(
         @RequestHeader("X-User-Id") userId: UUID,
         @RequestBody req: ChatRequest,
-        response: HttpServletResponse,
-    ): SseEmitter {
-        response.setHeader("X-Accel-Buffering", "no")
-        response.setHeader("Cache-Control", "no-cache")
-        return svc.chat(userId, req.messages)
-    }
+    ): ChatResponse = ChatResponse(svc.chat(userId, req.messages))
 }

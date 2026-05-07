@@ -17,39 +17,31 @@ export default function AdvisorPage() {
 
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
-  const [streaming, setStreaming] = useState(false)
-  const abortRef = useRef<AbortController | null>(null)
+  const [loading, setLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  function sendMessage() {
-    if (!input.trim() || streaming || !api) return
+  async function sendMessage() {
+    if (!input.trim() || loading || !api) return
 
     const userMsg: ChatMessage = { role: 'user', content: input.trim() }
     const nextMessages = [...messages, userMsg]
     setMessages(nextMessages)
     setInput('')
-    setStreaming(true)
+    setLoading(true)
 
-    let assistantContent = ''
-    setMessages(prev => [...prev, { role: 'assistant', content: '' }])
-
-    abortRef.current = api.chat(
-      nextMessages,
-      (token) => {
-        assistantContent += token
-        setMessages(prev => {
-          const updated = [...prev]
-          updated[updated.length - 1] = { role: 'assistant', content: assistantContent }
-          return updated
-        })
-      },
-      () => setStreaming(false),
-      () => setStreaming(false),
-    )
+    try {
+      const content = await api.chat(nextMessages)
+      setMessages(prev => [...prev, { role: 'assistant', content }])
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : '오류가 발생했습니다.'
+      setMessages(prev => [...prev, { role: 'assistant', content: `[오류] ${msg}` }])
+    } finally {
+      setLoading(false)
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -98,7 +90,7 @@ export default function AdvisorPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-4 rounded-xl border border-gray-800 bg-gray-900 p-4">
-        {messages.length === 0 && (
+        {messages.length === 0 && !loading && (
           <div className="flex h-full items-center justify-center text-sm text-gray-600">
             포트폴리오 데이터를 분석할 준비가 되었습니다. 무엇이든 물어보세요.
           </div>
@@ -113,12 +105,20 @@ export default function AdvisorPage() {
               }`}
             >
               {msg.content}
-              {streaming && i === messages.length - 1 && msg.role === 'assistant' && (
-                <span className="ml-1 inline-block h-3 w-1 animate-pulse bg-gray-400" />
-              )}
             </div>
           </div>
         ))}
+        {loading && (
+          <div className="flex justify-start">
+            <div className="rounded-xl bg-gray-800 px-4 py-2.5">
+              <div className="flex gap-1">
+                <span className="h-2 w-2 animate-bounce rounded-full bg-gray-500 [animation-delay:0ms]" />
+                <span className="h-2 w-2 animate-bounce rounded-full bg-gray-500 [animation-delay:150ms]" />
+                <span className="h-2 w-2 animate-bounce rounded-full bg-gray-500 [animation-delay:300ms]" />
+              </div>
+            </div>
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
 
@@ -129,12 +129,12 @@ export default function AdvisorPage() {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={streaming}
+          disabled={loading}
           className="flex-1 resize-none rounded-xl border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none disabled:opacity-50"
         />
         <button
           onClick={sendMessage}
-          disabled={!input.trim() || streaming}
+          disabled={!input.trim() || loading}
           className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-40"
         >
           전송
