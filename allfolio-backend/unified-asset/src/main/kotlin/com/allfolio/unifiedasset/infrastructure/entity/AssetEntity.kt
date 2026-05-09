@@ -78,12 +78,15 @@ class AssetEntity(
     @Enumerated(EnumType.STRING)
     @Column(name = "liquidity_type", nullable = false, length = 20)
     val liquidityType: AssetLiquidityType = AssetLiquidityType.LIQUID,
+
+    @Column(name = "area_pyeong", precision = 10, scale = 2)
+    val areaPyeong: BigDecimal? = null,
 ) {
     fun toDomain() = Asset.reconstruct(
         id, userId, accountId, category, type, sourceType, name, symbol,
         quantity, purchasePrice, currentValue, currency, valuationMethod,
         confidenceLevel, lastUpdatedAt, createdAt, memo, subType, loanAmount,
-        maturityDate, liquidityType,
+        maturityDate, liquidityType, areaPyeong,
     )
 
     companion object {
@@ -92,7 +95,7 @@ class AssetEntity(
             a.name, a.symbol, a.quantity, a.purchasePrice, a.currentValue,
             a.currency, a.valuationMethod, a.confidenceLevel,
             a.lastUpdatedAt, a.createdAt, a.memo, a.subType, a.loanAmount,
-            a.maturityDate, a.liquidityType,
+            a.maturityDate, a.liquidityType, a.areaPyeong,
         )
     }
 }

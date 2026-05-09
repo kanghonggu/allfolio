@@ -54,6 +54,7 @@ export interface Asset {
   category:         AssetCategory
   sourceType:       AssetSourceType
   quantity:         number
+  areaPyeong:       number | null
   purchasePrice:    number
   currentValue:     number
   loanAmount:       number | null
@@ -65,6 +66,7 @@ export interface Asset {
   returnRate:       number
   memo:             string | null
   lastUpdatedAt:    string
+  liquidityType:    string
 }
 
 export interface CreateManualAssetPayload {
@@ -73,6 +75,7 @@ export interface CreateManualAssetPayload {
   type:          AssetType
   subType?:      string
   quantity:      number
+  areaPyeong?:   number | null
   purchasePrice: number
   currentValue:  number
   loanAmount?:   number | null

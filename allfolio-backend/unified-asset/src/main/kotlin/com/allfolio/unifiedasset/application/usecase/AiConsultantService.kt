@@ -123,7 +123,7 @@ class AiConsultantService(
 
         val pnl = queryScalar(
             """SELECT COALESCE(SUM(
-                CASE WHEN type = 'REAL_ESTATE' THEN current_value - purchase_price
+                CASE WHEN liquidity_type = 'ILLIQUID' THEN current_value - purchase_price
                      ELSE current_value - purchase_price * quantity
                 END
             ), 0) FROM ua_assets WHERE user_id = ?""", userId
@@ -142,11 +142,12 @@ class AiConsultantService(
             "SELECT COUNT(DISTINCT id) FROM ua_accounts WHERE user_id = ?", userId
         ) as Long? ?: 0L).toInt()
 
-        data class AssetRow(val name: String, val type: String, val value: BigDecimal, val currency: String, val quantity: BigDecimal)
+        data class AssetRow(val name: String, val type: String, val value: BigDecimal, val currency: String, val quantity: BigDecimal, val areaPyeong: BigDecimal?, val liquidityType: String)
         val topAssets = jdbc.query(
-            "SELECT name, type, current_value, currency, quantity FROM ua_assets WHERE user_id = ? ORDER BY current_value DESC LIMIT 10",
+            "SELECT name, type, current_value, currency, quantity, area_pyeong, liquidity_type FROM ua_assets WHERE user_id = ? ORDER BY current_value DESC LIMIT 10",
             { rs, _ -> AssetRow(rs.getString("name"), rs.getString("type"),
-                rs.getBigDecimal("current_value"), rs.getString("currency"), rs.getBigDecimal("quantity")) },
+                rs.getBigDecimal("current_value"), rs.getString("currency"), rs.getBigDecimal("quantity"),
+                rs.getBigDecimal("area_pyeong"), rs.getString("liquidity_type")) },
             userId,
         )
 
@@ -176,7 +177,11 @@ class AiConsultantService(
                 asset.value.divide(nav, 4, java.math.RoundingMode.HALF_UP)
                     .multiply(BigDecimal(100)).setScale(1, java.math.RoundingMode.HALF_UP)
             else BigDecimal.ZERO
-            val detail = if (asset.type == "REAL_ESTATE") "${asset.quantity.toInt()}평" else "${asset.quantity.toInt()}주"
+            val detail = when {
+                asset.areaPyeong != null -> "${asset.areaPyeong.toInt()}평"
+                asset.liquidityType == "ILLIQUID" -> "1채"
+                else -> "${asset.quantity.toInt()}주"
+            }
             "| ${asset.name} | ${asset.type} | ${asset.value.toLong()}${asset.currency} | $pct% | $detail |"
         }
 

@@ -31,8 +31,9 @@ data class CsvPreviewRow(
 class ImportCsvUseCase(private val assetRepository: AssetRepository) {
     /**
      * CSV format (header required):
-     * name,symbol,type,quantity,purchasePrice,currentValue,currency,memo
+     * name,symbol,type,quantity,purchasePrice,currentValue,currency,memo,areaPyeong
      * Supported types: STOCK, CRYPTO, REAL_ESTATE, VEHICLE, GOLD, CASH, ETC
+     * areaPyeong: optional, only for REAL_ESTATE (면적, 평 단위)
      */
     fun preview(csvContent: String): List<CsvPreviewRow> {
         val reader = CSVReaderBuilder(StringReader(csvContent)).withSkipLines(1).build()
@@ -67,15 +68,17 @@ class ImportCsvUseCase(private val assetRepository: AssetRepository) {
             val lineNo = idx + 2
             try {
                 if (row.size < 6) { errors += "Line $lineNo: 컬럼 수 부족"; skipped++; return@forEachIndexed }
-                val name     = row[0].trim().ifBlank { throw IllegalArgumentException("이름 필수") }
-                val symbol   = row.getOrNull(1)?.trim()?.ifBlank { null }
-                val type     = AssetType.valueOf(row[2].trim().uppercase())
-                val qty      = BigDecimal(row[3].trim())
-                val purchase = BigDecimal(row[4].trim())
-                val current  = BigDecimal(row[5].trim())
-                val currency = row.getOrElse(6) { "KRW" }.trim().ifBlank { "KRW" }
-                val memo     = row.getOrNull(7)?.trim()?.ifBlank { null }
-                val category = if (type in listOf(AssetType.STOCK, AssetType.CRYPTO, AssetType.CASH))
+                val name       = row[0].trim().ifBlank { throw IllegalArgumentException("이름 필수") }
+                val symbol     = row.getOrNull(1)?.trim()?.ifBlank { null }
+                val type       = AssetType.valueOf(row[2].trim().uppercase())
+                val qty        = BigDecimal(row[3].trim())
+                val purchase   = BigDecimal(row[4].trim())
+                val current    = BigDecimal(row[5].trim())
+                val currency   = row.getOrElse(6) { "KRW" }.trim().ifBlank { "KRW" }
+                val memo       = row.getOrNull(7)?.trim()?.ifBlank { null }
+                val areaPyeong = row.getOrNull(8)?.trim()?.ifBlank { null }?.let { BigDecimal(it) }
+                val isAreaType = type in listOf(AssetType.REAL_ESTATE, AssetType.JEONSE)
+                val category   = if (type in listOf(AssetType.STOCK, AssetType.CRYPTO, AssetType.CASH))
                     AssetCategory.FINANCIAL else AssetCategory.MANUAL
 
                 assets += com.allfolio.unifiedasset.domain.asset.Asset.create(
@@ -86,12 +89,13 @@ class ImportCsvUseCase(private val assetRepository: AssetRepository) {
                     sourceType      = AssetSourceType.CSV,
                     name            = name,
                     symbol          = symbol,
-                    quantity        = qty,
+                    quantity        = if (isAreaType) BigDecimal.ONE else qty,
                     purchasePrice   = purchase,
                     currentValue    = current,
                     currency        = currency,
                     valuationMethod = ValuationMethod.USER_INPUT,
                     memo            = memo,
+                    areaPyeong      = if (isAreaType) (areaPyeong ?: qty) else null,
                 )
             } catch (e: Exception) {
                 errors += "Line $lineNo: ${e.message}"

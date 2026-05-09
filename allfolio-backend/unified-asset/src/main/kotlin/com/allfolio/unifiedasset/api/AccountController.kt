@@ -55,7 +55,8 @@ data class CreateManualAssetRequest(
     val symbol: String?,
     val type: com.allfolio.unifiedasset.domain.asset.AssetType,
     val subType: String? = null,          // OWN/JEONSE/MONTHLY/PRESALE/LEASE/RENTAL
-    val quantity: java.math.BigDecimal,
+    val quantity: java.math.BigDecimal = java.math.BigDecimal.ONE,
+    val areaPyeong: java.math.BigDecimal? = null,
     val purchasePrice: java.math.BigDecimal,
     val currentValue: java.math.BigDecimal,
     val loanAmount: java.math.BigDecimal? = null,
@@ -193,6 +194,11 @@ class AccountController(
         )) com.allfolio.unifiedasset.domain.asset.AssetCategory.FINANCIAL
         else com.allfolio.unifiedasset.domain.asset.AssetCategory.MANUAL
 
+        val isAreaType = req.type in setOf(
+            com.allfolio.unifiedasset.domain.asset.AssetType.REAL_ESTATE,
+            com.allfolio.unifiedasset.domain.asset.AssetType.JEONSE,
+        )
+
         val asset = com.allfolio.unifiedasset.domain.asset.Asset.create(
             userId          = userId,
             accountId       = id,
@@ -201,7 +207,7 @@ class AccountController(
             sourceType      = com.allfolio.unifiedasset.domain.asset.AssetSourceType.MANUAL,
             name            = req.name,
             symbol          = req.symbol,
-            quantity        = req.quantity,
+            quantity        = if (isAreaType) java.math.BigDecimal.ONE else req.quantity,
             purchasePrice   = req.purchasePrice,
             currentValue    = req.currentValue,
             currency        = req.currency,
@@ -210,6 +216,7 @@ class AccountController(
             subType         = req.subType,
             loanAmount      = req.loanAmount,
             maturityDate    = req.maturityDate,
+            areaPyeong      = if (isAreaType) req.areaPyeong else null,
         )
         val saved = assetRepository.save(asset)
         val nav = assetRepository.findByUserId(userId).sumOf { it.currentValue }
@@ -346,6 +353,7 @@ data class AssetResponse(
     val category: String,
     val sourceType: String,
     val quantity: java.math.BigDecimal,
+    val areaPyeong: java.math.BigDecimal?,
     val purchasePrice: java.math.BigDecimal,
     val currentValue: java.math.BigDecimal,
     val loanAmount: java.math.BigDecimal?,
@@ -371,6 +379,7 @@ fun Asset.toResponse() = AssetResponse(
     category         = category.name,
     sourceType       = sourceType.name,
     quantity         = quantity,
+    areaPyeong       = areaPyeong,
     purchasePrice    = purchasePrice,
     currentValue     = currentValue,
     loanAmount       = loanAmount,

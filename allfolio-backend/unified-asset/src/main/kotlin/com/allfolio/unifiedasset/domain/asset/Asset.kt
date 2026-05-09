@@ -27,6 +27,7 @@ class Asset private constructor(
     val loanAmount: BigDecimal?,
     val maturityDate: LocalDate?,
     val liquidityType: AssetLiquidityType,
+    val areaPyeong: BigDecimal?,
 ) {
     // ILLIQUID(부동산·차량 등): purchasePrice가 총액이므로 수량을 곱하지 않음
     fun totalPurchaseCost(): BigDecimal =
@@ -64,6 +65,7 @@ class Asset private constructor(
             subType: String? = null,
             loanAmount: BigDecimal? = null,
             maturityDate: LocalDate? = null,
+            areaPyeong: BigDecimal? = null,
         ): Asset {
             require(name.isNotBlank()) { "자산명은 필수입니다" }
             require(quantity >= BigDecimal.ZERO) { "수량은 0 이상이어야 합니다" }
@@ -99,6 +101,7 @@ class Asset private constructor(
                 maturityDate    = maturityDate,
                 liquidityType   = if (type in ILLIQUID_TYPES) AssetLiquidityType.ILLIQUID
                                   else AssetLiquidityType.LIQUID,
+                areaPyeong      = areaPyeong,
             )
         }
 
@@ -111,11 +114,12 @@ class Asset private constructor(
             subType: String? = null, loanAmount: BigDecimal? = null,
             maturityDate: LocalDate? = null,
             liquidityType: AssetLiquidityType = AssetLiquidityType.LIQUID,
+            areaPyeong: BigDecimal? = null,
         ) = Asset(
             id, userId, accountId, category, type, sourceType, name, symbol,
             quantity, purchasePrice, currentValue, currency, valuationMethod,
             confidenceLevel, lastUpdatedAt, createdAt, memo, subType, loanAmount,
-            maturityDate, liquidityType,
+            maturityDate, liquidityType, areaPyeong,
         )
     }
 }

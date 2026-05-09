@@ -55,15 +55,13 @@ const TYPE_CONFIG: Record<string, FieldConfig> = {
     namePlaceholder: '예: 강남구 역삼동 아파트 101호',
     symbolLabel: '주소',
     symbolPlaceholder: '예: 서울시 강남구 역삼동 123-45',
-    quantityLabel: '면적 (m²)',
-    quantityPlaceholder: '예: 84',
     showSymbol: true,
-    showQuantity: true,
+    showQuantity: false,
     purchasePriceLabel: '취득가 (원)',
     currentValueLabel: '현재 시세 (원)',
     memoLabel: '상세 설명',
     memoPlaceholder: '예: 아파트 84㎡, 10층, 2020년 취득',
-    hint: '면적은 공급면적(㎡) 기준으로 입력하세요.',
+    hint: '취득가는 부동산 총액을 입력하세요.',
   },
   VEHICLE: {
     namePlaceholder: '예: 현대 팰리세이드',
@@ -141,6 +139,7 @@ function defaultForm(type: AssetType = 'REAL_ESTATE'): CreateManualAssetPayload 
     subType: SUB_TYPES[type]?.[0]?.value,
     symbol: '',
     quantity: 1,
+    areaPyeong: null,
     purchasePrice: 0,
     currentValue: 0,
     loanAmount: null,
@@ -148,6 +147,8 @@ function defaultForm(type: AssetType = 'REAL_ESTATE'): CreateManualAssetPayload 
     memo: '',
   }
 }
+
+const AREA_TYPES: AssetType[] = ['REAL_ESTATE']
 
 // ── 유틸 ──────────────────────────────────────────────────────
 
@@ -279,11 +280,14 @@ export default function AccountDetailPage() {
     }
   }
 
+  const isAreaType = AREA_TYPES.includes(assetForm.type)
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    // purchasePrice / currentValue 가 null 이면 0 으로 보정
     addAssetMutation.mutate({
       ...assetForm,
+      quantity:      isAreaType ? 1 : assetForm.quantity,
+      areaPyeong:    isAreaType ? (assetForm.areaPyeong ?? undefined) : undefined,
       purchasePrice: assetForm.purchasePrice ?? 0,
       currentValue:  assetForm.currentValue  ?? 0,
       loanAmount:    assetForm.loanAmount ?? undefined,
@@ -419,6 +423,18 @@ export default function AccountDetailPage() {
           )}
 
           <div className="grid grid-cols-2 gap-3">
+
+            {/* 면적 (평) — 부동산 전용 */}
+            {isAreaType && (
+              <div>
+                <label className="mb-1 block text-xs text-gray-400">면적 (평)</label>
+                <DecimalInput
+                  placeholder="예: 30"
+                  value={assetForm.areaPyeong ?? 0}
+                  onChange={v => set('areaPyeong', v)}
+                />
+              </div>
+            )}
 
             {/* 자산명 */}
             <div className="col-span-2">
@@ -577,10 +593,14 @@ export default function AccountDetailPage() {
                   const pnl        = Number(a.unrealizedPnl)
                   const qty        = Number(a.quantity)
                   const purchase   = Number(a.purchasePrice)
-                  const curPerUnit = qty > 0 ? Number(a.currentValue) / qty : 0
-                  const totalCost  = purchase * qty
+                  const isIlliquid = a.liquidityType === 'ILLIQUID'
+                  const curPerUnit = isIlliquid ? Number(a.currentValue) : (qty > 0 ? Number(a.currentValue) / qty : 0)
+                  const totalCost  = isIlliquid ? purchase : purchase * qty
                   const returnPct  = totalCost > 0 ? (pnl / totalCost) * 100 : 0
                   const isPos      = pnl >= 0
+                  const qtyDisplay = a.areaPyeong != null
+                    ? `${Number(a.areaPyeong).toFixed(0)}평`
+                    : qty.toLocaleString('ko-KR', { maximumFractionDigits: 6 })
                   return (
                     <tr key={a.id} className="hover:bg-gray-800/40 transition-colors">
                       <td className="px-6 py-3">
@@ -597,7 +617,7 @@ export default function AccountDetailPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums text-xs text-gray-300">
-                        {qty.toLocaleString('ko-KR', { maximumFractionDigits: 6 })}
+                        {qtyDisplay}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums text-xs">
                         <div className="text-gray-400">
