@@ -142,10 +142,11 @@ class AiConsultantService(
             "SELECT COUNT(DISTINCT id) FROM ua_accounts WHERE user_id = ?", userId
         ) as Long? ?: 0L).toInt()
 
+        data class AssetRow(val name: String, val type: String, val value: BigDecimal, val currency: String, val quantity: BigDecimal)
         val topAssets = jdbc.query(
-            "SELECT name, type, current_value, currency FROM ua_assets WHERE user_id = ? ORDER BY current_value DESC LIMIT 10",
-            { rs, _ -> Triple(rs.getString("name"), rs.getString("type"),
-                Pair(rs.getBigDecimal("current_value"), rs.getString("currency"))) },
+            "SELECT name, type, current_value, currency, quantity FROM ua_assets WHERE user_id = ? ORDER BY current_value DESC LIMIT 10",
+            { rs, _ -> AssetRow(rs.getString("name"), rs.getString("type"),
+                rs.getBigDecimal("current_value"), rs.getString("currency"), rs.getBigDecimal("quantity")) },
             userId,
         )
 
@@ -170,13 +171,13 @@ class AiConsultantService(
             userId, thisYear,
         ).firstOrNull() ?: Pair(BigDecimal.ZERO, 0)
 
-        val topAssetRows = topAssets.joinToString("\n") { (name, type, vCur) ->
-            val (v, cur) = vCur
+        val topAssetRows = topAssets.joinToString("\n") { asset ->
             val pct = if (nav > BigDecimal.ZERO)
-                v.divide(nav, 4, java.math.RoundingMode.HALF_UP)
+                asset.value.divide(nav, 4, java.math.RoundingMode.HALF_UP)
                     .multiply(BigDecimal(100)).setScale(1, java.math.RoundingMode.HALF_UP)
             else BigDecimal.ZERO
-            "| $name | $type | ${v.toLong()}$cur | $pct% |"
+            val detail = if (asset.type == "REAL_ESTATE") "${asset.quantity.toInt()}평" else "${asset.quantity.toInt()}주"
+            "| ${asset.name} | ${asset.type} | ${asset.value.toLong()}${asset.currency} | $pct% | $detail |"
         }
 
         val typeRows = byType.joinToString(", ") { (t, v) ->
@@ -205,8 +206,8 @@ class AiConsultantService(
 - 보유 계좌: ${accountCount}개 | 보유 자산: ${assetCount}개
 
 ## 주요 보유 종목 (상위 10개)
-| 종목명 | 유형 | 현재가치 | 비중 |
-|--------|------|----------|------|
+| 종목명 | 유형 | 현재가치 | 비중 | 수량/면적 |
+|--------|------|----------|------|-----------|
 $topAssetRows
 
 ## 자산 배분
