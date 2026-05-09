@@ -122,7 +122,11 @@ class AiConsultantService(
         ) as BigDecimal? ?: BigDecimal.ZERO
 
         val pnl = queryScalar(
-            "SELECT COALESCE(SUM(current_value - purchase_price * quantity),0) FROM ua_assets WHERE user_id = ?", userId
+            """SELECT COALESCE(SUM(
+                CASE WHEN type = 'REAL_ESTATE' THEN current_value - purchase_price
+                     ELSE current_value - purchase_price * quantity
+                END
+            ), 0) FROM ua_assets WHERE user_id = ?""", userId
         ) as BigDecimal? ?: BigDecimal.ZERO
 
         val pnlPct = if (nav > BigDecimal.ZERO)
