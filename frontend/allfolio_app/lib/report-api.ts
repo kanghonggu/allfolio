@@ -2,7 +2,7 @@ import axios from 'axios'
 import type {
   SummaryReport, AllocationReport, PerformanceReport,
   RiskReport, PositionsReport, BenchmarkReport,
-  NetWorthReport, MonthlyPnlReport,
+  NetWorthReport, MonthlyPnlReport, EsgReport,
 } from '@/types/report'
 import type { DividendReport } from '@/types/dividend'
 
@@ -42,5 +42,8 @@ export function createReportApi(accessToken: string) {
 
     dividend: async (period = 'YTD'): Promise<DividendReport> =>
       (await api.get<DividendReport>('/dividend', { params: { period } })).data,
+
+    esg: async (): Promise<EsgReport> =>
+      (await api.get<EsgReport>('/esg')).data,
   }
 }

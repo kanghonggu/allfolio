@@ -192,3 +192,30 @@ export interface MonthlyPnlReport {
   winMonths:       number
   loseMonths:      number
 }
+
+// ── ESG ────────────────────────────────────────────────────────
+
+export interface AssetEsgRow {
+  name:          string
+  type:          string
+  currentValue:  number
+  weight:        number
+  environmental: number
+  social:        number
+  governance:    number
+  total:         number
+  rating:        string
+}
+
+export interface EsgReport {
+  userId:             string
+  generatedAt:        string
+  rating:             string
+  totalScore:         number
+  environmentalScore: number
+  socialScore:        number
+  governanceScore:    number
+  assetBreakdown:     AssetEsgRow[]
+  topAssets:          AssetEsgRow[]
+  bottomAssets:       AssetEsgRow[]
+}
