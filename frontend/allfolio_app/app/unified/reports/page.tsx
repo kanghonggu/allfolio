@@ -81,6 +81,13 @@ const REPORTS = [
     badge: '🔭',
   },
   {
+    href:  '/unified/reports/esg',
+    title: 'ESG 점수',
+    desc:  '환경·사회·지배구조 기반 포트폴리오 ESG 등급 및 자산별 분석',
+    color: 'border-emerald-700 hover:border-emerald-500',
+    badge: '🌱',
+  },
+  {
     href:  '/unified/reports/dividend',
     title: '배당금 보고서',
     desc:  '수령 배당금 합계, 월별 추이, 종목별 배당 이력',
