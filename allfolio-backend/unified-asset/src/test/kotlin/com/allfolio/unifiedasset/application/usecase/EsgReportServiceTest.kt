@@ -50,7 +50,7 @@ class EsgReportServiceTest {
 
     @Test
     fun `assetBreakdown - total 내림차순 정렬`() {
-        // CASH(78.5) > STOCK(62.75) > CRYPTO(36.0)
+        // CASH(78.5) > STOCK(63.25) > CRYPTO(36.0)
         val assets = listOf(
             cryptoAsset(value = bd("100000")),
             cashAsset(value = bd("100000")),
