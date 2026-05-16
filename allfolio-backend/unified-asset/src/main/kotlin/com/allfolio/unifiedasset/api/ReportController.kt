@@ -9,6 +9,7 @@ import java.util.UUID
 class ReportController(
     private val svc: ReportService,
     private val dividendSvc: DividendReportService,
+    private val esgSvc: EsgReportService,
 ) {
 
     @GetMapping("/summary")
@@ -52,4 +53,8 @@ class ReportController(
         @RequestHeader("X-User-Id") userId: UUID,
         @RequestParam(defaultValue = "YTD") period: String,
     ): DividendReport = dividendSvc.report(userId, period)
+
+    @GetMapping("/esg")
+    fun esg(@RequestHeader("X-User-Id") userId: UUID): com.allfolio.report.domain.EsgReport =
+        esgSvc.generate(userId)
 }
