@@ -31,6 +31,10 @@ DB_PASS=PASSWORD
 
 Use `.env.render.example` as the checklist for Render dashboard variables. Do not commit a real `.env.render`.
 
+If you are using 1Password, follow `docs/ONEPASSWORD_ENV.md` instead of pasting
+secrets manually into the Render dashboard. The GitHub Actions workflow syncs
+env vars into Render and then triggers a Render deploy.
+
 Create a Web Service:
 
 ```text
@@ -96,3 +100,17 @@ Neon does not need a public custom DNS record; only the backend should use the N
 4. Confirm redirect to `/unified`.
 5. Refresh the browser and confirm the session is restored.
 6. Confirm Render logs show requests authenticated with Allfolio JWT.
+
+## Local Build vs Render Deploy
+
+Local builds are for verification only:
+
+```bash
+cd allfolio-backend
+./gradlew :backend-app:bootJar -x test --no-daemon
+```
+
+Render still builds the Docker image from the GitHub commit. In the 1Password
+flow, push to `main` or manually run the **Sync Render Environment** GitHub
+Action; the action loads secrets from 1Password, updates Render env vars, and
+triggers the Render deploy.

@@ -1,0 +1,118 @@
+name: Sync Render Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Trigger a Render deploy after syncing env vars
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/sync-render-env.yml"
+      - ".env.1password.example"
+      - "allfolio-backend/**"
+      - "render.yaml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render-env-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sync-render-env:
+    name: Sync Render env vars and deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_AFTER_SYNC: ${{ github.event_name == 'push' || inputs.deploy == 'true' }}
+      HAS_OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Skip until 1Password is configured
+        if: env.HAS_OP_SERVICE_ACCOUNT_TOKEN != 'true'
+        run: |
+          echo "OP_SERVICE_ACCOUNT_TOKEN is not configured."
+          echo "Add it in GitHub Actions secrets, then rerun this workflow."
+
+      - name: Load secrets from 1Password
+        if: env.HAS_OP_SERVICE_ACCOUNT_TOKEN == 'true'
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          RENDER_API_KEY: op://allfolio-prod/render/api-key
+          RENDER_SERVICE_ID: op://allfolio-prod/render/backend-service-id
+          SPRING_PROFILES_ACTIVE: prod
+          DB_URL: op://allfolio-prod/neon/jdbc-url
+          DB_USER: op://allfolio-prod/neon/user
+          DB_PASS: op://allfolio-prod/neon/password
+          ALLFOLIO_JWT_SECRET: op://allfolio-prod/allfolio/jwt-secret
+          ACCESS_TOKEN_MINUTES: "15"
+          REFRESH_TOKEN_DAYS: "30"
+          ALLOWED_ORIGINS: op://allfolio-prod/vercel/allowed-origins
+          KAFKA_ENABLED: "false"
+
+      - name: Sync env vars to Render
+        if: env.HAS_OP_SERVICE_ACCOUNT_TOKEN == 'true'
+        env:
+          RENDER_ENV_KEYS: >-
+            SPRING_PROFILES_ACTIVE
+            DB_URL
+            DB_USER
+            DB_PASS
+            ALLFOLIO_JWT_SECRET
+            ACCESS_TOKEN_MINUTES
+            REFRESH_TOKEN_DAYS
+            ALLOWED_ORIGINS
+            KAFKA_ENABLED
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RENDER_API_KEY:-}" ] || [ -z "${RENDER_SERVICE_ID:-}" ]; then
+            echo "RENDER_API_KEY and RENDER_SERVICE_ID are required." >&2
+            exit 1
+          fi
+
+          for key in $RENDER_ENV_KEYS; do
+            value="${!key:-}"
+            if [ -z "$value" ]; then
+              echo "Skipping empty env var: $key"
+              continue
+            fi
+
+            json="$(jq -n --arg value "$value" '{value: $value}')"
+            curl --fail-with-body --silent --show-error --request PUT \
+              --url "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/env-vars/${key}" \
+              --header "Accept: application/json" \
+              --header "Content-Type: application/json" \
+              --header "Authorization: Bearer ${RENDER_API_KEY}" \
+              --data "$json" >/dev/null
+
+            echo "Synced env var: $key"
+          done
+
+      - name: Trigger Render deploy
+        if: env.HAS_OP_SERVICE_ACCOUNT_TOKEN == 'true' && env.DEPLOY_AFTER_SYNC == 'true'
+        run: |
+          set -euo pipefail
+
+          curl --fail-with-body --silent --show-error --request POST \
+            --url "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
+            --header "Accept: application/json" \
+            --header "Content-Type: application/json" \
+            --header "Authorization: Bearer ${RENDER_API_KEY}" \
+            --data '{"clearCache":"do_not_clear"}' >/dev/null
+
+          echo "Triggered Render deploy."

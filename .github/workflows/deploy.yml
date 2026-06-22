@@ -1,30 +1,25 @@
-name: Build & Deploy
+name: Backend Verification
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
     paths:
-      - 'allfolio-backend/**'
-      - 'docker-compose.prod.yml'
-      - 'nginx/**'
-      - '.github/workflows/deploy.yml'
+      - "allfolio-backend/**"
+      - ".github/workflows/deploy.yml"
+  pull_request:
+    paths:
+      - "allfolio-backend/**"
+      - ".github/workflows/deploy.yml"
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/allfolio-backend
+permissions:
+  contents: read
 
 jobs:
-  # ── 백엔드 빌드 & 이미지 push ──────────────────
   build:
-    name: Build Backend Image
+    name: Build backend JAR
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
-    outputs:
-      image_tag: ${{ steps.meta.outputs.tags }}
-
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,63 +27,11 @@ jobs:
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
-          distribution: 'temurin'
+          java-version: "21"
+          distribution: temurin
           cache: gradle
 
       - name: Build JAR
         run: |
           cd allfolio-backend
           ./gradlew :backend-app:bootJar -x test --no-daemon
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=sha,prefix=
-            type=raw,value=latest
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./allfolio-backend
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-
-  # ── EC2 배포 ───────────────────────────────────
-  deploy:
-    name: Deploy to EC2
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd ~/allfolio
-
-            # 최신 이미지 pull
-            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            docker pull ghcr.io/${{ github.repository_owner }}/allfolio-backend:latest
-
-            # 재배포
-            docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans
-
-            # 오래된 이미지 정리
-            docker image prune -f
-
-            echo "✅ 배포 완료: $(date)"
