@@ -1,7 +1,11 @@
 # 환경변수 (민감정보)
-.env.local
-.env.prod
+.env
+.env.*
 *.env
+!.env.example
+!.env.*.example
+!*.env.example
+!frontend/allfolio_app/.env.local.example
 
 # 빌드 결과물
 /allfolio-backend/asset/build/

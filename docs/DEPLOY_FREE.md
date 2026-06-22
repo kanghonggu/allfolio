@@ -29,6 +29,8 @@ DB_PASS=PASSWORD
 
 ## Render
 
+Use `.env.render.example` as the checklist for Render dashboard variables. Do not commit a real `.env.render`.
+
 Create a Web Service:
 
 ```text
@@ -60,6 +62,8 @@ openssl rand -base64 48
 ```
 
 ## Vercel
+
+Use `frontend/allfolio_app/.env.local.example` as the frontend template.
 
 Set:
 

@@ -1,0 +1,25 @@
+.git
+.github
+.idea
+.claude
+.superpowers
+
+# Secrets / local env
+.env
+.env.*
+*.env
+!.env.example
+!.env.*.example
+!*.env.example
+
+# Build/cache outputs
+**/build
+**/.gradle
+frontend/allfolio_app/node_modules
+frontend/allfolio_app/.next
+frontend/allfolio_app/tsconfig.tsbuildinfo
+
+# Local-only files
+*.iml
+*.log
+.DS_Store

@@ -233,7 +233,8 @@ Kafka/Redis 없이 MVP를 무료/경량 배포하려면 `docs/DEPLOY_FREE.md`를
 ### 인프라 실행
 ```bash
 cd allfolio-backend
-docker compose up -d   # PostgreSQL, Redis, Kafka
+cp ../.env.example ../.env
+docker compose --env-file ../.env up -d   # PostgreSQL, Redis, Kafka
 ```
 
 ### 백엔드 실행
@@ -255,7 +256,16 @@ npm run dev
 
 ### 환경 변수
 
-**backend** (`application.yml` 또는 환경변수)
+민감정보는 실제 env 파일에만 넣고 커밋하지 않습니다.
+
+```bash
+cp .env.example .env                 # 로컬 Docker/backend
+cp .env.prod.example .env.prod       # self-hosted production
+cp .env.render.example .env.render   # Render dashboard 입력용 참고
+cp frontend/allfolio_app/.env.local.example frontend/allfolio_app/.env.local
+```
+
+**backend** (`.env`, `.env.prod`, Render dashboard)
 ```
 ALLFOLIO_JWT_SECRET=dev-only-change-me-dev-only-change-me
 ACCESS_TOKEN_MINUTES=15
