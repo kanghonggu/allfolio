@@ -34,7 +34,7 @@ Create a Web Service:
 ```text
 Runtime: Docker
 Dockerfile Path: allfolio-backend/backend-app/Dockerfile
-Docker Context: allfolio-backend
+Docker Context: repository root
 Plan: Free
 Health Check Path: /actuator/health
 ```
