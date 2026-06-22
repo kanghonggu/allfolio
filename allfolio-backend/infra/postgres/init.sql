@@ -2,8 +2,36 @@
 -- Allfolio Schema — INSERT ONLY 설계
 -- ============================================================
 
--- Keycloak 전용 스키마 (Keycloak 컨테이너 사용)
-CREATE SCHEMA IF NOT EXISTS keycloak;
+-- ── app_users / app_refresh_tokens ─────────────────────────────
+-- Keycloak 제거 후 Allfolio 자체 인증에서 사용하는 사용자/refresh token 저장소
+CREATE TABLE IF NOT EXISTS app_users (
+    id            UUID          NOT NULL,
+    email         VARCHAR(255)  NOT NULL,
+    password_hash VARCHAR(255)  NOT NULL,
+    display_name  VARCHAR(100),
+    created_at    TIMESTAMP     NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMP     NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_app_users PRIMARY KEY (id),
+    CONSTRAINT uk_app_users_email UNIQUE (email)
+);
+
+CREATE TABLE IF NOT EXISTS app_refresh_tokens (
+    id           UUID         NOT NULL,
+    user_id      UUID         NOT NULL,
+    token_hash   VARCHAR(255) NOT NULL,
+    expires_at   TIMESTAMP    NOT NULL,
+    revoked_at   TIMESTAMP,
+    created_at   TIMESTAMP    NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_app_refresh_tokens PRIMARY KEY (id),
+    CONSTRAINT fk_app_refresh_tokens_user FOREIGN KEY (user_id)
+        REFERENCES app_users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_app_refresh_tokens_user
+    ON app_refresh_tokens (user_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_app_refresh_tokens_hash
+    ON app_refresh_tokens (token_hash);
 
 -- ── trade_raw ─────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS trade_raw (
@@ -444,4 +472,3 @@ CREATE TABLE IF NOT EXISTS ua_ai_configs (
     updated_at  TIMESTAMP     NOT NULL DEFAULT NOW(),
     CONSTRAINT pk_ua_ai_configs PRIMARY KEY (user_id)
 );
-

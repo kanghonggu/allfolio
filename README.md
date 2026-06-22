@@ -61,7 +61,7 @@
 | 데이터베이스 | PostgreSQL 16 |
 | 캐시 | Redis 7 |
 | 메시지 큐 | Apache Kafka 7.6 |
-| 인증 | Keycloak 24 (JWT / OpenID Connect) |
+| 인증 | Allfolio JWT (BCrypt + Refresh Token) |
 | HTTP 클라이언트 | WebClient (WebFlux), OkHttp |
 | 빌드 | Gradle (멀티모듈) |
 
@@ -73,7 +73,7 @@
 | 스타일 | Tailwind CSS |
 | 상태 관리 | TanStack Query v5 |
 | 차트 | Recharts |
-| 인증 | Keycloak JS (Public Client) |
+| 인증 | Allfolio Auth API |
 
 ---
 
@@ -105,7 +105,7 @@
 └───────────┬────────────────────────────────────────┘
             │
     ┌───────┴────────┐
-    │  PostgreSQL 16  │  Redis 7  │  Kafka  │  Keycloak
+    │  PostgreSQL 16  │  Redis 7  │  Kafka  │  JWT Auth
     └────────────────┘
 ```
 
@@ -150,6 +150,12 @@ allfolio-backend/
 
 ```
 # 계좌 & 자산
+POST   /api/auth/register                 # 회원가입
+POST   /api/auth/login                    # 로그인
+POST   /api/auth/refresh                  # access token 갱신
+POST   /api/auth/logout                   # refresh token 폐기
+GET    /api/auth/me                       # 내 계정 정보
+
 POST   /api/unified/accounts                # 계좌 생성
 GET    /api/unified/accounts                # 계좌 목록
 DELETE /api/unified/accounts/{id}           # 계좌 삭제
@@ -197,7 +203,7 @@ GET    /api/portfolios/{id}/positions
 
 ```
 /                                      # 랜딩 (로그인 시 /unified 리다이렉트)
-/login                                 # Keycloak 로그인
+/login                                 # 로그인 / 회원가입
 /unified                               # 통합 자산 대시보드 (KPI 카드, 자산 요약)
 /unified/accounts                      # 계좌 목록
 /unified/accounts/new                  # 계좌 추가
@@ -217,13 +223,17 @@ GET    /api/portfolios/{id}/positions
 
 ## 실행 방법
 
+### Lightweight Free Deployment
+
+Kafka/Redis 없이 MVP를 무료/경량 배포하려면 `docs/DEPLOY_FREE.md`를 참고하세요. 추천 조합은 Vercel frontend, Render backend, Neon Postgres입니다.
+
 ### 사전 준비
 - Docker, Java 21, Node.js 20+
 
 ### 인프라 실행
 ```bash
 cd allfolio-backend
-docker compose up -d   # PostgreSQL, Redis, Kafka, Keycloak
+docker compose up -d   # PostgreSQL, Redis, Kafka
 ```
 
 ### 백엔드 실행
@@ -247,7 +257,10 @@ npm run dev
 
 **backend** (`application.yml` 또는 환경변수)
 ```
-KEYCLOAK_ISSUER_URI=http://localhost:8180/realms/allfolio
+ALLFOLIO_JWT_SECRET=dev-only-change-me-dev-only-change-me
+ACCESS_TOKEN_MINUTES=15
+REFRESH_TOKEN_DAYS=30
+ALLOWED_ORIGINS=http://localhost:3000
 BINANCE_API_KEY=...
 BINANCE_API_SECRET=...
 KIS_APP_KEY=...
@@ -258,19 +271,6 @@ KAFKA_BOOTSTRAP_SERVERS=localhost:9092   # kafka.enabled=false 로 비활성화 
 **frontend** (`.env.local`)
 ```
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8090
-NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:8180
-NEXT_PUBLIC_KEYCLOAK_REALM=allfolio
-NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=allfolio-frontend
-```
-
-### Keycloak 초기 설정
-```bash
-# 컨테이너 실행 후 한 번만
-docker exec allfolio-keycloak /opt/keycloak/bin/kcadm.sh \
-  config credentials --server http://localhost:8080 \
-  --realm master --user admin --password admin
-
-# allfolio realm 생성 → allfolio-frontend 클라이언트(Public) 생성 → 테스트 계정 추가
 ```
 
 ---
@@ -282,7 +282,7 @@ docker exec allfolio-keycloak /opt/keycloak/bin/kcadm.sh \
 | 멀티 브로커 OAuth 연동 (KIS, 키움, 삼성, 토스) | 완료 |
 | 암호화폐 거래소 WebSocket (Binance, Upbit, Bithumb, Coinone, Bybit, OKX) | 완료 |
 | Outbox Pattern + Kafka + DLQ | 완료 |
-| JWT 인증 (Keycloak) | 완료 |
+| JWT 인증 (Allfolio 자체 인증) | 완료 |
 | 통합 자산 관리 (계좌, 자산 CRUD, Sync) | 완료 |
 | 국내주식 거래내역 입력 + 평균단가 계산 | 완료 |
 | Yahoo Finance 실시간 시세 (KOSPI/KOSDAQ/해외) | 완료 |

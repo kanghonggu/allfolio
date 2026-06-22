@@ -19,15 +19,15 @@ spring:
     web-application-type: servlet   # webflux 의존성 추가 시 servlet 타입 명시
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/allfolio?reWriteBatchedInserts=true&prepareThreshold=5
-    username: postgres
-    password: postgres
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/allfolio?reWriteBatchedInserts=true&prepareThreshold=5}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASS:postgres}
     driver-class-name: org.postgresql.Driver
 
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
       timeout: 300ms
       lettuce:
         pool:
@@ -81,12 +81,6 @@ spring:
         # 통계 (부하 테스트 시 활성화하여 slow query 추적)
         generate_statistics: false
 
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/allfolio}
-
   servlet:
     multipart:
       enabled: true
@@ -119,6 +113,14 @@ spring:
 
 kafka:
   enabled: false   # true로 변경 시 Kafka consumer/producer/topic 활성화
+
+allfolio:
+  auth:
+    jwt-secret: ${ALLFOLIO_JWT_SECRET:dev-only-change-me-dev-only-change-me}
+    access-token-minutes: ${ACCESS_TOKEN_MINUTES:15}
+    refresh-token-days: ${REFRESH_TOKEN_DAYS:30}
+  cors:
+    allowed-origins: ${ALLOWED_ORIGINS:http://localhost:3000}
 
 management:
   endpoints:

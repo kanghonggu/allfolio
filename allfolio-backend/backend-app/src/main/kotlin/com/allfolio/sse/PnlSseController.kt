@@ -25,7 +25,7 @@ import java.util.UUID
  *   pnl_update    자산별 실시간 PnL 업데이트
  *   heartbeat     30초 keepalive (프록시/nginx SSE timeout 방지)
  *
- * 인증: Keycloak JWT (기존 SecurityConfig 적용)
+ * 인증: Allfolio JWT (SecurityConfig + JwtUserIdFilter 적용)
  * CORS: CorsConfig 적용 (기존 설정)
  */
 @RestController

@@ -1,15 +1,14 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useKeycloak } from '@/contexts/KeycloakContext'
+import { useRouter } from 'next/navigation'
 
-// NextAuth가 /auth/signin으로 보내던 경우 대비 — 그냥 keycloak.login()으로 넘김
 export default function SignInPage() {
-  const { initialized, authenticated, login } = useKeycloak()
+  const router = useRouter()
 
   useEffect(() => {
-    if (initialized && !authenticated) login()
-  }, [initialized, authenticated, login])
+    router.replace('/login')
+  }, [router])
 
   return (
     <div className="flex min-h-[70vh] items-center justify-center">

@@ -22,57 +22,6 @@ services:
     networks:
       - allfolio-network
 
-  # Keycloak (인증 서버)
-  keycloak:
-    image: quay.io/keycloak/keycloak:latest
-    container_name: allfolio-keycloak
-    environment:
-      # DB 설정 (PostgreSQL 사용)
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
-      KC_DB_USERNAME: postgres
-      KC_DB_PASSWORD: postgres
-      
-      # Admin 계정 (초기 설정)
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin123
-      
-      # 개발 모드 설정
-      KC_HOSTNAME_STRICT: false
-      KC_HTTP_ENABLED: true
-      KC_PROXY: edge
-    
-    ports:
-      - "8080:8080"
-    
-    volumes:
-      # Keycloak 데이터 영속성을 위한 볼륨
-      - keycloak_data:/opt/keycloak/data
-      # Allfolio 커스텀 테마
-      - ./keycloak-theme/allfolio:/opt/keycloak/themes/allfolio
-
-    depends_on:
-      postgres:
-        condition: service_healthy
-    
-    command: >
-      start-dev
-      --db=postgres
-      --db-url=jdbc:postgresql://postgres:5432/keycloak
-      --db-username=postgres
-      --db-password=postgres
-      --spi-theme-welcome-theme=allfolio
-      --spi-login-protocol-openid-connect-legacy-logout-redirect-uri=true
-    
-    networks:
-      - allfolio-network
-    
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # Kafka (KRaft 모드 — Zookeeper 없음)
   kafka:
     image: confluentinc/cp-kafka:7.6.1
@@ -125,7 +74,10 @@ services:
       REDIS_HOST: redis
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_ENABLED: "true"
-      KEYCLOAK_ISSUER_URI: http://keycloak:8080/realms/allfolio
+      ALLFOLIO_JWT_SECRET: ${ALLFOLIO_JWT_SECRET:-dev-only-change-me-dev-only-change-me}
+      ACCESS_TOKEN_MINUTES: "15"
+      REFRESH_TOKEN_DAYS: "30"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
     ports:
       - "8090:8090"
     depends_on:
@@ -179,8 +131,6 @@ services:
 
 volumes:
   postgres_data:
-    driver: local
-  keycloak_data:
     driver: local
   kafka_data:
     driver: local

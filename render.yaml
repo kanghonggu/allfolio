@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: allfolio-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./allfolio-backend/backend-app/Dockerfile
+    dockerContext: ./allfolio-backend
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      - key: DB_URL
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASS
+        sync: false
+      - key: ALLFOLIO_JWT_SECRET
+        sync: false
+      - key: ACCESS_TOKEN_MINUTES
+        value: "15"
+      - key: REFRESH_TOKEN_DAYS
+        value: "30"
+      - key: KAFKA_ENABLED
+        value: "false"
+      - key: ALLOWED_ORIGINS
+        sync: false

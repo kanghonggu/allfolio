@@ -34,46 +34,19 @@ services:
         limits:
           memory: 128m
 
-  keycloak:
-    image: quay.io/keycloak/keycloak:24.0
-    container_name: allfolio-keycloak
-    environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/allfolio
-      KC_DB_USERNAME: postgres
-      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
-      KC_DB_SCHEMA: keycloak
-      KC_HTTP_ENABLED: "true"
-      KC_HOSTNAME_STRICT: "false"
-      KC_PROXY: edge
-      # 외부 접근 URL (도메인 있으면 https://auth.yourdomain.com)
-      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME}
-      JAVA_OPTS_APPEND: "-Xms256m -Xmx768m"
-    command: start --import-realm
-    volumes:
-      - ./allfolio-backend/infra/keycloak/allfolio-realm.json:/opt/keycloak/data/import/allfolio-realm.json
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 1g
-
   backend:
     image: ${DOCKER_IMAGE_BACKEND:-allfolio-backend:latest}
     container_name: allfolio-backend
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/allfolio?reWriteBatchedInserts=true
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
-      SPRING_DATA_REDIS_HOST: redis
-      SPRING_DATA_REDIS_PORT: 6379
-      KEYCLOAK_ISSUER_URI: https://auth.allfolio.me/realms/allfolio
-      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: https://auth.allfolio.me/realms/allfolio
+      DB_URL: jdbc:postgresql://postgres:5432/allfolio?reWriteBatchedInserts=true
+      DB_USER: postgres
+      DB_PASS: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ALLFOLIO_JWT_SECRET: ${ALLFOLIO_JWT_SECRET}
+      ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-15}
+      REFRESH_TOKEN_DAYS: ${REFRESH_TOKEN_DAYS:-30}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
     depends_on:
       postgres:
         condition: service_healthy
@@ -96,7 +69,6 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - backend
-      - keycloak
     restart: unless-stopped
     deploy:
       resources:

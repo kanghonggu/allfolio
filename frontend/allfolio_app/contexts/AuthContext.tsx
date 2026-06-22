@@ -22,10 +22,9 @@ interface AuthContextValue extends AuthState {
 }
 
 const STORAGE_KEY = 'allfolio_auth'
-const KC_URL      = process.env.NEXT_PUBLIC_KEYCLOAK_URL!
-const KC_REALM    = process.env.NEXT_PUBLIC_KEYCLOAK_REALM!
-const KC_CLIENT   = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID!
-const TOKEN_URL   = `${KC_URL}/realms/${KC_REALM}/protocol/openid-connect/token`
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8090'
+const LOGIN_URL    = `${API_BASE_URL}/api/auth/login`
+const REFRESH_URL  = `${API_BASE_URL}/api/auth/refresh`
 
 const AuthContext = createContext<AuthContextValue>({
   accessToken: null, refreshToken: null, expiresAt: null,
@@ -34,37 +33,39 @@ const AuthContext = createContext<AuthContextValue>({
   login: async () => {}, logout: () => {},
 })
 
-function parseToken(jwt: string) {
-  try {
-    const payload = JSON.parse(atob(jwt.split('.')[1]))
-    return {
-      userName:  payload.name ?? payload.preferred_username ?? null,
-      userEmail: payload.email ?? null,
-      userId:    payload.sub ?? null,
-    }
-  } catch { return { userName: null, userEmail: null, userId: null } }
+interface AuthApiResponse {
+  accessToken: string
+  refreshToken: string
+  expiresIn: number
+  user: {
+    id: string
+    email: string
+    displayName: string | null
+  }
 }
 
-async function fetchToken(params: Record<string, string>): Promise<AuthState> {
-  const res = await fetch(TOKEN_URL, {
+function toAuthState(data: AuthApiResponse): AuthState {
+  return {
+    accessToken:  data.accessToken,
+    refreshToken: data.refreshToken,
+    expiresAt:    Date.now() + data.expiresIn * 1000,
+    userName:     data.user.displayName ?? data.user.email,
+    userEmail:    data.user.email,
+    userId:       data.user.id,
+  }
+}
+
+async function requestToken(url: string, body: Record<string, string>): Promise<AuthState> {
+  const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ client_id: KC_CLIENT, ...params }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.error_description ?? '인증 실패')
+    throw new Error(err.error ?? err.message ?? '인증 실패')
   }
-  const data = await res.json()
-  const { userName, userEmail, userId } = parseToken(data.access_token)
-  return {
-    accessToken:  data.access_token,
-    refreshToken: data.refresh_token,
-    expiresAt:    Date.now() + data.expires_in * 1000,
-    userName,
-    userEmail,
-    userId,
-  }
+  return toAuthState(await res.json())
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -83,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!saved.refreshToken) { setInitialized(true); return }
 
     // refresh token으로 새 access token 발급
-    fetchToken({ grant_type: 'refresh_token', refresh_token: saved.refreshToken })
+    requestToken(REFRESH_URL, { refreshToken: saved.refreshToken })
       .then(next => {
         setState(next)
         localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
@@ -98,7 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const delay = state.expiresAt - Date.now() - 60_000
     if (delay <= 0) return
     const t = setTimeout(() => {
-      fetchToken({ grant_type: 'refresh_token', refresh_token: state.refreshToken! })
+      requestToken(REFRESH_URL, { refreshToken: state.refreshToken! })
         .then(next => {
           setState(next)
           localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
@@ -109,11 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [state.refreshToken, state.expiresAt])
 
   const login = useCallback(async (email: string, password: string) => {
-    const next = await fetchToken({
-      grant_type: 'password',
-      username:   email,
-      password,
-    })
+    const next = await requestToken(LOGIN_URL, { email, password })
     setState(next)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
   }, [])

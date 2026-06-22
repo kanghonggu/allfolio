@@ -1,5 +1,4 @@
 import axios from 'axios'
-import { getSession } from 'next-auth/react'
 import type { PortfolioSnapshot, Position } from '@/types/portfolio'
 import type { Trade } from '@/types/trade'
 
@@ -9,9 +8,10 @@ const api = axios.create({
 })
 
 api.interceptors.request.use(async (config) => {
-  const session = await getSession()
-  if (session?.accessToken) {
-    config.headers.Authorization = `Bearer ${session.accessToken}`
+  if (typeof window !== 'undefined') {
+    const raw = localStorage.getItem('allfolio_auth')
+    const token = raw ? JSON.parse(raw)?.accessToken : null
+    if (token) config.headers.Authorization = `Bearer ${token}`
   }
   return config
 })

@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8090'
+
 export default function LoginPage() {
   const { login, authenticated, initialized } = useAuth()
   const router = useRouter()
@@ -11,6 +13,7 @@ export default function LoginPage() {
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [loading,  setLoading]  = useState(false)
+  const [registering, setRegistering] = useState(false)
   const [error,    setError]    = useState<string | null>(null)
   const [showPw,   setShowPw]   = useState(false)
 
@@ -29,6 +32,28 @@ export default function LoginPage() {
       setError(err.message ?? '로그인에 실패했습니다')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleRegister = async () => {
+    setError(null)
+    setRegistering(true)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), password, displayName: email.trim() }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error ?? '회원가입에 실패했습니다')
+      }
+      await login(email.trim(), password)
+      router.replace('/unified')
+    } catch (err: any) {
+      setError(err.message ?? '회원가입에 실패했습니다')
+    } finally {
+      setRegistering(false)
     }
   }
 
@@ -110,7 +135,7 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || registering}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? (
@@ -121,12 +146,14 @@ export default function LoginPage() {
 
         <p className="text-center text-xs text-gray-600">
           계정이 없으신가요?{' '}
-          <a
-            href={`${process.env.NEXT_PUBLIC_KEYCLOAK_URL}/realms/${process.env.NEXT_PUBLIC_KEYCLOAK_REALM}/protocol/openid-connect/registrations?client_id=${process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent((process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000') + '/unified')}`}
+          <button
+            type="button"
+            onClick={handleRegister}
+            disabled={registering || loading || !email || password.length < 8}
             className="text-blue-400 hover:text-blue-300"
           >
-            회원가입
-          </a>
+            {registering ? '가입 중...' : '회원가입'}
+          </button>
         </p>
       </div>
     </div>

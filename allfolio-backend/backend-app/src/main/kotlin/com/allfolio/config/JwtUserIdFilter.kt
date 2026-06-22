@@ -1,30 +1,45 @@
 package com.allfolio.config
 
+import com.allfolio.auth.JwtTokenService
+import io.jsonwebtoken.JwtException
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletRequestWrapper
 import jakarta.servlet.http.HttpServletResponse
 import org.springframework.security.core.context.SecurityContextHolder
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken
+import org.springframework.security.web.authentication.preauth.PreAuthenticatedAuthenticationToken
 import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
 import java.util.Collections
 
 /**
- * JWT의 sub 클레임(Keycloak 유저 UUID)을 X-User-Id 헤더로 주입한다.
+ * Allfolio JWT의 sub 클레임(유저 UUID)을 X-User-Id 헤더로 주입한다.
  * 컨트롤러는 기존과 동일하게 @RequestHeader("X-User-Id")를 사용할 수 있다.
  */
 @Component
-class JwtUserIdFilter : OncePerRequestFilter() {
+class JwtUserIdFilter(
+    private val jwtTokenService: JwtTokenService,
+) : OncePerRequestFilter() {
 
     override fun doFilterInternal(
         request: HttpServletRequest,
         response: HttpServletResponse,
         chain: FilterChain,
     ) {
-        val auth = SecurityContextHolder.getContext().authentication
-        if (auth is JwtAuthenticationToken) {
-            val userId = auth.token.subject
+        val token = request.getHeader("Authorization")
+            ?.takeIf { it.startsWith("Bearer ", ignoreCase = true) }
+            ?.substringAfter(" ")
+
+        if (token != null) {
+            val userId = try {
+                jwtTokenService.parseUserId(token).toString()
+            } catch (e: JwtException) {
+                SecurityContextHolder.clearContext()
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid access token")
+                return
+            }
+            SecurityContextHolder.getContext().authentication =
+                PreAuthenticatedAuthenticationToken(userId, token, emptyList())
             val wrapped = UserIdInjectedRequest(request, userId)
             chain.doFilter(wrapped, response)
         } else {

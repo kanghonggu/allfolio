@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.server.ResponseStatusException
 
 @RestControllerAdvice
 class GlobalExceptionHandler {
@@ -28,6 +29,11 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
             .body(mapOf("error" to "입력값이 올바르지 않습니다. 값의 길이나 형식을 확인해주세요."))
     }
+
+    @ExceptionHandler(ResponseStatusException::class)
+    fun handleResponseStatus(e: ResponseStatusException): ResponseEntity<Map<String, String>> =
+        ResponseEntity.status(e.statusCode)
+            .body(mapOf("error" to (e.reason ?: "요청을 처리할 수 없습니다.")))
 
     @ExceptionHandler(Exception::class)
     fun handleUnexpected(e: Exception): ResponseEntity<Map<String, String>> {
