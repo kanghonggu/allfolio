@@ -30,11 +30,11 @@ or edit the workflow secret references to match your existing names.
 Recommended item names:
 
 ```text
-allfolio-prod/render
-allfolio-prod/neon
-allfolio-prod/allfolio
-allfolio-prod/vercel
-allfolio-prod/integrations
+allfolio/render
+allfolio/neon
+allfolio/allfolio
+allfolio/vercel
+allfolio/integrations
 ```
 
 Required fields:

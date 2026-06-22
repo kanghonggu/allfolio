@@ -52,16 +52,16 @@ jobs:
           export-env: true
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          RENDER_API_KEY: op://allfolio-prod/render/api-key
-          RENDER_SERVICE_ID: op://allfolio-prod/render/backend-service-id
+          RENDER_API_KEY: op://allfolio/render/api-key
+          RENDER_SERVICE_ID: op://allfolio/render/backend-service-id
           SPRING_PROFILES_ACTIVE: prod
-          DB_URL: op://allfolio-prod/neon/jdbc-url
-          DB_USER: op://allfolio-prod/neon/user
-          DB_PASS: op://allfolio-prod/neon/password
-          ALLFOLIO_JWT_SECRET: op://allfolio-prod/allfolio/jwt-secret
+          DB_URL: op://allfolio/neon/jdbc-url
+          DB_USER: op://allfolio/neon/user
+          DB_PASS: op://allfolio/neon/password
+          ALLFOLIO_JWT_SECRET: op://allfolio/allfolio/jwt-secret
           ACCESS_TOKEN_MINUTES: "15"
           REFRESH_TOKEN_DAYS: "30"
-          ALLOWED_ORIGINS: op://allfolio-prod/vercel/allowed-origins
+          ALLOWED_ORIGINS: op://allfolio/vercel/allowed-origins
           KAFKA_ENABLED: "false"
 
       - name: Sync env vars to Render
