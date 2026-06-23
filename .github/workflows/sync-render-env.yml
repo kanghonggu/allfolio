@@ -16,8 +16,8 @@ on:
       - main
     paths:
       - ".github/workflows/sync-render-env.yml"
-      - ".env.1password.example"
       - "allfolio-backend/**"
+      - "docs/GITHUB_SECRETS_ENV.md"
       - "render.yaml"
 
 permissions:
@@ -34,38 +34,41 @@ jobs:
     timeout-minutes: 10
     env:
       DEPLOY_AFTER_SYNC: ${{ github.event_name == 'push' || inputs.deploy == 'true' }}
-      HAS_OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Skip until 1Password is configured
-        if: env.HAS_OP_SERVICE_ACCOUNT_TOKEN != 'true'
-        run: |
-          echo "OP_SERVICE_ACCOUNT_TOKEN is not configured."
-          echo "Add it in GitHub Actions secrets, then rerun this workflow."
-
-      - name: Load secrets from 1Password
-        if: env.HAS_OP_SERVICE_ACCOUNT_TOKEN == 'true'
-        uses: 1password/load-secrets-action@v2
-        with:
-          export-env: true
+      - name: Load GitHub Secrets
         env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          RENDER_API_KEY: op://allfolio/render/api-key
-          RENDER_SERVICE_ID: op://allfolio/render/backend-service-id
-          SPRING_PROFILES_ACTIVE: prod
-          DB_URL: op://allfolio/neon/jdbc-url
-          DB_USER: op://allfolio/neon/user
-          DB_PASS: op://allfolio/neon/password
-          ALLFOLIO_JWT_SECRET: op://allfolio/allfolio/jwt-secret
-          ACCESS_TOKEN_MINUTES: "15"
-          REFRESH_TOKEN_DAYS: "30"
-          ALLOWED_ORIGINS: op://allfolio/vercel/allowed-origins
-          KAFKA_ENABLED: "false"
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          SPRING_PROFILES_ACTIVE: ${{ secrets.SPRING_PROFILES_ACTIVE }}
+          DB_URL: ${{ secrets.DB_URL }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASS: ${{ secrets.DB_PASS }}
+          ALLFOLIO_JWT_SECRET: ${{ secrets.ALLFOLIO_JWT_SECRET }}
+          ACCESS_TOKEN_MINUTES: ${{ secrets.ACCESS_TOKEN_MINUTES }}
+          REFRESH_TOKEN_DAYS: ${{ secrets.REFRESH_TOKEN_DAYS }}
+          ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
+          KAFKA_ENABLED: ${{ secrets.KAFKA_ENABLED }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "RENDER_API_KEY=$RENDER_API_KEY"
+            echo "RENDER_SERVICE_ID=$RENDER_SERVICE_ID"
+            echo "SPRING_PROFILES_ACTIVE=$SPRING_PROFILES_ACTIVE"
+            echo "DB_URL=$DB_URL"
+            echo "DB_USER=$DB_USER"
+            echo "DB_PASS=$DB_PASS"
+            echo "ALLFOLIO_JWT_SECRET=$ALLFOLIO_JWT_SECRET"
+            echo "ACCESS_TOKEN_MINUTES=$ACCESS_TOKEN_MINUTES"
+            echo "REFRESH_TOKEN_DAYS=$REFRESH_TOKEN_DAYS"
+            echo "ALLOWED_ORIGINS=$ALLOWED_ORIGINS"
+            echo "KAFKA_ENABLED=$KAFKA_ENABLED"
+          } >> "$GITHUB_ENV"
 
       - name: Sync env vars to Render
-        if: env.HAS_OP_SERVICE_ACCOUNT_TOKEN == 'true'
         env:
           RENDER_ENV_KEYS: >-
             SPRING_PROFILES_ACTIVE
@@ -88,8 +91,8 @@ jobs:
           for key in $RENDER_ENV_KEYS; do
             value="${!key:-}"
             if [ -z "$value" ]; then
-              echo "Skipping empty env var: $key"
-              continue
+              echo "$key is required." >&2
+              exit 1
             fi
 
             json="$(jq -n --arg value "$value" '{value: $value}')"
@@ -104,7 +107,7 @@ jobs:
           done
 
       - name: Trigger Render deploy
-        if: env.HAS_OP_SERVICE_ACCOUNT_TOKEN == 'true' && env.DEPLOY_AFTER_SYNC == 'true'
+        if: env.DEPLOY_AFTER_SYNC == 'true'
         run: |
           set -euo pipefail
 

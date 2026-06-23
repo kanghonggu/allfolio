@@ -227,7 +227,7 @@ GET    /api/portfolios/{id}/positions
 
 Kafka/Redis 없이 MVP를 무료/경량 배포하려면 `docs/DEPLOY_FREE.md`를 참고하세요. 추천 조합은 Vercel frontend, Render backend, Neon Postgres입니다.
 
-프로덕션 비밀값을 1Password에서 GitHub Actions를 통해 Render로 동기화하려면 `docs/ONEPASSWORD_ENV.md`를 참고하세요.
+프로덕션 비밀값을 GitHub Secrets에서 Render로 동기화하려면 `docs/GITHUB_SECRETS_ENV.md`를 참고하세요.
 
 ### 사전 준비
 - Docker, Java 21, Node.js 20+
