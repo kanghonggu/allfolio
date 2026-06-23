@@ -6,6 +6,7 @@ import com.allfolio.trade.application.RecordTradeCommand
 import com.allfolio.trade.application.RecordTradeUseCase
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
@@ -20,6 +21,11 @@ import org.springframework.stereotype.Component
  *   retryCount >= MAX_RETRIES(5) → pushDead() → dlq:dead:{broker}
  */
 @Component
+@ConditionalOnProperty(
+    name = ["allfolio.dlq.redis-worker-enabled"],
+    havingValue = "true",
+    matchIfMissing = false,
+)
 class DlqWorker(
     private val dlqService: DlqService,
     private val recordTradeUseCase: RecordTradeUseCase,

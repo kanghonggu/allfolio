@@ -121,6 +121,8 @@ allfolio:
     refresh-token-days: ${REFRESH_TOKEN_DAYS:30}
   cors:
     allowed-origins: ${ALLOWED_ORIGINS:http://localhost:3000}
+  dlq:
+    redis-worker-enabled: ${DLQ_REDIS_WORKER_ENABLED:false}
 
 management:
   endpoints:
@@ -135,6 +137,8 @@ management:
   health:
     kafka:
       enabled: false   # Kafka 없는 로컬 환경에서 health 500 방지
+    redis:
+      enabled: ${REDIS_HEALTH_ENABLED:false}
   metrics:
     export:
       prometheus:
