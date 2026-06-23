@@ -268,6 +268,7 @@ CREATE TABLE IF NOT EXISTS ua_assets (
     confidence_level VARCHAR(10) NOT NULL,  -- HIGH / MEDIUM / LOW
     sub_type         VARCHAR(30),                       -- 세부 유형 (OWN/JEONSE/MONTHLY/PRESALE/LEASE/RENTAL 등)
     loan_amount      NUMERIC(30, 10),                   -- 대출 잔액 (담보대출, 전세자금대출 등)
+    area_pyeong      NUMERIC(10, 2),                    -- 부동산 면적 (평)
     last_updated_at  TIMESTAMP   NOT NULL DEFAULT NOW(),
     created_at       TIMESTAMP   NOT NULL DEFAULT NOW(),
     memo             VARCHAR(500),
@@ -341,6 +342,7 @@ CREATE INDEX IF NOT EXISTS idx_trade_raw_portfolio_executed_perf
 -- ── Bloomberg Dashboard: ua_assets 컬럼 추가 ─────────────────────
 ALTER TABLE ua_assets ADD COLUMN IF NOT EXISTS maturity_date   DATE;
 ALTER TABLE ua_assets ADD COLUMN IF NOT EXISTS liquidity_type  VARCHAR(20) NOT NULL DEFAULT 'LIQUID';
+ALTER TABLE ua_assets ADD COLUMN IF NOT EXISTS area_pyeong     NUMERIC(10, 2);
 
 -- 기존 비유동 자산 백필
 UPDATE ua_assets SET liquidity_type = 'ILLIQUID'
