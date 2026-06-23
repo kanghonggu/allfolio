@@ -18,19 +18,21 @@ interface AuthContextValue extends AuthState {
   initialized:   boolean
   authenticated: boolean
   login:  (email: string, password: string) => Promise<void>
+  register: (email: string, password: string, displayName?: string) => Promise<void>
   logout: () => void
 }
 
 const STORAGE_KEY = 'allfolio_auth'
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8090'
 const LOGIN_URL    = `${API_BASE_URL}/api/auth/login`
+const REGISTER_URL = `${API_BASE_URL}/api/auth/register`
 const REFRESH_URL  = `${API_BASE_URL}/api/auth/refresh`
 
 const AuthContext = createContext<AuthContextValue>({
   accessToken: null, refreshToken: null, expiresAt: null,
   userName: null, userEmail: null, userId: null,
   initialized: false, authenticated: false,
-  login: async () => {}, logout: () => {},
+  login: async () => {}, register: async () => {}, logout: () => {},
 })
 
 interface AuthApiResponse {
@@ -115,6 +117,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
   }, [])
 
+  const register = useCallback(async (email: string, password: string, displayName?: string) => {
+    const body: Record<string, string> = { email, password }
+    const trimmedName = displayName?.trim()
+    if (trimmedName) body.displayName = trimmedName
+
+    const next = await requestToken(REGISTER_URL, body)
+    setState(next)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+  }, [])
+
   const logout = useCallback(() => {
     setState({ accessToken: null, refreshToken: null, expiresAt: null, userName: null, userEmail: null, userId: null })
     localStorage.removeItem(STORAGE_KEY)
@@ -126,6 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       initialized,
       authenticated: !!state.accessToken,
       login,
+      register,
       logout,
     }}>
       {children}

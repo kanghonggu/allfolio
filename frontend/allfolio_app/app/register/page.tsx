@@ -1,19 +1,21 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 
-export default function LoginPage() {
-  const { login, authenticated, initialized } = useAuth()
+export default function RegisterPage() {
+  const { register, authenticated, initialized } = useAuth()
   const router = useRouter()
 
-  const [email,    setEmail]    = useState('')
+  const [email, setEmail] = useState('')
+  const [displayName, setDisplayName] = useState('')
   const [password, setPassword] = useState('')
-  const [loading,  setLoading]  = useState(false)
-  const [error,    setError]    = useState<string | null>(null)
-  const [showPw,   setShowPw]   = useState(false)
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPw, setShowPw] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (initialized && authenticated) router.replace('/unified')
@@ -22,23 +24,36 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+
+    const trimmedEmail = email.trim()
+    if (!trimmedEmail.includes('@')) {
+      setError('이메일 형식이 올바르지 않습니다')
+      return
+    }
+    if (password.length < 8) {
+      setError('비밀번호는 8자 이상이어야 합니다')
+      return
+    }
+    if (password !== confirmPassword) {
+      setError('비밀번호 확인이 일치하지 않습니다')
+      return
+    }
+
     setLoading(true)
     try {
-      await login(email.trim(), password)
+      await register(trimmedEmail, password, displayName)
       router.replace('/unified')
     } catch (err: any) {
-      setError(err.message ?? '로그인에 실패했습니다')
+      setError(err.message ?? '회원가입에 실패했습니다')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-950 px-4">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-950 px-4 py-10">
       <div className="w-full max-w-sm space-y-8">
-
-        {/* 로고 */}
-        <div className="text-center space-y-2">
+        <div className="space-y-2 text-center">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 shadow-lg shadow-blue-900/40">
             <svg className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.5l4-4 4 4 4-6 4 4" />
@@ -46,14 +61,13 @@ export default function LoginPage() {
             </svg>
           </div>
           <h1 className="text-2xl font-bold text-white">Allfolio</h1>
-          <p className="text-sm text-gray-400">모든 자산을 한 곳에서</p>
+          <p className="text-sm text-gray-400">투자 성과 리포트를 위한 계정을 만드세요</p>
         </div>
 
-        {/* 로그인 폼 */}
-        <form onSubmit={handleSubmit} className="rounded-2xl border border-gray-800 bg-gray-900 p-8 space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-5 rounded-2xl border border-gray-800 bg-gray-900 p-8">
           <div className="space-y-1">
-            <h2 className="text-base font-semibold text-white">로그인</h2>
-            <p className="text-xs text-gray-500">계정 정보를 입력하세요</p>
+            <h2 className="text-base font-semibold text-white">회원가입</h2>
+            <p className="text-xs text-gray-500">이메일과 비밀번호로 시작하세요</p>
           </div>
 
           {error && (
@@ -64,15 +78,27 @@ export default function LoginPage() {
 
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <label className="block text-xs font-medium text-gray-400">이메일 또는 아이디</label>
+              <label className="block text-xs font-medium text-gray-400">이메일</label>
               <input
-                type="text"
+                type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
-                autoComplete="username"
+                autoComplete="email"
                 placeholder="name@example.com"
-                className="w-full rounded-xl border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                className="w-full rounded-xl border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-600 outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-medium text-gray-400">표시 이름</label>
+              <input
+                type="text"
+                value={displayName}
+                onChange={e => setDisplayName(e.target.value)}
+                autoComplete="name"
+                placeholder="선택 입력"
+                className="w-full rounded-xl border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-600 outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
 
@@ -84,15 +110,16 @@ export default function LoginPage() {
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   required
-                  autoComplete="current-password"
-                  placeholder="••••••••"
-                  className="w-full rounded-xl border border-gray-700 bg-gray-800 px-4 py-2.5 pr-10 text-sm text-white placeholder-gray-600 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                  minLength={8}
+                  autoComplete="new-password"
+                  placeholder="8자 이상"
+                  className="w-full rounded-xl border border-gray-700 bg-gray-800 px-4 py-2.5 pr-10 text-sm text-white placeholder-gray-600 outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPw(v => !v)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
-                  tabIndex={-1}
+                  aria-label={showPw ? '비밀번호 숨기기' : '비밀번호 보기'}
                 >
                   {showPw ? (
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -107,6 +134,20 @@ export default function LoginPage() {
                 </button>
               </div>
             </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-medium text-gray-400">비밀번호 확인</label>
+              <input
+                type={showPw ? 'text' : 'password'}
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                required
+                minLength={8}
+                autoComplete="new-password"
+                placeholder="비밀번호 재입력"
+                className="w-full rounded-xl border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-600 outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
           </div>
 
           <button
@@ -115,15 +156,15 @@ export default function LoginPage() {
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? (
-              <><div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> 로그인 중...</>
-            ) : '로그인'}
+              <><div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> 가입 중...</>
+            ) : '회원가입'}
           </button>
         </form>
 
         <p className="text-center text-xs text-gray-600">
-          계정이 없으신가요?{' '}
-          <Link href="/register" className="text-blue-400 hover:text-blue-300">
-            회원가입
+          이미 계정이 있으신가요?{' '}
+          <Link href="/login" className="text-blue-400 hover:text-blue-300">
+            로그인
           </Link>
         </p>
       </div>
