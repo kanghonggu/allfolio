@@ -8,7 +8,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
-import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RestController
 import java.time.LocalDate
 import java.util.UUID
@@ -32,8 +32,10 @@ class PortfolioSnapshotQueryController(
     fun getSnapshot(
         @PathVariable id: UUID,
         @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate,
-        @RequestParam tenantId: UUID,
+        @RequestHeader("X-User-Id") userId: UUID,
     ): ResponseEntity<PortfolioSnapshotResponse> {
+        val tenantId = userId
+
         snapshotCache.getSnapshot(tenantId, id, date)?.let {
             return ResponseEntity.ok(it)
         }
@@ -55,13 +57,15 @@ class PortfolioSnapshotQueryController(
     @GetMapping("/{id}/snapshot/latest")
     fun getLatestSnapshot(
         @PathVariable id: UUID,
-        @RequestParam tenantId: UUID,
+        @RequestHeader("X-User-Id") userId: UUID,
     ): ResponseEntity<PortfolioSnapshotResponse> {
+        val tenantId = userId
+
         snapshotCache.getLatest(tenantId, id)?.let {
             return ResponseEntity.ok(it)
         }
 
-        val performance = performanceRepository.findTopByIdPortfolioIdOrderByIdDateDesc(id)
+        val performance = performanceRepository.findTopByIdTenantIdAndIdPortfolioIdOrderByIdDateDesc(tenantId, id)
             ?: return ResponseEntity.notFound().build()
 
         val risk = riskRepository.findByPortfolioAndDateAndTenant(id, performance.id.date, tenantId)

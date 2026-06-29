@@ -107,6 +107,7 @@ class AccountController(
     private val assetRepository: AssetRepository,
     private val stockTradeRepository: StockTradeRepository,
     private val snapshotService: PerformanceSnapshotService,
+    private val authorizationService: AuthorizationService,
 ) {
     @PostMapping("/test-connection")
     fun testConnection(
@@ -172,8 +173,10 @@ class AccountController(
     fun getAssets(
         @RequestHeader("X-User-Id") userId: UUID,
         @PathVariable id: UUID,
-    ): List<AssetResponse> =
-        assetRepository.findByAccountId(id).map { it.toResponse() }
+    ): List<AssetResponse> {
+        authorizationService.requireOwnedAccount(userId, id)
+        return assetRepository.findByAccountId(id).map { it.toResponse() }
+    }
 
     @PostMapping("/{id}/assets")
     @ResponseStatus(HttpStatus.CREATED)

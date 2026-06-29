@@ -19,6 +19,11 @@ interface PerformanceDailyJpaRepository : JpaRepository<PerformanceDailyEntity, 
 
     fun findTopByIdPortfolioIdOrderByIdDateDesc(portfolioId: UUID): PerformanceDailyEntity?
 
+    fun findTopByIdTenantIdAndIdPortfolioIdOrderByIdDateDesc(
+        tenantId: UUID,
+        portfolioId: UUID,
+    ): PerformanceDailyEntity?
+
     /**
      * 특정 날짜 이전의 가장 최근 스냅샷 — Outbox Processor의 yesterdayNav/previousCumulativeReturn 조회용
      */
