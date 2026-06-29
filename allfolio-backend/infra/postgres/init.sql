@@ -33,6 +33,22 @@ CREATE INDEX IF NOT EXISTS idx_app_refresh_tokens_user
 CREATE UNIQUE INDEX IF NOT EXISTS idx_app_refresh_tokens_hash
     ON app_refresh_tokens (token_hash);
 
+-- ── portfolios ────────────────────────────────────────────────
+-- 사용자별 포트폴리오 소유권 원장. trade_raw 등 기존 portfolio_id 사용 테이블과의 FK는 앱 레벨에서 관리한다.
+CREATE TABLE IF NOT EXISTS portfolios (
+    id             UUID         NOT NULL,
+    user_id        UUID         NOT NULL,
+    name           VARCHAR(255) NOT NULL,
+    base_currency  VARCHAR(10)  NOT NULL DEFAULT 'KRW',
+    created_at     TIMESTAMP    NOT NULL DEFAULT NOW(),
+    deleted_at     TIMESTAMP,
+    CONSTRAINT pk_portfolios PRIMARY KEY (id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_portfolios_user_active
+    ON portfolios (user_id)
+    WHERE deleted_at IS NULL;
+
 -- ── trade_raw ─────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS trade_raw (
     id               UUID        NOT NULL,
