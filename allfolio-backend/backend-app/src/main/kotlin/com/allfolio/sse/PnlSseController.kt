@@ -1,5 +1,6 @@
 package com.allfolio.sse
 
+import com.allfolio.auth.PortfolioAuthorizationService
 import com.allfolio.pnl.PositionCacheService
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
@@ -34,6 +35,7 @@ class PnlSseController(
     private val emitterRegistry: SseEmitterRegistry,
     private val positionCacheService: PositionCacheService,
     private val objectMapper: ObjectMapper,
+    private val portfolioAuthorizationService: PortfolioAuthorizationService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -42,6 +44,7 @@ class PnlSseController(
         @PathVariable portfolioId: UUID,
         @RequestHeader("X-User-Id") userId: UUID,
     ): SseEmitter {
+        portfolioAuthorizationService.requireOwnedPortfolio(userId, portfolioId)
         val emitter = emitterRegistry.register(portfolioId)
         log.info("[SSE] client connected portfolioId={} userId={}", portfolioId, userId)
 
