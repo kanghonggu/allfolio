@@ -19,7 +19,7 @@ class AsyncConfig {
         corePoolSize     = 4
         maxPoolSize      = 8
         queueCapacity    = 2000
-        threadNamePrefix = "ws-event-"
+        setThreadNamePrefix("ws-event-")
         setRejectedExecutionHandler(java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy())
         initialize()
     }
