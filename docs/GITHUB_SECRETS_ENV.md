@@ -25,6 +25,7 @@ DB_URL
 DB_USER
 DB_PASS
 ALLFOLIO_JWT_SECRET
+ALLFOLIO_ENCRYPTION_KEY
 ACCESS_TOKEN_MINUTES
 REFRESH_TOKEN_DAYS
 ALLOWED_ORIGINS
@@ -44,6 +45,7 @@ DB_URL=jdbc:postgresql://<neon-host>/<database>?sslmode=require&channel_binding=
 DB_USER=<neon-user>
 DB_PASS=<Neon database password from your connection string>
 ALLFOLIO_JWT_SECRET=<32+ byte random secret>
+ALLFOLIO_ENCRYPTION_KEY=<base64 32-byte AES key>
 ACCESS_TOKEN_MINUTES=15
 REFRESH_TOKEN_DAYS=30
 ALLOWED_ORIGINS=https://<your-vercel-domain>
@@ -54,6 +56,12 @@ Generate `ALLFOLIO_JWT_SECRET` locally:
 
 ```bash
 openssl rand -base64 48
+```
+
+Generate `ALLFOLIO_ENCRYPTION_KEY` locally:
+
+```bash
+openssl rand -base64 32
 ```
 
 The Render service ID is visible in the Render service URL:

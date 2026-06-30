@@ -270,6 +270,7 @@ cp frontend/allfolio_app/.env.local.example frontend/allfolio_app/.env.local
 **backend** (`.env`, `.env.prod`, Render dashboard)
 ```
 ALLFOLIO_JWT_SECRET=dev-only-change-me-dev-only-change-me
+ALLFOLIO_ENCRYPTION_KEY=MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=
 ACCESS_TOKEN_MINUTES=15
 REFRESH_TOKEN_DAYS=30
 ALLOWED_ORIGINS=http://localhost:3000
