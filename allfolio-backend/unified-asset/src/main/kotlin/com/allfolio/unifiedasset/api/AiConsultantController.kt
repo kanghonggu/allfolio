@@ -31,6 +31,9 @@ class AiConsultantController(private val svc: AiConsultantService) {
     ): Map<String, String> = mapOf("jobId" to svc.submitChat(userId, req.messages))
 
     @GetMapping("/chat/{jobId}")
-    fun chatResult(@PathVariable jobId: String): ChatJobResult =
-        svc.getChatResult(jobId)
+    fun chatResult(
+        @RequestHeader("X-User-Id") userId: UUID,
+        @PathVariable jobId: String,
+    ): ChatJobResult =
+        svc.getChatResult(userId, jobId)
 }

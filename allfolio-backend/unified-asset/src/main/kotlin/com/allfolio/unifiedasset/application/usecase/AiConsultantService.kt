@@ -27,6 +27,11 @@ data class ChatJobResult(
     val createdAt: Long = System.currentTimeMillis(),
 )
 
+private data class ChatJob(
+    val ownerId: UUID,
+    val result: ChatJobResult,
+)
+
 @Service
 class AiConsultantService(
     private val configRepo: UserAiConfigJpaRepository,
@@ -35,7 +40,7 @@ class AiConsultantService(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val executor = Executors.newCachedThreadPool()
-    private val jobs = ConcurrentHashMap<String, ChatJobResult>()
+    private val jobs = ConcurrentHashMap<String, ChatJob>()
 
     fun getConfig(userId: UUID): AiConfigResponse? =
         configRepo.findById(userId).orElse(null)?.let {
@@ -52,22 +57,27 @@ class AiConsultantService(
 
     fun submitChat(userId: UUID, messages: List<ChatMessage>): String {
         val jobId = UUID.randomUUID().toString()
-        jobs[jobId] = ChatJobResult("pending")
+        jobs[jobId] = ChatJob(userId, ChatJobResult("pending"))
         val cutoff = System.currentTimeMillis() - 600_000
-        jobs.entries.removeIf { it.value.createdAt < cutoff }
+        jobs.entries.removeIf { it.value.result.createdAt < cutoff }
         CompletableFuture.runAsync({
             try {
                 val content = chat(userId, messages)
-                jobs[jobId] = ChatJobResult("done", content = content)
+                jobs[jobId] = ChatJob(userId, ChatJobResult("done", content = content))
             } catch (e: Exception) {
-                jobs[jobId] = ChatJobResult("error", error = e.message ?: "오류가 발생했습니다")
+                jobs[jobId] = ChatJob(userId, ChatJobResult("error", error = e.message ?: "오류가 발생했습니다"))
             }
         }, executor)
         return jobId
     }
 
-    fun getChatResult(jobId: String): ChatJobResult =
-        jobs[jobId] ?: throw IllegalArgumentException("Job not found")
+    fun getChatResult(userId: UUID, jobId: String): ChatJobResult {
+        val job = jobs[jobId]
+        if (job == null || job.ownerId != userId) {
+            throw NoSuchElementException("Chat job not found: $jobId")
+        }
+        return job.result
+    }
 
     fun chat(userId: UUID, messages: List<ChatMessage>): String {
         val config = configRepo.findById(userId).orElse(null)
