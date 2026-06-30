@@ -33,14 +33,15 @@ KAFKA_ENABLED
 
 ## Value Guide
 
-Use these values for the current Render + Neon setup:
+Use these values for the Render + Neon setup. Keep real infrastructure values
+only in GitHub Secrets and Render environment variables.
 
 ```text
 RENDER_API_KEY=<Render API key from Render Account Settings>
 RENDER_SERVICE_ID=<Render backend service id, starts with srv->
 SPRING_PROFILES_ACTIVE=prod
-DB_URL=jdbc:postgresql://ep-plain-thunder-aopf1q94-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
-DB_USER=neondb_owner
+DB_URL=jdbc:postgresql://<neon-host>/<database>?sslmode=require&channel_binding=require
+DB_USER=<neon-user>
 DB_PASS=<Neon database password from your connection string>
 ALLFOLIO_JWT_SECRET=<32+ byte random secret>
 ACCESS_TOKEN_MINUTES=15
