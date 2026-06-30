@@ -5,7 +5,6 @@ import com.allfolio.trade.domain.TradeType
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.util.ArrayDeque
-import java.util.UUID
 
 /**
  * FIFO 포지션 계산 엔진 (순수 도메인 서비스)
@@ -31,7 +30,7 @@ object PositionEngine {
         trades: List<TradeRaw>,
         marketPrice: BigDecimal,
     ): PositionSnapshot {
-        if (trades.isEmpty()) return PositionSnapshot.empty(extractAssetId(trades))
+        if (trades.isEmpty()) throw PositionException.emptyTrades()
 
         val assetId   = trades.first().assetId
         val lotDeque  = ArrayDeque<PositionLot>(trades.size / 2 + 1)
@@ -100,7 +99,4 @@ object PositionEngine {
 
         return sellQty.multiply(sellPrice).subtract(costBasis).subtract(fee)
     }
-
-    private fun extractAssetId(trades: List<TradeRaw>): UUID =
-        trades.firstOrNull()?.assetId ?: throw PositionException.emptyTrades()
 }
