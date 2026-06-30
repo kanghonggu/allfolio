@@ -71,10 +71,52 @@ class AiConsultantServiceTest {
     // ── getChatResult ─────────────────────────────────────────
 
     @Test
-    fun `존재하지 않는 jobId 조회 - IllegalArgumentException`() {
-        assertThrows<IllegalArgumentException> {
-            svc().getChatResult("nonexistent-job-id")
+    fun `내 jobId 조회는 결과를 반환한다`() {
+        val service = svc()
+        val jobId = service.submitChat(userId, listOf(ChatMessage("user", "내 포트폴리오를 분석해줘")))
+
+        val result = service.getChatResult(userId, jobId)
+
+        assertTrue(result.status in setOf("pending", "done", "error"))
+    }
+
+    @Test
+    fun `남의 jobId 조회는 NoSuchElementException으로 숨긴다`() {
+        val ownerId = UUID.randomUUID()
+        val otherUserId = UUID.randomUUID()
+        val service = svc()
+        val jobId = service.submitChat(ownerId, listOf(ChatMessage("user", "내 포트폴리오를 분석해줘")))
+
+        val ex = assertThrows<NoSuchElementException> {
+            service.getChatResult(otherUserId, jobId)
         }
+
+        assertTrue(ex.message!!.contains("Chat job not found"))
+    }
+
+    @Test
+    fun `없는 jobId 조회는 NoSuchElementException으로 숨긴다`() {
+        val missingJobId = UUID.randomUUID().toString()
+
+        val ex = assertThrows<NoSuchElementException> {
+            svc().getChatResult(userId, missingJobId)
+        }
+
+        assertTrue(ex.message!!.contains("Chat job not found"))
+    }
+
+    @Test
+    fun `생성 시 userId가 job owner로 묶인다`() {
+        val firstUserId = UUID.randomUUID()
+        val secondUserId = UUID.randomUUID()
+        val service = svc()
+        val firstJobId = service.submitChat(firstUserId, listOf(ChatMessage("user", "첫 번째 사용자")))
+        val secondJobId = service.submitChat(secondUserId, listOf(ChatMessage("user", "두 번째 사용자")))
+
+        assertDoesNotThrow { service.getChatResult(firstUserId, firstJobId) }
+        assertDoesNotThrow { service.getChatResult(secondUserId, secondJobId) }
+        assertThrows<NoSuchElementException> { service.getChatResult(firstUserId, secondJobId) }
+        assertThrows<NoSuchElementException> { service.getChatResult(secondUserId, firstJobId) }
     }
 
     // ── submitChat → job lifecycle ────────────────────────────
@@ -90,7 +132,7 @@ class AiConsultantServiceTest {
         assertTrue(jobId.isNotBlank())
 
         // job은 바로 존재 (pending or done or error)
-        val job = svc.getChatResult(jobId)
+        val job = svc.getChatResult(userId, jobId)
         assertNotNull(job.status)
     }
 

@@ -13,7 +13,6 @@ import org.springframework.security.config.http.SessionCreationPolicy
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.web.SecurityFilterChain
-import org.springframework.security.web.authentication.HttpStatusEntryPoint
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
@@ -33,15 +32,26 @@ class SecurityConfig(
             .csrf(AbstractHttpConfigurer<*, *>::disable)
             .cors { it.configurationSource(corsConfigurationSource()) }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
-            .exceptionHandling { it.authenticationEntryPoint(HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)) }
+            .exceptionHandling {
+                it.authenticationEntryPoint { request, response, _ ->
+                    val status = if (request.requestURI.startsWith("/api/admin/")) {
+                        HttpStatus.FORBIDDEN
+                    } else {
+                        HttpStatus.UNAUTHORIZED
+                    }
+                    response.sendError(status.value())
+                }
+            }
             .authorizeHttpRequests { auth ->
                 auth
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()  // CORS preflight
-                    .requestMatchers("/actuator/**").permitAll()
+                    .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                    .requestMatchers("/actuator/**").authenticated()
                     .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/refresh").permitAll()
                     .requestMatchers("/api/broker/*/callback").permitAll()
                     .requestMatchers("/api/sse/prices").permitAll()
                     .requestMatchers("/api/sse/pnl/**").authenticated()
+                    .requestMatchers("/api/admin/**").denyAll()
                     .anyRequest().authenticated()
             }
             .addFilterBefore(jwtUserIdFilter, UsernamePasswordAuthenticationFilter::class.java)
