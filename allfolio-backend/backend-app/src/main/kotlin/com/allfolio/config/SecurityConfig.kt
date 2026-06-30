@@ -45,7 +45,8 @@ class SecurityConfig(
             .authorizeHttpRequests { auth ->
                 auth
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()  // CORS preflight
-                    .requestMatchers("/actuator/**").permitAll()
+                    .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                    .requestMatchers("/actuator/**").authenticated()
                     .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/refresh").permitAll()
                     .requestMatchers("/api/broker/*/callback").permitAll()
                     .requestMatchers("/api/sse/prices").permitAll()
