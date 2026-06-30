@@ -1,5 +1,6 @@
 package com.allfolio.api.portfolio
 
+import com.allfolio.auth.PortfolioAuthorizationService
 import com.allfolio.fx.CurrencyConverter
 import com.allfolio.pnl.CostBasisMethod
 import com.allfolio.pnl.PositionCacheService
@@ -10,6 +11,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import java.math.BigDecimal
@@ -22,10 +24,15 @@ class PortfolioQueryController(
     private val tradeRepository: TradeRawJpaRepository,
     private val positionCacheService: PositionCacheService,
     private val currencyConverter: CurrencyConverter,
+    private val portfolioAuthorizationService: PortfolioAuthorizationService,
 ) {
     /** GET /api/portfolios/{id}/trades — 거래 내역 최신순 200건 */
     @GetMapping("/{id}/trades")
-    fun getTrades(@PathVariable id: UUID): ResponseEntity<List<TradeHistoryDto>> {
+    fun getTrades(
+        @PathVariable id: UUID,
+        @RequestHeader("X-User-Id") userId: UUID,
+    ): ResponseEntity<List<TradeHistoryDto>> {
+        portfolioAuthorizationService.requireOwnedPortfolio(userId, id)
         val trades = tradeRepository.findTop200ByPortfolioIdOrderByExecutedAtDesc(id)
         return ResponseEntity.ok(trades.map { TradeHistoryDto.from(it) })
     }
@@ -42,8 +49,10 @@ class PortfolioQueryController(
     @GetMapping("/{id}/positions")
     fun getPositions(
         @PathVariable id: UUID,
+        @RequestHeader("X-User-Id") userId: UUID,
         @RequestParam(defaultValue = "AVG_COST") costMethod: CostBasisMethod,
     ): ResponseEntity<List<PositionDto>> {
+        portfolioAuthorizationService.requireOwnedPortfolio(userId, id)
         val positions = positionCacheService.getPositions(id)
         return ResponseEntity.ok(
             positions.values.map { PositionDto.from(it, costMethod, positionCacheService, currencyConverter) }

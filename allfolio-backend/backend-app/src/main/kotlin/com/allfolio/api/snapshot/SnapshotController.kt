@@ -2,19 +2,23 @@ package com.allfolio.api.snapshot
 
 import com.allfolio.api.cache.SnapshotCacheRepository
 import com.allfolio.api.portfolio.PortfolioSnapshotResponse
+import com.allfolio.auth.PortfolioAuthorizationService
 import com.allfolio.snapshot.application.GenerateDailySnapshotUseCase
 import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
+import java.util.UUID
 
 @RestController
 @RequestMapping("/api/snapshots")
 class SnapshotController(
     private val generateDailySnapshotUseCase: GenerateDailySnapshotUseCase,
     private val snapshotCache: SnapshotCacheRepository,
+    private val portfolioAuthorizationService: PortfolioAuthorizationService,
 ) {
     /**
      * POST /api/snapshots/daily
@@ -26,9 +30,11 @@ class SnapshotController(
      */
     @PostMapping("/daily")
     fun generate(
+        @RequestHeader("X-User-Id") userId: UUID,
         @RequestBody @Valid request: GenerateSnapshotRequest,
     ): ResponseEntity<Void> {
-        val command = request.toCommand()
+        portfolioAuthorizationService.requireOwnedPortfolio(userId, request.portfolioId)
+        val command = request.toCommand().copy(tenantId = userId)
 
         // @Transactional — DB 커밋 완료 후 반환
         val (performance, risk) = generateDailySnapshotUseCase.generate(command)
