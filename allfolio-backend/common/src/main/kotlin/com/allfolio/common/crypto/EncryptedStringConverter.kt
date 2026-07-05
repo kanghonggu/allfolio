@@ -10,8 +10,12 @@ class EncryptedStringConverter : AttributeConverter<String?, String?> {
 
     override fun convertToEntityAttribute(dbData: String?): String? {
         if (dbData == null) return null
-        if (!dbData.startsWith(PREFIX)) return dbData
-        return crypto.decrypt(dbData.removePrefix(PREFIX))
+        if (!dbData.startsWith(PREFIX)) throw LegacyPlaintextDetectedException()
+        return try {
+            crypto.decrypt(dbData.removePrefix(PREFIX))
+        } catch (e: RuntimeException) {
+            throw EncryptedSensitiveDataReadException(e)
+        }
     }
 
     companion object {
@@ -22,7 +26,7 @@ class EncryptedStringConverter : AttributeConverter<String?, String?> {
         }
 
         fun validateConfiguration() {
-            EncryptionKeyResolver.resolve()
+            EncryptionKeyProvider.resolve()
         }
     }
 }

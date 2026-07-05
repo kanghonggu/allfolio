@@ -114,6 +114,10 @@ spring:
 kafka:
   enabled: false   # true로 변경 시 Kafka consumer/producer/topic 활성화
 
+app:
+  encryption:
+    key: ${APP_ENCRYPTION_KEY:}
+
 allfolio:
   auth:
     jwt-secret: ${ALLFOLIO_JWT_SECRET:dev-only-change-me-dev-only-change-me}

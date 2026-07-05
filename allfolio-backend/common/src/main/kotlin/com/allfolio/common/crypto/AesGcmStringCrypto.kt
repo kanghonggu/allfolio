@@ -49,6 +49,6 @@ class AesGcmStringCrypto(
         private const val TAG_SIZE_BITS = 128
 
         fun fromConfiguredKey(): AesGcmStringCrypto =
-            AesGcmStringCrypto(EncryptionKeyResolver.resolve())
+            AesGcmStringCrypto(EncryptionKeyProvider.resolve())
     }
 }

@@ -14,12 +14,12 @@ class EncryptedStringConverterTest {
 
     @BeforeEach
     fun setUp() {
-        System.setProperty(EncryptionKeyResolver.ENV_VAR, key)
+        System.setProperty(EncryptionKeyProvider.PROPERTY_NAME, key)
     }
 
     @AfterEach
     fun tearDown() {
-        System.clearProperty(EncryptionKeyResolver.ENV_VAR)
+        System.clearProperty(EncryptionKeyProvider.PROPERTY_NAME)
     }
 
     @Test
@@ -52,22 +52,33 @@ class EncryptedStringConverterTest {
     }
 
     @Test
-    fun `keeps legacy plaintext database values readable`() {
+    fun `rejects legacy plaintext database values`() {
         val converter = EncryptedStringConverter()
 
-        assertEquals("legacy-secret", converter.convertToEntityAttribute("legacy-secret"))
+        assertThrows(LegacyPlaintextDetectedException::class.java) {
+            converter.convertToEntityAttribute("legacy-secret")
+        }
+    }
+
+    @Test
+    fun `wraps encrypted payload decryption failures as reconnection required`() {
+        val converter = EncryptedStringConverter()
+
+        assertThrows(SensitiveDataReconnectionRequiredException::class.java) {
+            converter.convertToEntityAttribute("${EncryptedStringConverter.PREFIX}not-valid-ciphertext")
+        }
     }
 
     @Test
     fun `requires a configured 32 byte base64 key`() {
         assertThrows(IllegalStateException::class.java) {
-            EncryptionKeyResolver.decode(null)
+            EncryptionKeyProvider.decode(null)
         }
         assertThrows(IllegalStateException::class.java) {
-            EncryptionKeyResolver.decode("")
+            EncryptionKeyProvider.decode("")
         }
         assertThrows(IllegalStateException::class.java) {
-            EncryptionKeyResolver.decode("not-base64")
+            EncryptionKeyProvider.decode("not-base64")
         }
     }
 }

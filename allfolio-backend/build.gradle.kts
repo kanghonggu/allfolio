@@ -41,6 +41,6 @@ subprojects {
 
     tasks.withType<Test> {
         useJUnitPlatform()
-        environment("ALLFOLIO_ENCRYPTION_KEY", "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=")
+        environment("APP_ENCRYPTION_KEY", "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=")
     }
 }

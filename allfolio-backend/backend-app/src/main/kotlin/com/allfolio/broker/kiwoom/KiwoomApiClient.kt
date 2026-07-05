@@ -3,6 +3,8 @@ package com.allfolio.broker.kiwoom
 import com.allfolio.broker.BrokerAuthEntity
 import com.allfolio.broker.BrokerAuthRepository
 import com.allfolio.broker.BrokerType
+import com.allfolio.common.crypto.SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE
+import com.allfolio.common.crypto.requiresSensitiveDataReconnection
 import com.allfolio.metrics.BrokerMetrics
 import org.slf4j.LoggerFactory
 import org.springframework.data.redis.core.RedisTemplate
@@ -100,7 +102,7 @@ class KiwoomApiClient(
                 return token
             }
 
-        val auth = brokerAuthRepository.findByUserIdAndBrokerType(userId, BrokerType.KIWOOM)
+        val auth = findAuth(userId)
             ?: throw KiwoomApiException("No Kiwoom auth for user=$userId. OAuth2 consent required.")
 
         if (!auth.isAccessTokenExpired()) {
@@ -126,12 +128,8 @@ class KiwoomApiClient(
 
     fun saveAuth(userId: UUID, tokenResponse: KiwoomTokenResponse) {
         val expiresAt = LocalDateTime.now().plusSeconds(tokenResponse.expiresIn)
-        val existing  = brokerAuthRepository.findByUserIdAndBrokerType(userId, BrokerType.KIWOOM)
-        val entity = existing?.apply {
-            accessToken          = tokenResponse.accessToken
-            accessTokenExpiresAt = expiresAt
-            updatedAt            = LocalDateTime.now()
-        } ?: BrokerAuthEntity(
+        brokerAuthRepository.deleteByUserIdAndBrokerType(userId, BrokerType.KIWOOM)
+        val entity = BrokerAuthEntity(
             id                   = UUID.randomUUID(),
             userId               = userId,
             brokerType           = BrokerType.KIWOOM,
@@ -144,6 +142,14 @@ class KiwoomApiClient(
         val cacheKey = "broker:token:$userId:${BrokerType.KIWOOM.name}"
         cacheToken(cacheKey, tokenResponse.accessToken, expiresAt)
     }
+
+    private fun findAuth(userId: UUID): BrokerAuthEntity? =
+        try {
+            brokerAuthRepository.findByUserIdAndBrokerType(userId, BrokerType.KIWOOM)
+        } catch (e: RuntimeException) {
+            if (e.requiresSensitiveDataReconnection()) throw KiwoomApiException(SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE)
+            throw e
+        }
 
     // ── API ───────────────────────────────────────────────────────────────────
 

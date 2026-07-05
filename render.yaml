@@ -17,7 +17,7 @@ services:
         sync: false
       - key: ALLFOLIO_JWT_SECRET
         sync: false
-      - key: ALLFOLIO_ENCRYPTION_KEY
+      - key: APP_ENCRYPTION_KEY
         sync: false
       - key: ACCESS_TOKEN_MINUTES
         value: "15"

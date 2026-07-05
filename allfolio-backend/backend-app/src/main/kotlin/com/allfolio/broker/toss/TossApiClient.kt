@@ -3,6 +3,8 @@ package com.allfolio.broker.toss
 import com.allfolio.broker.BrokerAuthEntity
 import com.allfolio.broker.BrokerAuthRepository
 import com.allfolio.broker.BrokerType
+import com.allfolio.common.crypto.SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE
+import com.allfolio.common.crypto.requiresSensitiveDataReconnection
 import com.allfolio.metrics.BrokerMetrics
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
@@ -142,14 +144,14 @@ class TossApiClient(
 
         if (!acquired) {
             // 다른 스레드가 refresh 중 — DB에서 직접 읽기 (non-blocking)
-            val auth = brokerAuthRepository.findByUserIdAndBrokerType(userId, BrokerType.TOSS)
+            val auth = findAuth(userId)
                 ?: throw TossApiException("No Toss auth for user=$userId")
             if (!auth.isAccessTokenExpired()) return auth.accessToken
             throw TossApiException("Token refresh in progress for user=$userId, retry shortly")
         }
 
         return try {
-            val auth = brokerAuthRepository.findByUserIdAndBrokerType(userId, BrokerType.TOSS)
+            val auth = findAuth(userId)
                 ?: throw TossApiException("No Toss auth for user=$userId. OAuth2 consent required.")
 
             if (!auth.isAccessTokenExpired()) {
@@ -182,14 +184,8 @@ class TossApiClient(
     /** BrokerAuth 신규 저장 또는 업데이트 (OAuth2 callback handler에서 호출) */
     fun saveAuth(userId: UUID, tokenResponse: TossTokenResponse) {
         val expiresAt = LocalDateTime.now().plusSeconds(tokenResponse.expiresIn.toLong())
-        val existing  = brokerAuthRepository.findByUserIdAndBrokerType(userId, BrokerType.TOSS)
-
-        val entity = existing?.apply {
-            accessToken          = tokenResponse.accessToken
-            accessTokenExpiresAt = expiresAt
-            tokenResponse.refreshToken?.let { refreshToken = it }
-            updatedAt = LocalDateTime.now()
-        } ?: BrokerAuthEntity(
+        brokerAuthRepository.deleteByUserIdAndBrokerType(userId, BrokerType.TOSS)
+        val entity = BrokerAuthEntity(
             id                   = UUID.randomUUID(),
             userId               = userId,
             brokerType           = BrokerType.TOSS,
@@ -203,6 +199,14 @@ class TossApiClient(
         val cacheKey = "broker:token:$userId:${BrokerType.TOSS.name}"
         cacheToken(cacheKey, tokenResponse.accessToken, expiresAt)
     }
+
+    private fun findAuth(userId: UUID): BrokerAuthEntity? =
+        try {
+            brokerAuthRepository.findByUserIdAndBrokerType(userId, BrokerType.TOSS)
+        } catch (e: RuntimeException) {
+            if (e.requiresSensitiveDataReconnection()) throw TossApiException(SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE)
+            throw e
+        }
 
     // ──────────────────────────────────────────────
     // API 호출

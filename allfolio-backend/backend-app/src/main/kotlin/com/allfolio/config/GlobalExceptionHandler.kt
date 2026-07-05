@@ -1,5 +1,8 @@
 package com.allfolio.config
 
+import com.allfolio.common.crypto.SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE
+import com.allfolio.common.crypto.SensitiveDataReconnectionRequiredException
+import com.allfolio.common.crypto.requiresSensitiveDataReconnection
 import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
@@ -35,8 +38,19 @@ class GlobalExceptionHandler {
         ResponseEntity.status(e.statusCode)
             .body(mapOf("error" to (e.reason ?: "요청을 처리할 수 없습니다.")))
 
+    @ExceptionHandler(SensitiveDataReconnectionRequiredException::class)
+    fun handleSensitiveDataReconnectionRequired(
+        e: SensitiveDataReconnectionRequiredException,
+    ): ResponseEntity<Map<String, String>> =
+        ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(mapOf("error" to (e.message ?: SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE)))
+
     @ExceptionHandler(Exception::class)
     fun handleUnexpected(e: Exception): ResponseEntity<Map<String, String>> {
+        if (e.requiresSensitiveDataReconnection()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(mapOf("error" to SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE))
+        }
         log.error("Unexpected error", e)
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
             .body(mapOf("error" to "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요."))

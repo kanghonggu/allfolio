@@ -1,5 +1,7 @@
 package com.allfolio.unifiedasset.application.usecase
 
+import com.allfolio.common.crypto.SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE
+import com.allfolio.common.crypto.requiresSensitiveDataReconnection
 import com.allfolio.unifiedasset.infrastructure.entity.UserAiConfigEntity
 import com.allfolio.unifiedasset.infrastructure.jpa.UserAiConfigJpaRepository
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
@@ -7,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.WebClientResponseException
 import java.math.BigDecimal
@@ -17,7 +20,12 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
-data class AiConfigResponse(val baseUrl: String, val model: String, val hasKey: Boolean)
+data class AiConfigResponse(
+    val baseUrl: String,
+    val model: String,
+    val hasKey: Boolean,
+    val error: String? = null,
+)
 data class SaveAiConfigRequest(val baseUrl: String, val apiKey: String, val model: String)
 data class ChatMessage(val role: String, val content: String)
 data class ChatJobResult(
@@ -42,12 +50,22 @@ class AiConsultantService(
     private val executor = Executors.newCachedThreadPool()
     private val jobs = ConcurrentHashMap<String, ChatJob>()
 
-    fun getConfig(userId: UUID): AiConfigResponse? =
-        configRepo.findById(userId).orElse(null)?.let {
+    fun getConfig(userId: UUID): AiConfigResponse? {
+        return try {
+            configRepo.findById(userId).orElse(null)
+        } catch (e: RuntimeException) {
+            if (e.requiresSensitiveDataReconnection()) {
+                return AiConfigResponse("", "", false, SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE)
+            }
+            throw e
+        }?.let {
             AiConfigResponse(it.baseUrl, it.model, true)
         }
+    }
 
+    @Transactional
     fun saveConfig(userId: UUID, req: SaveAiConfigRequest) {
+        configRepo.deleteByUserId(userId)
         configRepo.save(
             UserAiConfigEntity(userId, req.baseUrl, req.apiKey, req.model, LocalDateTime.now())
         )
@@ -80,8 +98,14 @@ class AiConsultantService(
     }
 
     fun chat(userId: UUID, messages: List<ChatMessage>): String {
-        val config = configRepo.findById(userId).orElse(null)
-            ?: throw IllegalStateException("LLM 설정이 없습니다")
+        val config = try {
+            configRepo.findById(userId).orElse(null)
+        } catch (e: RuntimeException) {
+            if (e.requiresSensitiveDataReconnection()) {
+                throw IllegalStateException(SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE, e)
+            }
+            throw e
+        } ?: throw IllegalStateException("LLM 설정이 없습니다")
 
         val systemPrompt = buildSystemPrompt(userId)
         val allMessages = listOf(mapOf("role" to "system", "content" to systemPrompt)) +

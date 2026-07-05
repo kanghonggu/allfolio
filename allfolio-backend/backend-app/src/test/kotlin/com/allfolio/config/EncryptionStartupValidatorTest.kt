@@ -20,4 +20,11 @@ class EncryptionStartupValidatorTest {
             EncryptionStartupValidator("").validate()
         }
     }
+
+    @Test
+    fun `reads app encryption key property name`() {
+        assertDoesNotThrow {
+            EncryptionStartupValidator(key).validate()
+        }
+    }
 }
