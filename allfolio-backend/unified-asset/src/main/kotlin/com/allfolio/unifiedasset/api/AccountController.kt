@@ -1,5 +1,7 @@
 package com.allfolio.unifiedasset.api
 
+import com.allfolio.common.crypto.SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE
+import com.allfolio.common.crypto.requiresSensitiveDataReconnection
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.StockTradeRepository
@@ -163,8 +165,14 @@ class AccountController(
         @RequestHeader("X-User-Id") userId: UUID,
         @PathVariable id: UUID,
     ): SyncResult {
-        val account = accountRepository.findById(id)
-            ?: throw NoSuchElementException("Account not found: $id")
+        val account = try {
+            accountRepository.findById(id)
+        } catch (e: RuntimeException) {
+            if (e.requiresSensitiveDataReconnection()) {
+                return SyncResult(id, 0, AccountStatus.ERROR, SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE)
+            }
+            throw e
+        } ?: throw NoSuchElementException("Account not found: $id")
         require(account.userId == userId) { "Forbidden" }
         return syncAccountUseCase.execute(id)
     }

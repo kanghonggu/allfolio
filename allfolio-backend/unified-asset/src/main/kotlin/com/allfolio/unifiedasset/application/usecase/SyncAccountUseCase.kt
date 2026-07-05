@@ -1,5 +1,7 @@
 package com.allfolio.unifiedasset.application.usecase
 
+import com.allfolio.common.crypto.SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE
+import com.allfolio.common.crypto.requiresSensitiveDataReconnection
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.SyncAdapter
@@ -32,8 +34,15 @@ class SyncAccountUseCase(
 
     @Transactional
     fun execute(accountId: UUID): SyncResult {
-        val account = accountRepository.findById(accountId)
-            ?: return SyncResult(accountId, 0, AccountStatus.ERROR, "Account not found")
+        val account = try {
+            accountRepository.findById(accountId)
+        } catch (e: RuntimeException) {
+            if (e.requiresSensitiveDataReconnection()) {
+                runCatching { accountRepository.updateStatus(accountId, AccountStatus.ERROR) }
+                return SyncResult(accountId, 0, AccountStatus.ERROR, SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE)
+            }
+            throw e
+        } ?: return SyncResult(accountId, 0, AccountStatus.ERROR, "Account not found")
 
         val adapter = adapterMap[account.provider]
             ?: return SyncResult(accountId, 0, AccountStatus.ERROR, "No adapter for ${account.provider}")
@@ -57,7 +66,12 @@ class SyncAccountUseCase(
         } catch (e: Exception) {
             log.error("Sync failed for account $accountId: ${e.message}", e)
             accountRepository.updateStatus(accountId, AccountStatus.ERROR)
-            SyncResult(accountId, 0, AccountStatus.ERROR, e.message)
+            val error = if (e.requiresSensitiveDataReconnection()) {
+                SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE
+            } else {
+                e.message
+            }
+            SyncResult(accountId, 0, AccountStatus.ERROR, error)
         }
     }
 }

@@ -3,6 +3,8 @@ package com.allfolio.broker.samsung
 import com.allfolio.broker.BrokerAuthEntity
 import com.allfolio.broker.BrokerAuthRepository
 import com.allfolio.broker.BrokerType
+import com.allfolio.common.crypto.SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE
+import com.allfolio.common.crypto.requiresSensitiveDataReconnection
 import com.allfolio.metrics.BrokerMetrics
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
@@ -117,14 +119,14 @@ class SamsungApiClient(
         }.getOrDefault(false)
 
         if (!acquired) {
-            val auth = brokerAuthRepository.findByUserIdAndBrokerType(userId, BrokerType.SAMSUNG)
+            val auth = findAuth(userId)
                 ?: throw SamsungApiException("No Samsung auth for user=$userId")
             if (!auth.isAccessTokenExpired()) return auth.accessToken
             throw SamsungApiException("Token refresh in progress for user=$userId, retry shortly")
         }
 
         return try {
-            val auth = brokerAuthRepository.findByUserIdAndBrokerType(userId, BrokerType.SAMSUNG)
+            val auth = findAuth(userId)
                 ?: throw SamsungApiException("No Samsung auth for user=$userId. OAuth2 consent required.")
 
             if (!auth.isAccessTokenExpired()) {
@@ -156,14 +158,8 @@ class SamsungApiClient(
 
     fun saveAuth(userId: UUID, tokenResponse: SamsungTokenResponse) {
         val expiresAt = LocalDateTime.now().plusSeconds(tokenResponse.expiresIn.toLong())
-        val existing  = brokerAuthRepository.findByUserIdAndBrokerType(userId, BrokerType.SAMSUNG)
-
-        val entity = existing?.apply {
-            accessToken          = tokenResponse.accessToken
-            accessTokenExpiresAt = expiresAt
-            tokenResponse.refreshToken?.let { refreshToken = it }
-            updatedAt = LocalDateTime.now()
-        } ?: BrokerAuthEntity(
+        brokerAuthRepository.deleteByUserIdAndBrokerType(userId, BrokerType.SAMSUNG)
+        val entity = BrokerAuthEntity(
             id                   = UUID.randomUUID(),
             userId               = userId,
             brokerType           = BrokerType.SAMSUNG,
@@ -177,6 +173,14 @@ class SamsungApiClient(
         val cacheKey = "broker:token:$userId:${BrokerType.SAMSUNG.name}"
         cacheToken(cacheKey, tokenResponse.accessToken, expiresAt)
     }
+
+    private fun findAuth(userId: UUID): BrokerAuthEntity? =
+        try {
+            brokerAuthRepository.findByUserIdAndBrokerType(userId, BrokerType.SAMSUNG)
+        } catch (e: RuntimeException) {
+            if (e.requiresSensitiveDataReconnection()) throw SamsungApiException(SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE)
+            throw e
+        }
 
     // ──────────────────────────────────────────────
     // API 호출

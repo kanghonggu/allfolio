@@ -47,6 +47,7 @@ jobs:
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASS: ${{ secrets.DB_PASS }}
           ALLFOLIO_JWT_SECRET: ${{ secrets.ALLFOLIO_JWT_SECRET }}
+          APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
           ACCESS_TOKEN_MINUTES: ${{ secrets.ACCESS_TOKEN_MINUTES }}
           REFRESH_TOKEN_DAYS: ${{ secrets.REFRESH_TOKEN_DAYS }}
           ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
@@ -62,6 +63,7 @@ jobs:
             echo "DB_USER=$DB_USER"
             echo "DB_PASS=$DB_PASS"
             echo "ALLFOLIO_JWT_SECRET=$ALLFOLIO_JWT_SECRET"
+            echo "APP_ENCRYPTION_KEY=$APP_ENCRYPTION_KEY"
             echo "ACCESS_TOKEN_MINUTES=$ACCESS_TOKEN_MINUTES"
             echo "REFRESH_TOKEN_DAYS=$REFRESH_TOKEN_DAYS"
             echo "ALLOWED_ORIGINS=$ALLOWED_ORIGINS"
@@ -76,6 +78,7 @@ jobs:
             DB_USER
             DB_PASS
             ALLFOLIO_JWT_SECRET
+            APP_ENCRYPTION_KEY
             ACCESS_TOKEN_MINUTES
             REFRESH_TOKEN_DAYS
             ALLOWED_ORIGINS

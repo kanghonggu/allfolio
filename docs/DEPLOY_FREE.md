@@ -53,6 +53,7 @@ DB_URL=jdbc:postgresql://HOST/DB?sslmode=require
 DB_USER=USER
 DB_PASS=PASSWORD
 ALLFOLIO_JWT_SECRET=<32+ byte random secret>
+APP_ENCRYPTION_KEY=<base64 32-byte AES key>
 ACCESS_TOKEN_MINUTES=15
 REFRESH_TOKEN_DAYS=30
 KAFKA_ENABLED=false
@@ -63,6 +64,12 @@ Generate the JWT secret locally:
 
 ```bash
 openssl rand -base64 48
+```
+
+Generate the database encryption key locally:
+
+```bash
+openssl rand -base64 32
 ```
 
 ## Vercel

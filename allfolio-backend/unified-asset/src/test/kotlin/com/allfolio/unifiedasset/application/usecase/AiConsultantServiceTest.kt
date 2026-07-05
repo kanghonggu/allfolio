@@ -1,13 +1,17 @@
 package com.allfolio.unifiedasset.application.usecase
 
+import com.allfolio.common.crypto.LegacyPlaintextDetectedException
+import com.allfolio.common.crypto.SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE
 import com.allfolio.unifiedasset.infrastructure.entity.UserAiConfigEntity
 import com.allfolio.unifiedasset.infrastructure.jpa.UserAiConfigJpaRepository
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.mockito.ArgumentCaptor
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.Mock
+import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.springframework.jdbc.core.JdbcTemplate
@@ -66,6 +70,35 @@ class AiConsultantServiceTest {
         val fieldNames = result::class.java.declaredFields.map { it.name }
         assertFalse(fieldNames.contains("apiKey"))
         assertFalse(fieldNames.contains("api_key"))
+    }
+
+    @Test
+    fun `getConfig - 저장된 API 키를 읽을 수 없으면 재설정 필요 상태를 반환한다`() {
+        `when`(configRepo.findById(userId)).thenThrow(LegacyPlaintextDetectedException("legacy plaintext"))
+
+        val result = svc().getConfig(userId)!!
+
+        assertFalse(result.hasKey)
+        assertEquals(SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE, result.error)
+    }
+
+    @Test
+    fun `saveConfig - 기존 설정을 읽지 않고 교체 저장한다`() {
+        val request = SaveAiConfigRequest(
+            baseUrl = "https://api.openai.com/v1",
+            apiKey = "sk-new",
+            model = "gpt-4o",
+        )
+
+        svc().saveConfig(userId, request)
+
+        verify(configRepo).deleteByUserId(userId)
+        val captor = ArgumentCaptor.forClass(UserAiConfigEntity::class.java)
+        verify(configRepo).save(captor.capture())
+        assertEquals(userId, captor.value.userId)
+        assertEquals(request.baseUrl, captor.value.baseUrl)
+        assertEquals(request.apiKey, captor.value.apiKey)
+        assertEquals(request.model, captor.value.model)
     }
 
     // ── getChatResult ─────────────────────────────────────────

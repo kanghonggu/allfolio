@@ -25,6 +25,7 @@ DB_URL
 DB_USER
 DB_PASS
 ALLFOLIO_JWT_SECRET
+APP_ENCRYPTION_KEY
 ACCESS_TOKEN_MINUTES
 REFRESH_TOKEN_DAYS
 ALLOWED_ORIGINS
@@ -33,16 +34,18 @@ KAFKA_ENABLED
 
 ## Value Guide
 
-Use these values for the current Render + Neon setup:
+Use these values for the Render + Neon setup. Keep real infrastructure values
+only in GitHub Secrets and Render environment variables.
 
 ```text
 RENDER_API_KEY=<Render API key from Render Account Settings>
 RENDER_SERVICE_ID=<Render backend service id, starts with srv->
 SPRING_PROFILES_ACTIVE=prod
-DB_URL=jdbc:postgresql://ep-plain-thunder-aopf1q94-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
-DB_USER=neondb_owner
+DB_URL=jdbc:postgresql://<neon-host>/<database>?sslmode=require&channel_binding=require
+DB_USER=<neon-user>
 DB_PASS=<Neon database password from your connection string>
 ALLFOLIO_JWT_SECRET=<32+ byte random secret>
+APP_ENCRYPTION_KEY=<base64 32-byte AES key>
 ACCESS_TOKEN_MINUTES=15
 REFRESH_TOKEN_DAYS=30
 ALLOWED_ORIGINS=https://<your-vercel-domain>
@@ -53,6 +56,12 @@ Generate `ALLFOLIO_JWT_SECRET` locally:
 
 ```bash
 openssl rand -base64 48
+```
+
+Generate `APP_ENCRYPTION_KEY` locally:
+
+```bash
+openssl rand -base64 32
 ```
 
 The Render service ID is visible in the Render service URL:

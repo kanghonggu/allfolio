@@ -253,8 +253,8 @@ CREATE TABLE IF NOT EXISTS ua_accounts (
     last_synced_at TIMESTAMP,
     created_at     TIMESTAMP   NOT NULL DEFAULT NOW(),
     -- API 계좌 자격증명 (운영 시 암호화 필수)
-    api_key        VARCHAR(500),
-    api_secret     VARCHAR(500),
+    api_key        VARCHAR(2048),
+    api_secret     VARCHAR(2048),
     -- 지갑 계좌
     wallet_address VARCHAR(200),
     chain          VARCHAR(20),
@@ -263,6 +263,10 @@ CREATE TABLE IF NOT EXISTS ua_accounts (
 
 CREATE INDEX IF NOT EXISTS idx_ua_accounts_user
     ON ua_accounts (user_id);
+
+ALTER TABLE IF EXISTS ua_accounts
+    ALTER COLUMN api_key TYPE VARCHAR(2048),
+    ALTER COLUMN api_secret TYPE VARCHAR(2048);
 
 -- ── ua_assets ─────────────────────────────────────────────────
 -- 개별 자산: 반드시 ua_accounts 소속
@@ -485,8 +489,11 @@ ON CONFLICT (symbol) DO NOTHING;
 CREATE TABLE IF NOT EXISTS ua_ai_configs (
     user_id     UUID          NOT NULL,
     base_url    VARCHAR(500)  NOT NULL,
-    api_key     VARCHAR(1000) NOT NULL,
+    api_key     VARCHAR(2048) NOT NULL,
     model       VARCHAR(200)  NOT NULL,
     updated_at  TIMESTAMP     NOT NULL DEFAULT NOW(),
     CONSTRAINT pk_ua_ai_configs PRIMARY KEY (user_id)
 );
+
+ALTER TABLE IF EXISTS ua_ai_configs
+    ALTER COLUMN api_key TYPE VARCHAR(2048);

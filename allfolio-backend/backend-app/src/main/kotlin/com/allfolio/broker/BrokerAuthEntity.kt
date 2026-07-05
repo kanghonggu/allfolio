@@ -1,6 +1,8 @@
 package com.allfolio.broker
 
+import com.allfolio.common.crypto.EncryptedStringConverter
 import jakarta.persistence.Column
+import jakarta.persistence.Convert
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
@@ -34,9 +36,11 @@ class BrokerAuthEntity(
     @Column(name = "broker_type", nullable = false, updatable = false, length = 20)
     val brokerType: BrokerType,
 
+    @Convert(converter = EncryptedStringConverter::class)
     @Column(name = "access_token", nullable = false, columnDefinition = "text")
     var accessToken: String,
 
+    @Convert(converter = EncryptedStringConverter::class)
     @Column(name = "refresh_token", columnDefinition = "text")
     var refreshToken: String? = null,
 

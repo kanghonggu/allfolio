@@ -3,6 +3,8 @@ package com.allfolio.broker.kis
 import com.allfolio.broker.BrokerAuthEntity
 import com.allfolio.broker.BrokerAuthRepository
 import com.allfolio.broker.BrokerType
+import com.allfolio.common.crypto.SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE
+import com.allfolio.common.crypto.requiresSensitiveDataReconnection
 import com.allfolio.metrics.BrokerMetrics
 import org.slf4j.LoggerFactory
 import org.springframework.data.redis.core.RedisTemplate
@@ -102,7 +104,7 @@ class KisApiClient(
     }
 
     private fun refreshAndCache(userId: UUID, cacheKey: String): String {
-        val existing = brokerAuthRepository.findByUserIdAndBrokerType(userId, BrokerType.KIS)
+        val existing = findAuth(userId)
 
         if (existing != null && !existing.isAccessTokenExpired()) {
             cacheToken(cacheKey, existing.accessToken, existing.accessTokenExpiresAt)
@@ -134,12 +136,8 @@ class KisApiClient(
 
     fun saveAuth(userId: UUID, tokenResponse: KisTokenResponse) {
         val expiresAt = LocalDateTime.now().plusSeconds(tokenResponse.expiresIn)
-        val existing  = brokerAuthRepository.findByUserIdAndBrokerType(userId, BrokerType.KIS)
-        val entity = existing?.apply {
-            accessToken          = tokenResponse.accessToken
-            accessTokenExpiresAt = expiresAt
-            updatedAt            = LocalDateTime.now()
-        } ?: BrokerAuthEntity(
+        brokerAuthRepository.deleteByUserIdAndBrokerType(userId, BrokerType.KIS)
+        val entity = BrokerAuthEntity(
             id                   = UUID.randomUUID(),
             userId               = userId,
             brokerType           = BrokerType.KIS,
@@ -152,6 +150,14 @@ class KisApiClient(
         val cacheKey = "broker:token:$userId:${BrokerType.KIS.name}"
         cacheToken(cacheKey, tokenResponse.accessToken, expiresAt)
     }
+
+    private fun findAuth(userId: UUID): BrokerAuthEntity? =
+        try {
+            brokerAuthRepository.findByUserIdAndBrokerType(userId, BrokerType.KIS)
+        } catch (e: RuntimeException) {
+            if (e.requiresSensitiveDataReconnection()) throw KisApiException(SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE)
+            throw e
+        }
 
     // ── API 호출 ──────────────────────────────────────────────────────────────
 

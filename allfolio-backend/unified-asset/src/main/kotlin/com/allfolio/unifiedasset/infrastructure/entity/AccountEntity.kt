@@ -1,5 +1,6 @@
 package com.allfolio.unifiedasset.infrastructure.entity
 
+import com.allfolio.common.crypto.EncryptedStringConverter
 import com.allfolio.unifiedasset.domain.account.*
 import jakarta.persistence.*
 import java.time.LocalDateTime
@@ -41,10 +42,12 @@ class AccountEntity(
     @Column(name = "created_at", nullable = false)
     val createdAt: LocalDateTime,
 
-    @Column(name = "api_key", length = 500)
+    @Convert(converter = EncryptedStringConverter::class)
+    @Column(name = "api_key", length = 2048)
     val apiKey: String?,
 
-    @Column(name = "api_secret", length = 500)
+    @Convert(converter = EncryptedStringConverter::class)
+    @Column(name = "api_secret", length = 2048)
     val apiSecret: String?,
 
     @Column(name = "wallet_address", length = 200)
