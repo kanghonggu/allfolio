@@ -5,7 +5,7 @@ import com.allfolio.unifiedasset.application.usecase.PortfolioResponse
 import org.springframework.web.bind.annotation.*
 import java.util.UUID
 
-@RestController
+@RestController("unifiedAssetPortfolioController")
 @RequestMapping("/api/unified/portfolio")
 class PortfolioController(private val useCase: GetPortfolioUseCase) {
     @GetMapping
