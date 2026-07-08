@@ -1,5 +1,7 @@
 package com.allfolio.pnl
 
+import com.allfolio.trade.domain.FifoCostEngine
+import com.allfolio.trade.domain.LotPosition
 import com.allfolio.trade.domain.TradeType
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
@@ -7,7 +9,6 @@ import org.springframework.data.redis.core.RedisCallback
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.stereotype.Service
 import java.math.BigDecimal
-import java.math.RoundingMode
 import java.util.UUID
 
 /**
@@ -68,16 +69,18 @@ class PositionCacheService(
         val field    = assetId.toString()
         val existing = getPosition(portfolioId, assetId)
 
-        val updated: PositionData? = when (tradeType) {
-            TradeType.BUY  -> applyBuy(existing, portfolioId, assetId, price, quantity, currency)
-            TradeType.SELL -> applySellFifo(existing, portfolioId, assetId, quantity)
-        }
+        val before = existing?.let { PositionDataMapper.toLotPosition(it) } ?: LotPosition.EMPTY
+        val after  = FifoCostEngine.apply(before, tradeType, quantity, price)
 
-        if (updated == null) {
+        if (after.totalQuantity.signum() <= 0) {
             // 포지션 청산 — Redis field 삭제
             runCatching { redisTemplate.opsForHash<String, String>().delete(key, field) }
             return
         }
+
+        // BUY는 이번 통화, SELL은 기존 통화 유지 (기존 동작 보존)
+        val effectiveCurrency = if (tradeType == TradeType.BUY) currency else (existing?.currency ?: currency)
+        val updated = PositionDataMapper.toPositionData(after, portfolioId, assetId, effectiveCurrency)
 
         runCatching {
             redisTemplate.opsForHash<String, String>().put(key, field, objectMapper.writeValueAsString(updated))
@@ -137,101 +140,15 @@ class PositionCacheService(
 
     /**
      * costMethod 에 따른 원가 단가 반환.
-     *   AVG_COST: lots 가중평균 (= PositionData.avgCost)
-     *   FIFO:     가장 오래된 lot 단가 (lots[0].price)
-     *             lots 없으면 avgCost fallback
+     *   AVG_COST: 잔여 lots 가중평균
+     *   FIFO:     가장 오래된 lot 단가 (lots 비면 avgCost 폴백)
      */
-    fun costBasis(data: PositionData, method: CostBasisMethod): BigDecimal =
-        when (method) {
-            CostBasisMethod.AVG_COST -> data.avgCost
-            CostBasisMethod.FIFO     -> data.lots.firstOrNull()?.price ?: data.avgCost
+    fun costBasis(data: PositionData, method: CostBasisMethod): BigDecimal {
+        val position = PositionDataMapper.toLotPosition(data)
+        return when (method) {
+            CostBasisMethod.AVG_COST -> position.averageCost
+            CostBasisMethod.FIFO     -> position.fifoCostBasis ?: position.averageCost
         }
-
-    // ──────────────────────────────────────────────
-    // Private — trade logic
-    // ──────────────────────────────────────────────
-
-    private fun applyBuy(
-        existing: PositionData?,
-        portfolioId: UUID,
-        assetId: UUID,
-        price: BigDecimal,
-        quantity: BigDecimal,
-        currency: String,
-    ): PositionData {
-        val newLot     = PositionLot(price = price, quantity = quantity)
-        val updatedLots = (existing?.lots ?: emptyList()) + newLot
-
-        return PositionData(
-            portfolioId = portfolioId,
-            assetId     = assetId,
-            quantity    = updatedLots.sumOf { it.quantity },
-            avgCost     = weightedAvgCost(updatedLots),
-            currency    = currency,
-            lots        = updatedLots,
-        )
-    }
-
-    /**
-     * SELL FIFO: 가장 오래된 lot부터 소진.
-     * @return null 이면 포지션 완전 청산 → 호출자가 Redis field 삭제
-     */
-    private fun applySellFifo(
-        existing: PositionData?,
-        portfolioId: UUID,
-        assetId: UUID,
-        sellQty: BigDecimal,
-    ): PositionData? {
-        val currentQty = existing?.quantity ?: BigDecimal.ZERO
-        val newQty     = (currentQty - sellQty).max(BigDecimal.ZERO)
-
-        if (newQty <= BigDecimal.ZERO) return null  // 청산
-
-        // lots 있으면 FIFO 소진, 없으면 totalQuantity 차감만 수행 (legacy 데이터 호환)
-        val remainingLots = if (existing?.lots.isNullOrEmpty()) {
-            emptyList()
-        } else {
-            consumeFifo(existing!!.lots.toMutableList(), sellQty)
-        }
-
-        return PositionData(
-            portfolioId = portfolioId,
-            assetId     = assetId,
-            quantity    = newQty,
-            avgCost     = if (remainingLots.isEmpty()) existing?.avgCost ?: BigDecimal.ZERO
-                          else weightedAvgCost(remainingLots),
-            currency    = existing?.currency ?: "KRW",
-            lots        = remainingLots,
-        )
-    }
-
-    /**
-     * FIFO lot 소진. 원본 리스트를 변경하지 않고 새 리스트를 반환.
-     */
-    private fun consumeFifo(lots: MutableList<PositionLot>, sellQty: BigDecimal): List<PositionLot> {
-        var remaining = sellQty
-        val result    = lots.map { PositionLot(it.price, it.quantity, it.purchasedAt) }.toMutableList()
-        val iter      = result.iterator()
-
-        while (iter.hasNext() && remaining > BigDecimal.ZERO) {
-            val lot = iter.next()
-            if (lot.quantity <= remaining) {
-                remaining -= lot.quantity
-                iter.remove()
-            } else {
-                lot.quantity -= remaining
-                remaining = BigDecimal.ZERO
-            }
-        }
-        return result
-    }
-
-    /** lots 기반 가중평균 단가 */
-    private fun weightedAvgCost(lots: List<PositionLot>): BigDecimal {
-        val totalQty  = lots.sumOf { it.quantity }
-        if (totalQty <= BigDecimal.ZERO) return BigDecimal.ZERO
-        val totalCost = lots.fold(BigDecimal.ZERO) { acc, lot -> acc + lot.price * lot.quantity }
-        return totalCost.divide(totalQty, 10, RoundingMode.HALF_UP)
     }
 
     private fun positionKey(portfolioId: UUID) = "pnl:positions:$portfolioId"
