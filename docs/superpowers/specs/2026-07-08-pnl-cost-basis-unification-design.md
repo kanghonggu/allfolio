@@ -77,6 +77,9 @@ Redis 직렬화용 `pnl.PositionData`/`pnl.PositionLot`은 하위호환을 위�
   (옛 캐시)면 `CostLot(avgCost, quantity)` 단일 lot으로 합성** — 수량 손실 방지 shim.
 - `LotPosition → PositionData`: `lots`, `avgCost = averageCost`, `quantity =
   totalQuantity` 투영. realizedPnl·fee는 pnl이 쓰지 않으므로 버린다(YAGNI).
+- `pnl.PositionLot.purchasedAt`(매수 시각)도 보존하지 않는다 — 코어 CostLot은 시각을
+  모르고, 이 필드를 읽는 코드가 없다(FIFO 순서는 리스트 위치로 결정). 매수 시각이
+  필요해지면 캐시가 아니라 source of truth인 `trade_raw.executedAt`에서 재생한다.
 
 ### #2 PositionCacheService.applyTrade
 
