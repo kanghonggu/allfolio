@@ -25,5 +25,9 @@ services:
         value: "30"
       - key: KAFKA_ENABLED
         value: "false"
+      - key: REDIS_HOST
+        sync: false
+      - key: REDIS_PORT
+        value: "6379"
       - key: ALLOWED_ORIGINS
         sync: false
