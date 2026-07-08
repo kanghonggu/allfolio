@@ -1,5 +1,6 @@
 package com.allfolio.config
 
+import jakarta.servlet.DispatcherType
 import org.springframework.boot.web.servlet.FilterRegistrationBean
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -41,9 +42,15 @@ class SecurityConfig(
                     }
                     response.sendError(status.value())
                 }
+                it.accessDeniedHandler { _, response, _ ->
+                    response.sendError(HttpStatus.FORBIDDEN.value())
+                }
             }
             .authorizeHttpRequests { auth ->
                 auth
+                    // sendError가 유발하는 /error ERROR 디스패치까지 인증 대상으로 삼으면
+                    // 모든 오류 응답(403, 404, 500 등)이 /error 재진입에서 401로 뒤바뀐다.
+                    .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()  // CORS preflight
                     .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                     .requestMatchers("/actuator/**").authenticated()
