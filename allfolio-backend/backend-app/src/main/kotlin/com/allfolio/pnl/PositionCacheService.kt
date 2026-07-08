@@ -3,6 +3,7 @@ package com.allfolio.pnl
 import com.allfolio.trade.domain.TradeType
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
+import org.springframework.data.redis.core.RedisCallback
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.stereotype.Service
 import java.math.BigDecimal
@@ -33,6 +34,14 @@ class PositionCacheService(
     private val objectMapper: ObjectMapper,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
+
+    /**
+     * Redis 연결 확인 (PING) — 연결 불가 시 예외 전파.
+     * PositionCacheInitializer가 기동 직후 Redis 준비 여부를 확인/재시도할 때 사용.
+     */
+    fun ping() {
+        redisTemplate.execute(RedisCallback { connection -> connection.ping() })
+    }
 
     // ──────────────────────────────────────────────
     // Write path
@@ -118,7 +127,7 @@ class PositionCacheService(
             redisTemplate.opsForHash<String, String>().putAll(key, entries)
             log.info("[PositionCache] initialized portfolioId={} positions={}", portfolioId, positions.size)
         }.onFailure { e ->
-            log.error("[PositionCache] init failed portfolioId={}: {}", portfolioId, e.message)
+            log.error("[PositionCache] init failed portfolioId={}: {}", portfolioId, e.message, e)
         }
     }
 
