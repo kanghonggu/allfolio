@@ -64,7 +64,15 @@ class BrokerSyncScheduler(
         val tasks = groups.map { (brokerType, group) ->
             Callable { group.forEach { state -> syncOne(brokerType, state) } }
         }
-        brokerSyncExecutor.invokeAll(tasks).forEachIndexed { index, future ->
+        val futures = try {
+            brokerSyncExecutor.invokeAll(tasks)
+        } catch (e: InterruptedException) {
+            // 셧다운 등으로 group 완료 대기 중 인터럽트 — 인터럽트 상태 복원 후 이번 틱 중단
+            Thread.currentThread().interrupt()
+            log.warn("[BrokerSyncScheduler] interrupted while awaiting broker sync groups", e)
+            return
+        }
+        futures.forEachIndexed { index, future ->
             runCatching { future.get() }.onFailure { e ->
                 log.error("[BrokerSyncScheduler] group task failed broker={}", groups[index].first, e)
             }
