@@ -1,6 +1,9 @@
 import http from 'k6/http';
 import { sleep } from 'k6';
-import { assertOk, authHeaders, handleSummary as summary, login, optionalNumber } from './lib/common.js';
+import {
+  SUMMARY_TREND_STATS,
+  assertOk, authHeaders, handleSummary as summary, login, optionalNumber,
+} from './lib/common.js';
 
 const PEAK_VUS = optionalNumber('DASHBOARD_PEAK_VUS', 100);
 const P95_MS = optionalNumber('DASHBOARD_P95_MS', 1500);
@@ -10,6 +13,7 @@ const P99_MS = optionalNumber('DASHBOARD_P99_MS', 3000);
 // multiple DB reads and has no cache. Duration stays under the 15-minute JWT TTL.
 export const options = {
   setupTimeout: '30s',
+  summaryTrendStats: SUMMARY_TREND_STATS,
   scenarios: {
     dashboard_bottleneck: {
       executor: 'ramping-vus',

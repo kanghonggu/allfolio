@@ -1,6 +1,13 @@
 import http from 'k6/http';
 import { sleep } from 'k6';
-import { assertOk, authHeaders, handleSummary as summary, login, optionalNumber } from './lib/common.js';
+import {
+  SUMMARY_TREND_STATS,
+  assertOk,
+  authHeaders,
+  handleSummary as summary,
+  login,
+  optionalNumber,
+} from './lib/common.js';
 
 const PEAK_VUS = optionalNumber('ALLOCATION_PEAK_VUS', 800);
 const P95_MS = optionalNumber('ALLOCATION_P95_MS', 300);
@@ -10,6 +17,7 @@ const P99_MS = optionalNumber('ALLOCATION_P99_MS', 800);
 // Duration stays under the 15-minute JWT TTL, so setup() logs in once and every VU reuses that token.
 export const options = {
   setupTimeout: '30s',
+  summaryTrendStats: SUMMARY_TREND_STATS,
   scenarios: {
     allocation_max_tps: {
       executor: 'ramping-vus',
