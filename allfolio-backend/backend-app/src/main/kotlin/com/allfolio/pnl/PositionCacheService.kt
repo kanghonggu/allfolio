@@ -19,10 +19,11 @@ import java.util.UUID
  *   field: {assetId}
  *   value: JSON(PositionData)
  *
- * Lot 관리:
- *   - BUY:         PositionLot 추가 → avgCost 재계산
- *   - SELL FIFO:   앞에서부터 소진 → 잔여 Lot 저장
- *   - SELL AvgCost: totalQuantity 차감, lots 비례 차감
+ * Lot 관리 (write path는 CostBasisMethod와 무관하게 항상 FIFO):
+ *   - BUY:  lot 추가 → avgCost(잔여 lots 가중평균) 재계산
+ *   - SELL: FIFO로 앞에서부터 소진 → 잔여 lot 저장
+ *   원가/소진 계산은 공용 FifoCostEngine에 위임한다.
+ *   CostBasisMethod(AVG_COST/FIFO)는 저장 방식이 아니라 read-time costBasis() 투영에만 영향.
  *
  * 성능:
  *   - HSET/HGET: Redis O(1)
