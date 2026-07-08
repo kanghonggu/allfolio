@@ -8,8 +8,10 @@ import org.mockito.Mockito
 import java.time.LocalDateTime
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class BrokerSyncSchedulerTest {
@@ -93,5 +95,36 @@ class BrokerSyncSchedulerTest {
         ).syncAll()
 
         assertEquals(setOf("KIS:due", "TOSS:never"), calls)
+    }
+
+    @Test
+    fun `서로 다른 브로커는 병렬로 실행된다`() {
+        val kisStarted  = CountDownLatch(1)
+        val tossStarted = CountDownLatch(1)
+        val overlapped  = ConcurrentHashMap<BrokerType, Boolean>()
+        val syncer = object : BrokerAccountSyncer {
+            override fun syncAccount(brokerType: BrokerType, portfolioId: UUID, accountId: String): Int {
+                when (brokerType) {
+                    BrokerType.KIS -> {
+                        kisStarted.countDown()
+                        overlapped[brokerType] = tossStarted.await(3, TimeUnit.SECONDS)
+                    }
+                    BrokerType.TOSS -> {
+                        tossStarted.countDown()
+                        overlapped[brokerType] = kisStarted.await(3, TimeUnit.SECONDS)
+                    }
+                    else -> {}
+                }
+                return 0
+            }
+        }
+
+        scheduler(syncer, listOf(state("KIS", "a1"), state("TOSS", "b1"))).syncAll()
+
+        assertEquals(
+            mapOf(BrokerType.KIS to true, BrokerType.TOSS to true),
+            overlapped.toMap(),
+            "두 브로커가 서로의 시작을 관찰해야 병렬이다",
+        )
     }
 }

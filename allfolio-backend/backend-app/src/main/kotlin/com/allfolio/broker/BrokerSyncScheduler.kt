@@ -4,6 +4,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import java.time.LocalDateTime
+import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorService
 
 /**
@@ -58,7 +59,16 @@ class BrokerSyncScheduler(
         if (skipped > 0) log.debug("[BrokerSyncScheduler] skipped {} recently-synced accounts", skipped)
         if (eligible.isEmpty()) return
 
-        eligible.forEach { (brokerType, state) -> syncOne(brokerType, state) }
+        // 브로커 간 병렬, 브로커 내 순차 — invokeAll join으로 fixedDelay 무겹침 보장
+        val groups = eligible.groupBy({ it.first }, { it.second }).toList()
+        val tasks = groups.map { (brokerType, group) ->
+            Callable { group.forEach { state -> syncOne(brokerType, state) } }
+        }
+        brokerSyncExecutor.invokeAll(tasks).forEachIndexed { index, future ->
+            runCatching { future.get() }.onFailure { e ->
+                log.error("[BrokerSyncScheduler] group task failed broker={}", groups[index].first, e)
+            }
+        }
     }
 
     private fun syncOne(brokerType: BrokerType, state: BrokerSyncStateEntity) {
