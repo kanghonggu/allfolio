@@ -80,7 +80,21 @@ class FifoCostEngineTest {
             FifoCostEngine.apply(pos, t.tradeType, t.quantity, t.price, t.fee)
         }
         val batch = FifoCostEngine.replay(trades)
-        assertEquals(batch, incremental)
+        assertBd(batch.totalQuantity.toPlainString(), incremental.totalQuantity)
+        assertBd(batch.averageCost.toPlainString(), incremental.averageCost)
+        assertBd(batch.realizedPnl.toPlainString(), incremental.realizedPnl)
+        assertEquals(batch.lots.size, incremental.lots.size)
+        batch.lots.indices.forEach { idx ->
+            assertBd(batch.lots[idx].unitPrice.toPlainString(), incremental.lots[idx].unitPrice)
+            assertBd(batch.lots[idx].quantity.toPlainString(), incremental.lots[idx].quantity)
+        }
+    }
+
+    @Test
+    fun `buy fee does not affect realized pnl`() {
+        val pos = FifoCostEngine.apply(LotPosition.EMPTY, TradeType.BUY, BigDecimal("10"), BigDecimal("100"), BigDecimal("50"))
+        assertBd("0", pos.realizedPnl)
+        assertBd("10", pos.totalQuantity)
     }
 
     companion object {
