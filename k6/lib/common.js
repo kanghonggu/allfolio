@@ -77,18 +77,30 @@ export function assertOk(res, label) {
   });
 }
 
+// Trend stats requested in each script's options so the summary carries the
+// percentiles the thresholds are written against (defaults stop at p(95)).
+export const SUMMARY_TREND_STATS = ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'];
+
+function formatMs(value) {
+  return Number.isFinite(value) ? `${value.toFixed(2)}ms` : 'n/a';
+}
+
 export function handleSummary(scriptName) {
   return function handleSummary(data) {
     const metrics = data.metrics || {};
-    const reqs = metrics.http_reqs?.rate || 0;
-    const failedRate = metrics.http_req_failed?.rate || 0;
-    const duration = metrics.http_req_duration?.percentiles || {};
+    const reqs = metrics.http_reqs?.values?.rate || 0;
+    const failedRate = metrics.http_req_failed?.values?.rate || 0;
+    // Prefer the endpoint-tagged duration metric so the summary matches the thresholds.
+    const durationName =
+      Object.keys(metrics).find((name) => name.startsWith('http_req_duration{endpoint:')) ||
+      'http_req_duration';
+    const duration = metrics[durationName]?.values || {};
     const lines = [
       `k6 summary: ${scriptName}`,
       `http_reqs/s: ${reqs.toFixed(2)}`,
       `http_req_failed: ${(failedRate * 100).toFixed(2)}%`,
-      `http_req_duration p95: ${(duration['95'] || 0).toFixed(2)}ms`,
-      `http_req_duration p99: ${(duration['99'] || 0).toFixed(2)}ms`,
+      `${durationName} p95: ${formatMs(duration['p(95)'])}`,
+      `${durationName} p99: ${formatMs(duration['p(99)'])}`,
       '',
       'Full JSON summary written by handleSummary().',
       'You can also pass --summary-export for an additional raw k6 export.',
