@@ -19,7 +19,8 @@
 ## 주요 기능
 
 ### 자산 통합
-- **멀티 브로커 연동** — Binance, KIS(한국투자증권), 키움증권, 삼성증권, 토스증권, Upbit, Bithumb, Coinone, Bybit, OKX
+- **멀티 브로커 계좌 연동 (5개)** — Binance, KIS(한국투자증권), 키움증권, 삼성증권, 토스증권
+- **실시간 시세 수집 (WebSocket 7개)** — Binance, KIS, Upbit, Bithumb, Coinone, Bybit, OKX (시세 전용, 계좌 연동 아님)
 - **수동 자산 등록** — 부동산(소유/전세/월세/분양권), 자동차, 금, 현금, 비상장주식 등
 - **국내 주식 거래내역 직접 입력** — 종목 자동완성(Yahoo Finance 검색), 평균단가 자동계산
 - **CSV 임포트** — 증권사 거래내역 파일 일괄 등록
@@ -79,6 +80,10 @@
 
 ## 아키텍처
 
+**모듈러 모놀리스(Modular Monolith)** — 단일 배포 단위(backend-app) 안에서 도메인별
+Gradle 모듈로 경계를 나눈 구조다. MSA가 아니며, 시세 수집(market-data)만 선택적으로
+분리 실행할 수 있는 보조 앱으로 두었다.
+
 ```
 ┌─────────────────────────────────────────────────────┐
 │                    Frontend (Next.js)                │
@@ -131,18 +136,24 @@ allfolio-backend/
 
 ## 브로커 연동 현황
 
+### 계좌·거래내역 연동 (BrokerAdapter, 5개)
+
 | 브로커 | 유형 | 연동 방식 | 상태 |
 |--------|------|----------|------|
-| Binance | 해외 거래소 | REST API + WebSocket | 완료 |
-| KIS (한국투자증권) | 국내 증권사 | OAuth2 + WebSocket | 완료 |
+| Binance | 해외 거래소 | REST API | 완료 |
+| KIS (한국투자증권) | 국내 증권사 | OAuth2 (실전/모의 지원) | 완료 |
 | 키움증권 | 국내 증권사 | OAuth2 | 완료 |
 | 삼성증권 | 국내 증권사 | OAuth2 | 완료 |
 | 토스증권 | 국내 증권사 | OAuth2 | 완료 |
-| Upbit | 국내 거래소 | WebSocket | 완료 |
-| Bithumb | 국내 거래소 | WebSocket | 완료 |
-| Coinone | 국내 거래소 | WebSocket | 완료 |
-| Bybit | 해외 거래소 | WebSocket | 완료 |
-| OKX | 해외 거래소 | WebSocket | 완료 |
+
+### 실시간 시세 수집 (WebSocket, 7개 — 계좌 연동 아님)
+
+| 거래소/증권사 | 상태 |
+|--------------|------|
+| Binance, KIS, Upbit, Bithumb, Coinone, Bybit, OKX | 완료 |
+
+> 시세 WebSocket은 가격 스트림 수신 전용이며, Upbit·Bithumb·Coinone·Bybit·OKX의
+> 계좌/거래내역 연동은 구현되어 있지 않다.
 
 ---
 
