@@ -28,7 +28,11 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      timeout: 300ms
+      # timeout = Lettuce command timeout이자 첫 연결 핸드셰이크(HELLO) 타임아웃.
+      # 300ms는 콜드 부트(0.1 CPU) 직후 첫 연결이 항상 실패해 PositionCacheInitializer가 죽었음.
+      # connect-timeout은 TCP 연결 단계에만 적용되므로 timeout 자체를 충분히 잡아야 함.
+      timeout: ${REDIS_TIMEOUT:3s}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:10s}
       lettuce:
         pool:
           max-active: 10
