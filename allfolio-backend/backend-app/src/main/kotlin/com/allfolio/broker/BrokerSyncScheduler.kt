@@ -4,6 +4,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import java.time.LocalDateTime
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutorService
 
 /**
  * 멀티 브로커 통합 Scheduler
@@ -19,8 +21,9 @@ import java.time.LocalDateTime
  */
 @Component
 class BrokerSyncScheduler(
-    private val brokerFacade: BrokerFacade,
+    private val accountSyncer: BrokerAccountSyncer,
     private val syncStateRepository: BrokerSyncStateRepository,
+    private val brokerSyncExecutor: ExecutorService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -32,46 +35,67 @@ class BrokerSyncScheduler(
         val threshold = LocalDateTime.now().minusSeconds(SKIP_THRESHOLD_SECONDS)
         var skipped = 0
 
-        states.forEach { state ->
+        val eligible: List<Pair<BrokerType, BrokerSyncStateEntity>> = states.mapNotNull { state ->
             val brokerType = runCatching {
                 BrokerType.valueOf(state.id.brokerType)
             }.getOrElse {
                 log.warn("[BrokerSyncScheduler] unknown brokerType={}", state.id.brokerType)
-                return@forEach
+                return@mapNotNull null
             }
 
             // BINANCE는 BinanceSyncService(레거시 경로)가 처리
-            if (brokerType == BrokerType.BINANCE) return@forEach
+            if (brokerType == BrokerType.BINANCE) return@mapNotNull null
 
             // lastSyncedAt 30s 이내 skip — 과부하 방지
             val lastSynced = state.lastSyncedAt
             if (lastSynced != null && lastSynced.isAfter(threshold)) {
                 skipped++
-                log.debug("[BrokerSyncScheduler] skip (recent sync {}s ago) broker={} account={}",
-                    java.time.Duration.between(lastSynced, LocalDateTime.now()).seconds,
-                    brokerType, state.id.accountId)
-                return@forEach
+                return@mapNotNull null
             }
 
-            runCatching {
-                val recorded = brokerFacade.syncAccount(
-                    brokerType  = brokerType,
-                    portfolioId = state.id.portfolioId,
-                    accountId   = state.id.accountId,
-                )
-                when {
-                    recorded > 0  -> log.info("[BrokerSyncScheduler] broker={} account={} recorded={}",
-                        brokerType, state.id.accountId, recorded)
-                    recorded == -1 -> log.debug("[BrokerSyncScheduler] rate limited broker={} account={}",
-                        brokerType, state.id.accountId)
-                }
-            }.onFailure { e ->
-                log.error("[BrokerSyncScheduler] sync failed broker={} account={}",
-                    brokerType, state.id.accountId, e)
-            }
+            brokerType to state
         }
 
         if (skipped > 0) log.debug("[BrokerSyncScheduler] skipped {} recently-synced accounts", skipped)
+        if (eligible.isEmpty()) return
+
+        // 브로커 간 병렬, 브로커 내 순차 — invokeAll join으로 fixedDelay 무겹침 보장
+        val groups = eligible.groupBy({ it.first }, { it.second }).toList()
+        val tasks = groups.map { (brokerType, group) ->
+            Callable { group.forEach { state -> syncOne(brokerType, state) } }
+        }
+        val futures = try {
+            brokerSyncExecutor.invokeAll(tasks)
+        } catch (e: InterruptedException) {
+            // 셧다운 등으로 group 완료 대기 중 인터럽트 — 인터럽트 상태 복원 후 이번 틱 중단
+            Thread.currentThread().interrupt()
+            log.warn("[BrokerSyncScheduler] interrupted while awaiting broker sync groups", e)
+            return
+        }
+        futures.forEachIndexed { index, future ->
+            runCatching { future.get() }.onFailure { e ->
+                log.error("[BrokerSyncScheduler] group task failed broker={}", groups[index].first, e)
+            }
+        }
+    }
+
+    private fun syncOne(brokerType: BrokerType, state: BrokerSyncStateEntity) {
+        runCatching {
+            val recorded = accountSyncer.syncAccount(
+                brokerType  = brokerType,
+                portfolioId = state.id.portfolioId,
+                accountId   = state.id.accountId,
+            )
+            when {
+                recorded > 0   -> log.info("[BrokerSyncScheduler] broker={} account={} recorded={}",
+                    brokerType, state.id.accountId, recorded)
+                recorded == -1 -> log.debug("[BrokerSyncScheduler] rate limited broker={} account={}",
+                    brokerType, state.id.accountId)
+            }
+        }.onFailure { e ->
+            log.error("[BrokerSyncScheduler] sync failed broker={} account={}",
+                brokerType, state.id.accountId, e)
+        }
     }
 
     companion object {

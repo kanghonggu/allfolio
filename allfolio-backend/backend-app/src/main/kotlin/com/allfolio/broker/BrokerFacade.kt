@@ -37,7 +37,7 @@ class BrokerFacade(
     private val metrics: BrokerMetrics,
     private val positionCacheService: PositionCacheService,
     private val objectMapper: ObjectMapper,
-) {
+) : BrokerAccountSyncer {
     private val log = LoggerFactory.getLogger(javaClass)
 
     private val adapterMap: Map<BrokerType, BrokerAdapter> =
@@ -51,7 +51,7 @@ class BrokerFacade(
      * 단일 계좌 증분 동기화
      * @return 저장 건수. -1 = rate limited
      */
-    fun syncAccount(
+    override fun syncAccount(
         brokerType: BrokerType,
         portfolioId: UUID,
         accountId: String,
