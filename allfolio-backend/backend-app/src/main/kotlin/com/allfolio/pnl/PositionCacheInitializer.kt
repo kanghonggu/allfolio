@@ -1,7 +1,8 @@
 package com.allfolio.pnl
 
 import com.allfolio.broker.BrokerSyncStateRepository
-import com.allfolio.trade.domain.TradeType
+import com.allfolio.trade.domain.FifoCostEngine
+import com.allfolio.trade.infrastructure.mapper.TradeMapper
 import com.allfolio.trade.infrastructure.repository.TradeRawJpaRepository
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -11,7 +12,6 @@ import org.springframework.boot.autoconfigure.data.redis.RedisProperties
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Component
 import java.math.BigDecimal
-import java.math.RoundingMode
 import java.time.LocalDateTime
 import java.util.UUID
 
@@ -107,47 +107,20 @@ class PositionCacheInitializer(
     }
 
     private fun initPortfolio(portfolioId: UUID) {
-        val trades = tradeRepository
+        val entities = tradeRepository
             .findByPortfolioIdAndExecutedAtLessThanEqualOrderByExecutedAtAsc(portfolioId, LocalDateTime.now())
 
-        if (trades.isEmpty()) return
+        if (entities.isEmpty()) return
 
-        // 누적 포지션 계산 (평균가 방식)
-        val positions = mutableMapOf<UUID, MutablePositionState>()
-
-        trades.forEach { trade ->
-            val state = positions.getOrPut(trade.assetId) { MutablePositionState() }
-
-            when (trade.tradeType) {
-                TradeType.BUY -> {
-                    val newQty     = state.quantity + trade.quantity
-                    val newAvgCost = if (newQty > BigDecimal.ZERO) {
-                        (state.quantity * state.avgCost + trade.quantity * trade.price)
-                            .divide(newQty, 10, RoundingMode.HALF_UP)
-                    } else BigDecimal.ZERO
-                    state.quantity = newQty
-                    state.avgCost  = newAvgCost
-                }
-                TradeType.SELL -> {
-                    state.quantity = (state.quantity - trade.quantity).max(BigDecimal.ZERO)
-                    if (state.quantity <= BigDecimal.ZERO) state.avgCost = BigDecimal.ZERO
-                }
+        val positionMap = entities
+            .groupBy { it.assetId }
+            .mapValues { (assetId, assetTrades) ->
+                val lotPosition = FifoCostEngine.replay(TradeMapper.toDomainList(assetTrades))
+                PositionDataMapper.toPositionData(lotPosition, portfolioId, assetId, currency = "KRW")
             }
-        }
-
-        // 보유 포지션만 (quantity > 0) Redis에 저장
-        val positionMap = positions
-            .filter { it.value.quantity > BigDecimal.ZERO }
-            .mapValues { (assetId, state) ->
-                PositionData(portfolioId, assetId, state.quantity, state.avgCost)
-            }
+            .filter { (_, data) -> data.quantity > BigDecimal.ZERO }
 
         positionCacheService.initPositions(portfolioId, positionMap)
-        log.info("[PositionInit] portfolioId={} positions={} trades={}", portfolioId, positionMap.size, trades.size)
+        log.info("[PositionInit] portfolioId={} positions={} trades={}", portfolioId, positionMap.size, entities.size)
     }
-
-    private data class MutablePositionState(
-        var quantity: BigDecimal = BigDecimal.ZERO,
-        var avgCost: BigDecimal  = BigDecimal.ZERO,
-    )
 }
