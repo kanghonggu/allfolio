@@ -10,8 +10,8 @@ import java.util.UUID
  * Redis field: {assetId}
  * Redis value: JSON(PositionData)
  *
- * avgCost: 매수 평균 단가 (FIFO 아닌 평균가 방식)
- * quantity: 현재 보유 수량 (SELL 시 차감)
+ * avgCost: 잔여 lots 기준 매수 가중평균 단가 (FifoCostEngine이 계산)
+ * quantity: 현재 보유 수량 (SELL 시 FIFO 소진으로 차감)
  */
 data class PositionData(
     val portfolioId: UUID,

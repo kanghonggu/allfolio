@@ -17,12 +17,6 @@ class PositionException(
                 "Insufficient quantity for asset $assetId: requested=$requested, available=$available",
             )
 
-        fun negativeQuantity(quantity: BigDecimal) =
-            PositionException(
-                "POSITION_NEGATIVE_QUANTITY",
-                "Quantity must be non-negative: $quantity",
-            )
-
         fun emptyTrades() =
             PositionException(
                 "POSITION_EMPTY_TRADES",
