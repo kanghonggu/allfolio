@@ -152,5 +152,11 @@ class PositionCacheService(
         }
     }
 
+    /** 포트폴리오 포지션 캐시 해시 전체 삭제 (계정 파기 등). */
+    fun evictPortfolio(portfolioId: UUID) {
+        runCatching { redisTemplate.delete(positionKey(portfolioId)) }
+            .onFailure { e -> log.warn("[PositionCache] evict failed portfolioId={}: {}", portfolioId, e.message) }
+    }
+
     private fun positionKey(portfolioId: UUID) = "pnl:positions:$portfolioId"
 }
