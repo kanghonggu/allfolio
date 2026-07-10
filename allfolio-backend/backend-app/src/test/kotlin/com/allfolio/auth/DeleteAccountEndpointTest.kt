@@ -4,7 +4,9 @@ import com.allfolio.config.JwtUserIdFilter
 import com.allfolio.config.SecurityConfig
 import com.allfolio.config.SseTokenFilter
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.verify
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.SpringBootConfiguration
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration
@@ -39,6 +41,7 @@ class DeleteAccountEndpointTest {
 
     @Autowired private lateinit var mockMvc: MockMvc
     @Autowired private lateinit var jwtTokenService: JwtTokenService
+    @Autowired private lateinit var authService: AuthService
 
     @Test
     fun `delete me without token is rejected`() {
@@ -58,7 +61,13 @@ class DeleteAccountEndpointTest {
             contentType = MediaType.APPLICATION_JSON
             content = """{"password":"pw"}"""
         }.andExpect { status { isNoContent() } }
+
+        // 요청 body의 password가 실제로 읽혀 서비스로 전달되는지 검증
+        verify(authService).deleteAccount(eqx(user.id), eqx("pw"))
     }
+
+    // Kotlin non-null 파라미터에 Mockito eq 매처를 쓰기 위한 헬퍼 (eq는 null을 반환)
+    private fun <T> eqx(value: T): T = eq(value) ?: value
 
     @SpringBootConfiguration
     @EnableAutoConfiguration
