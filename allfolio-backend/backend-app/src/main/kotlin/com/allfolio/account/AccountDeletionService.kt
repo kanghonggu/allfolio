@@ -27,6 +27,7 @@ class AccountDeletionService(
         purgeRepository.deletePerformanceDaily(userId)
         purgeRepository.deletePositionDaily(userId)
         purgeRepository.deleteBrokerSyncState(userId)
+        purgeRepository.deleteBinanceSyncCursor(userId)
         purgeRepository.deleteTradeRaw(userId)
         purgeRepository.deletePortfolios(userId)
         purgeRepository.deleteUser(userId)

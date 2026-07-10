@@ -35,6 +35,7 @@ class AccountDeletionServiceTest {
         ordered.verify(repo).deletePerformanceDaily(userId)
         ordered.verify(repo).deletePositionDaily(userId)
         ordered.verify(repo).deleteBrokerSyncState(userId)
+        ordered.verify(repo).deleteBinanceSyncCursor(userId)
         ordered.verify(repo).deleteTradeRaw(userId)
         ordered.verify(repo).deletePortfolios(userId)
         ordered.verify(repo).deleteUser(userId)

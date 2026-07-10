@@ -51,6 +51,10 @@ interface AccountPurgeRepository : Repository<UserEntity, UUID> {
     @Query("DELETE FROM broker_sync_state WHERE portfolio_id IN (SELECT id FROM portfolios WHERE user_id = :userId)", nativeQuery = true)
     fun deleteBrokerSyncState(userId: UUID): Int
 
+    @Modifying
+    @Query("DELETE FROM binance_sync_cursor WHERE portfolio_id IN (SELECT id FROM portfolios WHERE user_id = :userId)", nativeQuery = true)
+    fun deleteBinanceSyncCursor(userId: UUID): Int
+
     /** 계정 파기 전용 예외 — trade_raw 는 평소 삭제 금지(@Immutable, INSERT ONLY). */
     @Modifying
     @Query("DELETE FROM trade_raw WHERE portfolio_id IN (SELECT id FROM portfolios WHERE user_id = :userId)", nativeQuery = true)
