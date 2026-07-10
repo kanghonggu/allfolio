@@ -15,6 +15,7 @@ data class LoginRequest(
 
 data class RefreshRequest(val refreshToken: String)
 data class LogoutRequest(val refreshToken: String)
+data class DeleteAccountRequest(val password: String)
 
 data class AuthResponse(
     val accessToken: String,

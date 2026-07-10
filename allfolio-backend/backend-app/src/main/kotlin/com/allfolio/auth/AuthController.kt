@@ -1,6 +1,7 @@
 package com.allfolio.auth
 
 import org.springframework.http.HttpStatus
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -36,4 +37,13 @@ class AuthController(private val authService: AuthService) {
     @GetMapping("/me")
     fun me(@RequestHeader("X-User-Id") userId: UUID): AuthUserResponse =
         authService.me(userId)
+
+    @DeleteMapping("/me")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun deleteMe(
+        @RequestHeader("X-User-Id") userId: UUID,
+        @RequestBody request: DeleteAccountRequest,
+    ) {
+        authService.deleteAccount(userId, request.password)
+    }
 }

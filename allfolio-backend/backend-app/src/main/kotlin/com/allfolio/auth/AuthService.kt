@@ -1,5 +1,6 @@
 package com.allfolio.auth
 
+import com.allfolio.account.AccountDeletionService
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
 import org.springframework.security.crypto.password.PasswordEncoder
@@ -19,6 +20,7 @@ class AuthService(
     private val passwordEncoder: PasswordEncoder,
     private val jwtTokenService: JwtTokenService,
     @Value("\${allfolio.auth.refresh-token-days}") private val refreshTokenDays: Long,
+    private val accountDeletionService: AccountDeletionService,
 ) {
     private val secureRandom = SecureRandom()
 
@@ -74,6 +76,16 @@ class AuthService(
         val user = userRepository.findById(userId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다.") }
         return user.toResponse()
+    }
+
+    @Transactional
+    fun deleteAccount(userId: UUID, password: String) {
+        val user = userRepository.findById(userId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다.") }
+        if (!passwordEncoder.matches(password, user.passwordHash)) {
+            throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "비밀번호가 올바르지 않습니다.")
+        }
+        accountDeletionService.purge(userId)
     }
 
     private fun issueAuthResponse(user: UserEntity): AuthResponse {
