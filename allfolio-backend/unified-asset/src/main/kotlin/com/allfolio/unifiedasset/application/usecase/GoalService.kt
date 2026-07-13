@@ -1,6 +1,7 @@
 package com.allfolio.unifiedasset.application.usecase
 
 import com.allfolio.unifiedasset.application.port.AssetRepository
+import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.application.port.GoalRepository
 import com.allfolio.unifiedasset.domain.goal.Goal
 import com.allfolio.unifiedasset.domain.goal.GoalCategory
@@ -47,6 +48,7 @@ data class GoalsResponse(
 class GoalService(
     private val goalRepository: GoalRepository,
     private val assetRepository: AssetRepository,
+    private val fx: FxConverter,
 ) {
     @Transactional
     fun create(userId: UUID, req: GoalRequest): GoalResponse {
@@ -90,7 +92,7 @@ class GoalService(
     }
 
     private fun currentNav(userId: UUID): BigDecimal =
-        assetRepository.findByUserId(userId).sumOf { it.currentValue }
+        assetRepository.findByUserId(userId).navInKrw(fx)
 
     private fun Goal.toResponse(nav: BigDecimal): GoalResponse {
         val pct = if (targetAmount > BigDecimal.ZERO)

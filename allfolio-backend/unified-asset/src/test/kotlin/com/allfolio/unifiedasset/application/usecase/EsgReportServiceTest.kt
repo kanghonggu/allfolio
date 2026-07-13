@@ -1,6 +1,7 @@
 package com.allfolio.unifiedasset.application.usecase
 
 import com.allfolio.unifiedasset.application.port.AssetRepository
+import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.domain.asset.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
@@ -21,7 +22,11 @@ class EsgReportServiceTest {
     private val userId    = UUID.randomUUID()
     private val accountId = UUID.randomUUID()
 
-    private fun svc() = EsgReportService(assetRepository)
+    private val identityFx = object : FxConverter {
+        override fun toKrw(amount: BigDecimal, currency: String) = amount
+    }
+
+    private fun svc() = EsgReportService(assetRepository, identityFx)
 
     @Test
     fun `자산 없으면 ResponseStatusException 404`() {

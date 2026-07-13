@@ -4,6 +4,7 @@ import com.allfolio.common.crypto.SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE
 import com.allfolio.common.crypto.requiresSensitiveDataReconnection
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
+import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.application.port.StockTradeRepository
 import com.allfolio.unifiedasset.application.usecase.*
 import com.allfolio.unifiedasset.domain.account.*
@@ -110,6 +111,7 @@ class AccountController(
     private val stockTradeRepository: StockTradeRepository,
     private val snapshotService: PerformanceSnapshotService,
     private val authorizationService: AuthorizationService,
+    private val fx: FxConverter,
 ) {
     @PostMapping("/test-connection")
     fun testConnection(
@@ -230,7 +232,7 @@ class AccountController(
             areaPyeong      = if (isAreaType) req.areaPyeong else null,
         )
         val saved = assetRepository.save(asset)
-        val nav = assetRepository.findByUserId(userId).sumOf { it.currentValue }
+        val nav = assetRepository.findByUserId(userId).navInKrw(fx)
         snapshotService.record(userId, nav)
         return saved.toResponse()
     }
@@ -246,7 +248,7 @@ class AccountController(
         require(account.userId == userId) { "Forbidden" }
         val content = file.inputStream.bufferedReader().readText()
         val result = importCsvUseCase.execute(userId, id, content)
-        val nav = assetRepository.findByUserId(userId).sumOf { it.currentValue }
+        val nav = assetRepository.findByUserId(userId).navInKrw(fx)
         snapshotService.record(userId, nav)
         return result
     }

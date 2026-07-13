@@ -2,6 +2,7 @@ package com.allfolio.unifiedasset.application.usecase
 
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
+import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.domain.account.Account
 import com.allfolio.unifiedasset.domain.account.AccountProvider
 import com.allfolio.unifiedasset.domain.account.AccountType
@@ -30,7 +31,13 @@ class ReportServiceTest {
     private val userId    = UUID.randomUUID()
     private val accountId = UUID.randomUUID()
 
-    private fun svc() = ReportService(assetRepository, accountRepository, jdbc)
+    // 기존 집계 로직 검증용: USD를 1:1로 두는 항등 환산기 (환율 왜곡 없이 합산 로직만 확인).
+    private val identityFx = object : FxConverter {
+        override fun toKrw(amount: BigDecimal, currency: String) = amount
+    }
+
+    private fun svc(fx: FxConverter = identityFx) =
+        ReportService(assetRepository, accountRepository, jdbc, fx)
 
     // ── summary ───────────────────────────────────────────────
 
@@ -235,6 +242,28 @@ class ReportServiceTest {
         val currencies = result.byCurrency.map { it.currency }
         assertTrue(currencies.contains("KRW"))
         assertTrue(currencies.contains("USD"))
+    }
+
+    @Test
+    fun `summary NAV는 통화별로 KRW 환산 후 합산한다`() {
+        // 1,000,000 KRW 주식 + 1,000 USD 자산(환율 1,300)
+        val krw = stock(currentValue = bd("1000000"), currency = "KRW")
+        val usd = usdStock(currentValue = bd("1000"))
+        `when`(assetRepository.findByUserId(userId)).thenReturn(listOf(krw, usd))
+        `when`(accountRepository.findByUserId(userId)).thenReturn(emptyList())
+
+        val fx = object : FxConverter {
+            override fun toKrw(amount: BigDecimal, currency: String) =
+                if (currency.uppercase() == "KRW") amount else amount.multiply(bd("1300"))
+        }
+
+        val result = svc(fx).summary(userId)
+
+        // 1,000,000 + 1,000 * 1,300 = 2,300,000 (raw 합산이면 1,001,000)
+        assertEquals(0, bd("2300000").compareTo(result.nav))
+        // byCurrency USD 버킷도 KRW 환산값(1,300,000)으로 표기
+        val usdBucket = result.byCurrency.first { it.currency == "USD" }
+        assertEquals(0, bd("1300000").compareTo(usdBucket.value))
     }
 
     // ── helper factories ──────────────────────────────────────
