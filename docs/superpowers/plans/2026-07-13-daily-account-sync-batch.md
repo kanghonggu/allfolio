@@ -488,3 +488,33 @@ Expected: BUILD SUCCESSFUL — Spring 컨텍스트가 `DailyAccountSyncer`(Accou
 - `DailyAccountSyncer.SYNC_ELIGIBLE_PROVIDERS` (companion) — Task 3 정의, 테스트 참조 일치 ✅
 - `DailyAccountSyncer(accountRepository, syncRunner)` 생성자 — Task 3 정의, Task 4 주입(자동, @Component) ✅
 - `SyncResult(accountId, synced, status, error=null)` — 기존 정의와 일치(테스트에서 3-arg 사용) ✅
+
+---
+
+## Follow-up (PR #28 리뷰 후속) — INACTIVE 계좌 배치 제외
+
+**상태: 이론적 이슈, 코드 변경 보류 (2026-07-13 조사).**
+
+리뷰에서 "`DailyAccountSyncer.syncAll()`이 `findByProviders`로 모든 status 계좌를 열거하므로
+`INACTIVE` 계좌도 재sync되어, sync 성공 시 status가 `ACTIVE`로 승격되며 사용자가 비활성화한
+계좌가 되살아난다"는 우려가 제기됨.
+
+조사 결과 **현재는 발생 불가능**:
+- `AccountStatus.INACTIVE`는 enum 정의(`domain/account/AccountStatus.kt:7`)에만 존재하고,
+  코드 어디에서도 이 값으로 status를 세팅하지 않음.
+- status가 실제 세팅되는 값은 sync 흐름의 **ACTIVE / SYNCING / ERROR** 3가지뿐
+  (`SyncAccountUseCase`, `Account` 팩토리).
+- "계좌 비활성화" = **하드 삭제**(`AccountController.delete` → `deleteByAccountId` + `deleteById`).
+  soft-delete(→INACTIVE) 경로 없음. 삭제된 계좌는 `findByProviders`에 애초에 열거 안 됨.
+- 프론트엔드의 `INACTIVE`는 배지 라벨/색상 매핑(`app/unified/accounts/page.tsx`)뿐, 세팅 UI 없음.
+
+→ `INACTIVE`는 아직 배선되지 않은 예정 상태값(사실상 dead enum value). 지금 방어 필터
+(`findByProviderInAndStatusNot(providers, INACTIVE)` 등)을 넣으면 도달 불가능한 상태를 거르는
+테스트 불가 코드가 되므로 YAGNI. **넣지 않음.**
+
+**향후 "연동 해제/일시 비활성화"를 soft-delete(→ INACTIVE)로 구현하는 PR에서 반드시 한 세트로 처리:**
+1. `DailyAccountSyncer.syncAll()` 자동 배치에서 INACTIVE 제외 (repo 쿼리 필터 or 조회 후 필터).
+2. 상세 페이지 수동 Sync(`app/unified/accounts/[id]/page.tsx`)도 INACTIVE 제외할지 일관성 결정.
+3. `SyncAccountUseCase`가 sync 성공 시 무조건 `ACTIVE`로 승격시키는 로직 재검토
+   (INACTIVE 계좌가 되살아나지 않도록).
+4. `DailyAccountSyncerTest`에 INACTIVE 제외 케이스 추가.
