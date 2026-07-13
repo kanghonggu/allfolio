@@ -80,7 +80,23 @@ class KisSyncAdapterTest {
         assertEquals(1, assets.size)
         val a = assets.first()
         assertEquals(0, BigDecimal("1660").compareTo(a.quantity))
+        assertEquals(0, BigDecimal("135417.7693").compareTo(a.purchasePrice))
         assertEquals(0, BigDecimal("249000000.00").compareTo(a.currentValue))
+    }
+
+    @Test
+    fun `매입금액이 0이면 매입평균가 필드로 avgCost를 채운다`() {
+        val client = FakeKisSyncClient(KisBalanceResponse(
+            rtCd = "0",
+            output1 = listOf(KisBalanceItem(
+                pdno = "005930", prdtName = "삼성전자", hldgQty = "10",
+                pchsAvgPric = "5000", pchsAmt = "0", prpr = "0", evluAmt = "0",
+            )),
+        ))
+        val a = KisSyncAdapter(client).sync(kisAccount()).first()
+        assertEquals(0, BigDecimal("5000").compareTo(a.purchasePrice))
+        assertEquals(0, BigDecimal("50000.00").compareTo(a.currentValue)) // 5000 * 10 폴백
+        assertEquals(ValuationMethod.USER_INPUT, a.valuationMethod)
     }
 
     @Test
