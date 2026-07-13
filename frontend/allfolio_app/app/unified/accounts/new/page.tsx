@@ -158,6 +158,9 @@ export default function NewAccountPage() {
 
   const exchangeInfo = provider ? EXCHANGES.find(e => e.provider === provider) : null
 
+  const kisDigits = form.accountNo.replace(/[^0-9]/g, '')
+  const kisAccountValid = kisDigits.length === 8 || kisDigits.length === 10
+
   return (
     <div className="mx-auto max-w-xl space-y-6">
       <div>
@@ -311,6 +314,10 @@ export default function NewAccountPage() {
                     className={inputCls}
                   />
                   <p className="mt-1 text-xs text-gray-500">계좌번호 체계 8-2 (앞 8자리 + 상품코드 2자리)</p>
+                  <p className="mt-1 text-xs text-gray-500">연결 테스트는 앱키/앱시크릿만 검증합니다. 계좌번호는 확인되지 않으니 정확히 입력하세요.</p>
+                  {form.accountNo && !kisAccountValid && (
+                    <p className="mt-1 text-xs text-red-400">계좌번호는 숫자 8자리(+상품코드 2자리)여야 합니다.</p>
+                  )}
                 </Field>
                 <div className="rounded-lg border border-gray-700 bg-gray-800/50 px-3 py-2 text-xs text-gray-400">
                   KIS Developers에서 발급한 App Key/Secret이 필요합니다. 조회 전용 권한을 권장합니다.
@@ -430,7 +437,8 @@ export default function NewAccountPage() {
             <button type="submit"
               disabled={
                 mutation.isPending || !api ||
-                ((category === 'EXCHANGE' || provider === 'KIS') && testStatus !== 'success')
+                ((category === 'EXCHANGE' || provider === 'KIS') && testStatus !== 'success') ||
+                (provider === 'KIS' && !kisAccountValid)
               }
               className="flex-1 rounded-lg bg-blue-600 py-2.5 text-sm font-medium hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
