@@ -309,11 +309,12 @@ export default function NewAccountPage() {
                   />
                 </Field>
                 <Field label="계좌번호 *" required>
-                  <input required type="text" placeholder="예: 50123456-01"
-                    value={form.accountNo} onChange={e => set('accountNo', e.target.value)}
+                  <input required type="text" inputMode="numeric" placeholder="예: 5012345601"
+                    value={form.accountNo}
+                    onChange={e => set('accountNo', e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
                     className={inputCls}
                   />
-                  <p className="mt-1 text-xs text-gray-500">계좌번호 체계 8-2 (앞 8자리 + 상품코드 2자리)</p>
+                  <p className="mt-1 text-xs text-gray-500">숫자만 입력 (앞 8자리 계좌번호 + 상품코드 2자리, 하이픈 자동 제거)</p>
                   <p className="mt-1 text-xs text-gray-500">연결 테스트는 앱키/앱시크릿만 검증합니다. 계좌번호는 확인되지 않으니 정확히 입력하세요.</p>
                   {form.accountNo && !kisAccountValid && (
                     <p className="mt-1 text-xs text-red-400">계좌번호는 숫자 8자리(+상품코드 2자리)여야 합니다.</p>
