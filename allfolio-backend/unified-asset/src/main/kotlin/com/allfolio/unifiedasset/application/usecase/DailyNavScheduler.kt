@@ -15,7 +15,10 @@ import java.util.UUID
  *
  * 스냅샷 파트는 sync 결과와 무관하게 항상 실행한다. SyncAccountUseCase가 sync 성공 시
  * 이미 스냅샷을 UPSERT하지만, 여기 명시적 패스는 syncable 계좌가 없는 사용자·전부 실패한
- * 사용자까지 마지막 값으로라도 스냅샷을 보장하는 안전망이다(UPSERT라 멱등).
+ * 사용자까지 마지막 값으로라도 스냅샷을 보장하는 안전망이다. 같은 날은 (tenant,portfolio,date)
+ * UPSERT라 마지막 쓰기가 반영되며 이 패스가 맨 나중에 실행돼 값을 확정한다. (sync 부수효과의
+ * 자산별 환산 합과 여기 통화별 환산 합은 KRW 라운딩 방식 차이로 수 원 다를 수 있으나,
+ * 통화별 1회 환산인 이 패스 값이 더 정확하고 최종값이 된다.)
  */
 @Component
 class DailyNavScheduler(
