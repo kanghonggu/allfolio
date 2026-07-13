@@ -28,14 +28,14 @@ class SyncAccountUseCase(
     private val adapters: List<SyncAdapter>,
     private val snapshotService: PerformanceSnapshotService,
     private val fx: FxConverter,
-) {
+) : AccountSyncRunner {
     private val log = LoggerFactory.getLogger(javaClass)
     private val adapterMap: Map<AccountProvider, SyncAdapter> by lazy {
         adapters.associateBy { it.supportedProvider }
     }
 
     @Transactional
-    fun execute(accountId: UUID): SyncResult {
+    override fun execute(accountId: UUID): SyncResult {
         val account = try {
             accountRepository.findById(accountId)
         } catch (e: RuntimeException) {

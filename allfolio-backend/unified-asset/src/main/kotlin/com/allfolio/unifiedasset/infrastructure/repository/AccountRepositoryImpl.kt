@@ -20,6 +20,9 @@ class AccountRepositoryImpl(private val jpa: AccountJpaRepository) : AccountRepo
     override fun findByUserId(userId: UUID): List<Account> =
         jpa.findByUserId(userId).map { it.toDomain() }
 
+    override fun findByProviders(providers: Collection<com.allfolio.unifiedasset.domain.account.AccountProvider>): List<Account> =
+        jpa.findByProviderIn(providers).map { it.toDomain() }
+
     override fun delete(id: UUID) = jpa.deleteById(id)
 
     override fun updateStatus(id: UUID, status: AccountStatus) {
