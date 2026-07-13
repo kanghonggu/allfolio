@@ -68,6 +68,6 @@ class KisSyncClientImpl(
             .retrieve()
             .bodyToMono<KisBalanceResponse>()
             .block(Duration.ofSeconds(15))
-            ?: KisBalanceResponse()
+            ?: KisBalanceResponse(rtCd = "-1", msg1 = "KIS 응답 없음")
     }
 }
