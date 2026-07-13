@@ -4,6 +4,7 @@ import com.allfolio.common.crypto.LegacyPlaintextDetectedException
 import com.allfolio.common.crypto.SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
+import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.application.port.SyncAdapter
 import com.allfolio.unifiedasset.domain.account.Account
 import com.allfolio.unifiedasset.domain.account.AccountProvider
@@ -28,6 +29,9 @@ class SyncAccountUseCaseSensitiveDataTest {
             assetRepository = NoopAssetRepository(),
             adapters = listOf(adapter),
             snapshotService = PerformanceSnapshotService(mock(JdbcTemplate::class.java)),
+            fx = object : FxConverter {
+                override fun toKrw(amount: java.math.BigDecimal, currency: String) = amount
+            },
         )
 
         val result = service.execute(accountId)

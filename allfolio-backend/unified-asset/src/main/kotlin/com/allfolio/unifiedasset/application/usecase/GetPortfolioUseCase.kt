@@ -2,6 +2,7 @@ package com.allfolio.unifiedasset.application.usecase
 
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
+import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.domain.asset.Asset
 import com.allfolio.unifiedasset.domain.asset.AssetType
 import org.springframework.stereotype.Service
@@ -49,25 +50,21 @@ data class AssetSummary(
 class GetPortfolioUseCase(
     private val assetRepository: AssetRepository,
     private val accountRepository: AccountRepository,
+    private val fx: FxConverter,
 ) {
     @Transactional(readOnly = true)
     fun execute(userId: UUID): PortfolioResponse {
         val assets = assetRepository.findByUserId(userId)
         val accounts = accountRepository.findByUserId(userId).associateBy { it.id }
 
-        // 가장 비중이 큰 통화를 기준 통화로 사용
-        val primaryCurrency = assets
-            .groupBy { it.currency }
-            .maxByOrNull { (_, list) -> list.sumOf { it.currentValue } }
-            ?.key ?: "KRW"
+        // 통화가 섞인 포트폴리오도 모두 KRW로 환산해 합산한다.
+        // (기존에는 최대 비중 통화 하나만 남기고 나머지 자산을 버려 총액이 누락됐다)
+        val totalValue = assets.navInKrw(fx)
 
-        val primaryAssets = assets.filter { it.currency == primaryCurrency }
-        val totalValue = primaryAssets.sumOf { it.currentValue }
-
-        val byType = primaryAssets
+        val byType = assets
             .groupBy { it.type }
             .mapValues { (type, list) ->
-                val typeValue = list.sumOf { it.currentValue }
+                val typeValue = list.navInKrw(fx)
                 val pct = if (totalValue > BigDecimal.ZERO)
                     typeValue.divide(totalValue, 4, RoundingMode.HALF_UP)
                         .multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
@@ -76,7 +73,8 @@ class GetPortfolioUseCase(
             }
             .mapKeys { it.key.name }
 
-        val summaries = assets.map { asset ->
+        // 자산별 표시 값은 원래 통화 그대로 두되, 정렬은 KRW 환산 기준으로 한다.
+        val summaries = assets.sortedByDescending { it.currentValueInKrw(fx) }.map { asset ->
             val accountName = accounts[asset.accountId]?.accountName ?: "Unknown"
             val account     = accounts[asset.accountId]
             AssetSummary(
@@ -98,12 +96,12 @@ class GetPortfolioUseCase(
                 returnRate       = asset.returnRate(),
                 confidenceLevel  = asset.confidenceLevel.name,
             )
-        }.sortedByDescending { it.currentValue }
+        }
 
         return PortfolioResponse(
             userId     = userId,
             totalValue = totalValue,
-            currency   = primaryCurrency,
+            currency   = "KRW",
             byType     = byType,
             assets     = summaries,
         )

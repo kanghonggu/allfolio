@@ -3,6 +3,7 @@ package com.allfolio.unifiedasset.api
 import com.allfolio.config.GlobalExceptionHandler
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
+import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.application.port.StockTradeRepository
 import com.allfolio.unifiedasset.application.usecase.AuthorizationService
 import com.allfolio.unifiedasset.application.usecase.CreateAccountUseCase
@@ -50,6 +51,9 @@ class AccountControllerSecurityTest {
         stockTradeRepository,
         snapshotService,
         authorizationService,
+        object : FxConverter {
+            override fun toKrw(amount: BigDecimal, currency: String) = amount
+        },
     )
 
     private val mockMvc = MockMvcBuilders

@@ -4,6 +4,7 @@ import com.allfolio.esg.domain.EsgEngine
 import com.allfolio.report.domain.AssetEsgRow
 import com.allfolio.report.domain.EsgReport
 import com.allfolio.unifiedasset.application.port.AssetRepository
+import com.allfolio.unifiedasset.application.port.FxConverter
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.web.server.ResponseStatusException
@@ -15,14 +16,16 @@ import java.util.UUID
 @Service
 class EsgReportService(
     private val assetRepository: AssetRepository,
+    private val fx: FxConverter,
 ) {
     fun generate(userId: UUID): EsgReport {
         val assets = assetRepository.findByUserId(userId)
         if (assets.isEmpty()) throw ResponseStatusException(HttpStatus.NOT_FOUND, "자산이 없습니다")
 
-        val totalValue = assets.sumOf { it.currentValue }
+        // 가치 가중 ESG 점수는 통화가 섞이면 왜곡되므로 KRW 환산값으로 가중한다.
+        val totalValue = assets.navInKrw(fx)
 
-        val inputs = assets.map { EsgEngine.AssetInput(it.type.name, it.currentValue) }
+        val inputs = assets.map { EsgEngine.AssetInput(it.type.name, it.currentValueInKrw(fx)) }
         val portfolioScore = EsgEngine.calculate(inputs)
 
         val breakdown = assets.map { asset ->
@@ -32,7 +35,7 @@ class EsgReportService(
                 .add(BigDecimal(g).multiply(BigDecimal("0.35")))
                 .setScale(2, RoundingMode.HALF_UP)
             val weight = if (totalValue > BigDecimal.ZERO)
-                asset.currentValue.divide(totalValue, 4, RoundingMode.HALF_UP)
+                asset.currentValueInKrw(fx).divide(totalValue, 4, RoundingMode.HALF_UP)
             else BigDecimal.ZERO
 
             AssetEsgRow(

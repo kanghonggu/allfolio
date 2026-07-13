@@ -2,6 +2,7 @@ package com.allfolio.unifiedasset.application.usecase
 
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
+import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.domain.asset.Asset
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
@@ -197,14 +198,16 @@ class ReportService(
     private val assetRepository: AssetRepository,
     private val accountRepository: AccountRepository,
     private val jdbc: JdbcTemplate,
+    private val fx: FxConverter,
 ) {
     @Transactional(readOnly = true)
     fun summary(userId: UUID): SummaryReport {
         val assets = assetRepository.findByUserId(userId)
         val accounts = accountRepository.findByUserId(userId)
-        val totalValue = assets.sumOf { it.currentValue }
-        val totalCost = assets.sumOf { it.totalPurchaseCost() }
-        val unrealized = assets.sumOf { it.unrealizedPnl() }
+        // 크로스-자산 합계는 통화 혼재를 피하려 KRW로 환산해 계산한다.
+        val totalValue = assets.navInKrw(fx)
+        val totalCost = assets.sumOf { it.purchaseCostInKrw(fx) }
+        val unrealized = assets.sumOf { it.unrealizedPnlInKrw(fx) }
         val unrealizedPct = if (totalCost > BigDecimal.ZERO)
             unrealized.divide(totalCost, 4, RoundingMode.HALF_UP).multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
         else BigDecimal.ZERO
@@ -227,7 +230,7 @@ class ReportService(
     @Transactional(readOnly = true)
     fun allocation(userId: UUID): AllocationReport {
         val assets = assetRepository.findByUserId(userId)
-        val totalValue = assets.sumOf { it.currentValue }
+        val totalValue = assets.navInKrw(fx)
         val topHoldings = buildTopHoldings(assets, totalValue, 10)
         val hhi = computeHHI(assets, totalValue)
         val top5 = topHoldings.take(5).sumOf { it.pct }.divide(BigDecimal(100), 4, RoundingMode.HALF_UP)
@@ -248,8 +251,8 @@ class ReportService(
     fun performance(userId: UUID, period: String): PerformanceReport {
         val dailySeries = queryPerformanceSeries(userId, period)
         val assets = assetRepository.findByUserId(userId)
-        val totalValue = assets.sumOf { it.currentValue }
-        val totalCost = assets.sumOf { it.totalPurchaseCost() }
+        val totalValue = assets.navInKrw(fx)
+        val totalCost = assets.sumOf { it.purchaseCostInKrw(fx) }
 
         val totalReturn = if (totalCost > BigDecimal.ZERO)
             (totalValue - totalCost).divide(totalCost, 4, RoundingMode.HALF_UP)
@@ -296,7 +299,7 @@ class ReportService(
         val accounts = accountRepository.findByUserId(userId).associateBy { it.id }
 
         val rows = assets
-            .sortedByDescending { it.currentValue }
+            .sortedByDescending { it.currentValueInKrw(fx) }
             .map { asset ->
                 val accountName = accounts[asset.accountId]?.accountName ?: "Unknown"
                 val cost = asset.totalPurchaseCost()
@@ -321,9 +324,10 @@ class ReportService(
                 )
             }
 
-        val totalUnrealized = rows.sumOf { it.unrealizedPnl }
-        val totalCost = rows.sumOf { it.purchaseCost }
-        val totalValue = rows.sumOf { it.currentValue }
+        // 개별 포지션(rows)은 원래 통화로 표시하되, 합계는 KRW 환산 기준으로 집계한다.
+        val totalUnrealized = assets.sumOf { it.unrealizedPnlInKrw(fx) }
+        val totalCost = assets.sumOf { it.purchaseCostInKrw(fx) }
+        val totalValue = assets.navInKrw(fx)
         val totalReturnPct = if (totalCost > BigDecimal.ZERO)
             totalUnrealized.divide(totalCost, 4, RoundingMode.HALF_UP)
                 .multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
@@ -344,8 +348,8 @@ class ReportService(
     fun benchmark(userId: UUID, period: String): BenchmarkReport {
         val dailySeries = queryPerformanceSeries(userId, period)
         val assets = assetRepository.findByUserId(userId)
-        val totalValue = assets.sumOf { it.currentValue }
-        val totalCost = assets.sumOf { it.totalPurchaseCost() }
+        val totalValue = assets.navInKrw(fx)
+        val totalCost = assets.sumOf { it.purchaseCostInKrw(fx) }
 
         val portfolioReturn = if (totalCost > BigDecimal.ZERO)
             (totalValue - totalCost).divide(totalCost, 4, RoundingMode.HALF_UP)
@@ -383,14 +387,14 @@ class ReportService(
     @Transactional(readOnly = true)
     fun networth(userId: UUID): NetWorthReport {
         val assets = assetRepository.findByUserId(userId)
-        val totalAssets = assets.sumOf { it.currentValue }
-        val totalLoan = assets.sumOf { it.loanAmount ?: BigDecimal.ZERO }
+        val totalAssets = assets.navInKrw(fx)
+        val totalLoan = assets.sumOf { it.loanAmountInKrw(fx) }
         val netWorth = totalAssets - totalLoan
 
         val byType = assets.groupBy { it.type.name }
             .map { (type, list) ->
-                val typeAssets = list.sumOf { it.currentValue }
-                val typeLoan = list.sumOf { it.loanAmount ?: BigDecimal.ZERO }
+                val typeAssets = list.navInKrw(fx)
+                val typeLoan = list.sumOf { it.loanAmountInKrw(fx) }
                 val typeNetWorth = typeAssets - typeLoan
                 val typePct = if (netWorth != BigDecimal.ZERO)
                     typeNetWorth.divide(netWorth, 4, RoundingMode.HALF_UP)
@@ -504,34 +508,37 @@ class ReportService(
 
     // ── Private helpers ────────────────────────────────────────
 
+    // 아래 집계 헬퍼들은 통화 혼재 왜곡을 피하려 자산 가치를 KRW로 환산해 계산한다.
     private fun buildTypeBreakdown(assets: List<Asset>, totalValue: BigDecimal): List<TypeBreakdown> =
         assets.groupBy { it.type.name }
             .map { (type, list) ->
-                val tv = list.sumOf { it.currentValue }
+                val tv = list.navInKrw(fx)
                 val pct = pct(tv, totalValue)
                 TypeBreakdown(type, tv, pct, list.size)
             }
             .sortedByDescending { it.value }
 
+    // 통화별 익스포저: 각 통화 버킷의 KRW 환산 합계를 표시한다.
     private fun buildCurrencyBreakdown(assets: List<Asset>, totalValue: BigDecimal): List<CurrencyBreakdown> =
         assets.groupBy { it.currency }
             .map { (currency, list) ->
-                val tv = list.sumOf { it.currentValue }
+                val tv = list.navInKrw(fx)
                 CurrencyBreakdown(currency, tv, pct(tv, totalValue))
             }
             .sortedByDescending { it.value }
 
     private fun buildTopHoldings(assets: List<Asset>, totalValue: BigDecimal, n: Int): List<TopHolding> =
-        assets.sortedByDescending { it.currentValue }
+        assets.sortedByDescending { it.currentValueInKrw(fx) }
             .take(n)
             .map { a ->
-                TopHolding(a.name, a.symbol, a.type.name, a.currentValue, pct(a.currentValue, totalValue))
+                val vKrw = a.currentValueInKrw(fx)
+                TopHolding(a.name, a.symbol, a.type.name, vKrw, pct(vKrw, totalValue))
             }
 
     private fun computeHHI(assets: List<Asset>, totalValue: BigDecimal): BigDecimal {
         if (totalValue <= BigDecimal.ZERO) return BigDecimal.ZERO
         return assets.sumOf { asset ->
-            val share = asset.currentValue.divide(totalValue, 6, RoundingMode.HALF_UP)
+            val share = asset.currentValueInKrw(fx).divide(totalValue, 6, RoundingMode.HALF_UP)
             share.multiply(share)
         }.setScale(4, RoundingMode.HALF_UP)
     }

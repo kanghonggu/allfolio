@@ -4,6 +4,7 @@ import com.allfolio.common.crypto.SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE
 import com.allfolio.common.crypto.requiresSensitiveDataReconnection
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
+import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.application.port.SyncAdapter
 import com.allfolio.unifiedasset.domain.account.AccountProvider
 import com.allfolio.unifiedasset.domain.account.AccountStatus
@@ -26,6 +27,7 @@ class SyncAccountUseCase(
     private val assetRepository: AssetRepository,
     private val adapters: List<SyncAdapter>,
     private val snapshotService: PerformanceSnapshotService,
+    private val fx: FxConverter,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val adapterMap: Map<AccountProvider, SyncAdapter> by lazy {
@@ -56,9 +58,9 @@ class SyncAccountUseCase(
             assetRepository.saveAll(assets)
             accountRepository.updateStatus(accountId, AccountStatus.ACTIVE)
 
-            // 이 계좌 유저의 전체 NAV를 스냅샷으로 기록
+            // 이 계좌 유저의 전체 NAV를 스냅샷으로 기록 (통화 혼재 → KRW 환산 후 합산)
             val allAssets = assetRepository.findByUserId(account.userId)
-            val nav = allAssets.sumOf { it.currentValue }
+            val nav = allAssets.navInKrw(fx)
             snapshotService.record(account.userId, nav)
 
             log.info("Synced ${assets.size} assets for account $accountId (${account.provider})")
