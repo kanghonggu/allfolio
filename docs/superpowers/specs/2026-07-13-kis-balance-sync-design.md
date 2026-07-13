@@ -133,7 +133,10 @@ class KisSyncAdapter(props, objectMapper) : SyncAdapter {
 - 카테고리에 **"증권사 API 연동"**(가칭) 추가, provider=`KIS`.
   (기존 "증권 계좌(STOCK, 수동입력)" 카테고리는 그대로 유지)
 - 입력 필드: 별칭, **앱키**(password), **앱시크릿**(password),
-  **계좌번호 8자리(CANO)**, **상품코드 2자리(기본 `01`)**, 연결테스트 버튼.
+  **계좌번호 한 칸**(예: `50123456-01`, 계좌번호 체계 8-2), 연결테스트 버튼.
+- 계좌번호 파싱: 하이픈/공백 제거 후 앞 8자리=CANO, 뒤 2자리=상품코드로 분리하여
+  `externalId="{CANO}_{상품코드}"`로 저장. (파싱은 제출 시 프론트에서 수행; 형식 미검증 시
+  백엔드 `parseExternalId`가 `_` 없으면 상품코드 기본 `01` 폴백)
 - 제출 payload: `provider=KIS`, `accountType=STOCK`, `currency=KRW`,
   `apiKey`, `apiSecret`, `externalId="{CANO}_{상품코드}"`.
 - 거래소 폼처럼 **연결테스트 성공 후에만 계좌 추가** 가능하도록 게이팅.
