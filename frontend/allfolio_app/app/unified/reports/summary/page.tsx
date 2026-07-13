@@ -106,7 +106,8 @@ export default function SummaryReportPage() {
           {data.byCurrency.map((c) => (
             <div key={c.currency} className="flex-1 min-w-[120px] rounded-lg border border-gray-700 p-4 text-center">
               <div className="text-lg font-bold text-gray-200">{c.currency}</div>
-              <div className="text-sm text-gray-400 tabular-nums">{fmt(c.value, c.currency)}</div>
+              {/* c.value는 백엔드에서 KRW로 환산된 통화별 기여액 → KRW로 표시(원통화 심볼 금지) */}
+              <div className="text-sm text-gray-400 tabular-nums">{fmt(c.value)}</div>
               <div className="text-xs text-gray-500 mt-0.5">{c.pct.toFixed(1)}%</div>
             </div>
           ))}
