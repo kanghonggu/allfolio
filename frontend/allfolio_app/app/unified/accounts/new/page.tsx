@@ -19,9 +19,10 @@ const EXCHANGES: { provider: AccountProvider; label: string; needsPassphrase?: b
 const EXCHANGE_PROVIDERS = new Set(EXCHANGES.map(e => e.provider))
 
 // 카테고리 (거래소 제외 나머지)
-type Category = 'EXCHANGE' | 'STOCK' | 'WALLET' | 'MANUAL'
+type Category = 'EXCHANGE' | 'STOCK' | 'WALLET' | 'MANUAL' | 'KIS_API'
 const CATEGORIES: { key: Category; label: string; description: string }[] = [
   { key: 'EXCHANGE', label: '암호화폐 거래소', description: 'API로 잔고를 자동 조회합니다' },
+  { key: 'KIS_API',  label: '증권사 API 연동', description: '한국투자증권 API로 잔고를 자동 조회합니다' },
   { key: 'STOCK',    label: '증권 계좌',       description: '거래내역을 로그로 관리합니다' },
   { key: 'WALLET',   label: '블록체인 지갑',   description: '지갑 주소로 잔고를 조회합니다' },
   { key: 'MANUAL',   label: '수동 입력',       description: '부동산, 금 등 비정형 자산' },
@@ -60,6 +61,7 @@ export default function NewAccountPage() {
     chain:         'ETH',
     brokerage:     '',
     subtype:       '일반',
+    accountNo:     '',   // KIS 계좌번호 (예: 50123456-01)
   })
   const [testStatus, setTestStatus]   = useState<'idle' | 'loading' | 'success' | 'failed'>('idle')
   const [testResult, setTestResult]   = useState<ConnectionTestResult | null>(null)
@@ -83,7 +85,9 @@ export default function NewAccountPage() {
 
   const selectCategory = (cat: Category) => {
     setCategory(cat)
-    setProvider(cat === 'EXCHANGE' ? null : cat as unknown as AccountProvider)
+    if (cat === 'EXCHANGE') setProvider(null)
+    else if (cat === 'KIS_API') setProvider('KIS')
+    else setProvider(cat as unknown as AccountProvider)
     setTestStatus('idle')
     setTestResult(null)
   }
@@ -122,6 +126,17 @@ export default function NewAccountPage() {
       payload.apiKey      = form.apiKey
       payload.apiSecret   = form.apiSecret
       if (provider === 'OKX') payload.chain = form.passphrase
+    } else if (provider === 'KIS') {
+      const digits = form.accountNo.replace(/[^0-9]/g, '')
+      const cano = digits.slice(0, 8)
+      const prdt = digits.slice(8, 10) || '01'
+      accountName = form.accountName || `한국투자증권 ${cano}`
+      payload.accountName = accountName
+      payload.accountType = 'STOCK'
+      payload.currency    = 'KRW'
+      payload.apiKey      = form.apiKey
+      payload.apiSecret   = form.apiSecret
+      payload.externalId  = `${cano}_${prdt}`
     } else if (provider === 'STOCK') {
       accountName = form.accountName || `${form.brokerage} ${form.subtype}`
       payload.accountName  = accountName
@@ -198,6 +213,7 @@ export default function NewAccountPage() {
           <div>
             <p className="text-sm font-medium text-blue-400">
               {category === 'EXCHANGE' ? `${exchangeInfo?.label} 연동` :
+               category === 'KIS_API'  ? '한국투자증권 API 연동' :
                category === 'STOCK'    ? '증권 계좌' :
                category === 'WALLET'   ? '블록체인 지갑' : '수동 입력'}
             </p>
@@ -255,6 +271,64 @@ export default function NewAccountPage() {
                     ) : '🔌 연결 테스트'}
                   </button>
 
+                  {testResult && (
+                    <div className={`rounded-lg border px-3 py-2.5 text-sm ${
+                      testResult.success
+                        ? 'border-emerald-800 bg-emerald-950/30 text-emerald-400'
+                        : 'border-red-800 bg-red-950/30 text-red-400'
+                    }`}>
+                      {testResult.success ? '✓ ' : '✗ '}{testResult.message}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* ── 증권사 API 연동 (KIS) ── */}
+            {provider === 'KIS' && (
+              <>
+                <Field label="별칭 (선택)">
+                  <input type="text" placeholder="예: 한투 주식계좌"
+                    value={form.accountName} onChange={e => set('accountName', e.target.value)}
+                    className={inputCls}
+                  />
+                </Field>
+                <Field label="앱키 (App Key) *" required>
+                  <input required type="password" placeholder="한국투자증권 App Key"
+                    value={form.apiKey} onChange={e => set('apiKey', e.target.value)}
+                    className={inputCls}
+                  />
+                </Field>
+                <Field label="앱시크릿 (App Secret) *" required>
+                  <input required type="password" placeholder="한국투자증권 App Secret"
+                    value={form.apiSecret} onChange={e => set('apiSecret', e.target.value)}
+                    className={inputCls}
+                  />
+                </Field>
+                <Field label="계좌번호 *" required>
+                  <input required type="text" placeholder="예: 50123456-01"
+                    value={form.accountNo} onChange={e => set('accountNo', e.target.value)}
+                    className={inputCls}
+                  />
+                  <p className="mt-1 text-xs text-gray-500">계좌번호 체계 8-2 (앞 8자리 + 상품코드 2자리)</p>
+                </Field>
+                <div className="rounded-lg border border-gray-700 bg-gray-800/50 px-3 py-2 text-xs text-gray-400">
+                  KIS Developers에서 발급한 App Key/Secret이 필요합니다. 조회 전용 권한을 권장합니다.
+                </div>
+
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={handleTestConnection}
+                    disabled={testStatus === 'loading' || !form.apiKey || !form.apiSecret}
+                    className="w-full rounded-lg border border-blue-700 py-2 text-sm font-medium text-blue-400 hover:bg-blue-950/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {testStatus === 'loading' ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="animate-spin">⟳</span> 연결 테스트 중…
+                      </span>
+                    ) : '🔌 연결 테스트'}
+                  </button>
                   {testResult && (
                     <div className={`rounded-lg border px-3 py-2.5 text-sm ${
                       testResult.success
@@ -356,12 +430,12 @@ export default function NewAccountPage() {
             <button type="submit"
               disabled={
                 mutation.isPending || !api ||
-                (category === 'EXCHANGE' && testStatus !== 'success')
+                ((category === 'EXCHANGE' || provider === 'KIS') && testStatus !== 'success')
               }
               className="flex-1 rounded-lg bg-blue-600 py-2.5 text-sm font-medium hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {mutation.isPending ? '생성 중…' :
-               category === 'EXCHANGE' && testStatus !== 'success'
+               (category === 'EXCHANGE' || provider === 'KIS') && testStatus !== 'success'
                  ? '연결 테스트 후 추가 가능' : '계좌 추가'}
             </button>
             <button type="button" onClick={() => router.back()}
