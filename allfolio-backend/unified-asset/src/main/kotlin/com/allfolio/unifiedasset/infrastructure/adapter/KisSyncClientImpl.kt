@@ -3,6 +3,7 @@ package com.allfolio.unifiedasset.infrastructure.adapter
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.web.reactive.function.client.bodyToMono
 import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
 
@@ -28,11 +29,14 @@ class KisSyncClientImpl(
                 "appsecret"  to appSecret,
             ))
             .retrieve()
-            .bodyToMono(KisTokenResponse::class.java)
+            .bodyToMono<KisTokenResponse>()
             .block(Duration.ofSeconds(10))
-            ?: throw RuntimeException("KIS 토큰 발급 실패")
+        if (resp == null || resp.accessToken.isBlank()) {
+            throw RuntimeException("KIS 토큰 발급 실패")
+        }
         val ttlMs = (resp.expiresIn - 120).coerceAtLeast(0) * 1000
         tokenCache[appKey] = resp.accessToken to (System.currentTimeMillis() + ttlMs)
+        log.info("[KIS] access token issued (cache miss)")
         return resp.accessToken
     }
 
@@ -56,13 +60,13 @@ class KisSyncClientImpl(
                     .queryParam("CTX_AREA_NK100", "")
                     .build()
             }
-            .header("authorization", "Bearer $token")
+            .header("Authorization", "Bearer $token")
             .header("appkey", appKey)
             .header("appsecret", appSecret)
             .header("tr_id", props.trIdBalance())
             .header("custtype", "P")
             .retrieve()
-            .bodyToMono(KisBalanceResponse::class.java)
+            .bodyToMono<KisBalanceResponse>()
             .block(Duration.ofSeconds(15))
             ?: KisBalanceResponse()
     }
