@@ -31,13 +31,17 @@ class DailyAccountSyncerTest {
         override fun updateStatus(id: UUID, status: AccountStatus) {}
     }
 
-    /** 호출된 accountId를 기록하고, 지정된 id에서는 예외를 던지는 fake runner. */
-    private class RecordingSyncRunner(private val throwOn: UUID? = null) : AccountSyncRunner {
+    /** 호출된 accountId를 기록하고, 지정된 id에서는 예외 또는 ERROR 결과를 반환하는 fake runner. */
+    private class RecordingSyncRunner(
+        private val throwOn: UUID? = null,
+        private val errorOn: UUID? = null,
+    ) : AccountSyncRunner {
         val calledIds = mutableListOf<UUID>()
         override fun execute(accountId: UUID): SyncResult {
             calledIds += accountId
             if (accountId == throwOn) throw RuntimeException("boom")
-            return SyncResult(accountId, 1, AccountStatus.ACTIVE)
+            return if (accountId == errorOn) SyncResult(accountId, 0, AccountStatus.ERROR, "sync error")
+                   else SyncResult(accountId, 1, AccountStatus.ACTIVE)
         }
     }
 
@@ -64,6 +68,21 @@ class DailyAccountSyncerTest {
         assertEquals(listOf(a1.id, a2.id, a3.id), runner.calledIds)
         assertEquals(3, result.total)
         assertEquals(2, result.synced)
+        assertEquals(1, result.failed)
+    }
+
+    @Test
+    fun `예외 없이 ERROR SyncResult를 반환한 계좌는 failed로 집계한다`() {
+        val a1 = acct(AccountProvider.KIS)
+        val a2 = acct(AccountProvider.BINANCE)
+        val repo = FakeAccountRepository(listOf(a1, a2))
+        val runner = RecordingSyncRunner(errorOn = a2.id)
+
+        val result = DailyAccountSyncer(repo, runner).syncAll()
+
+        assertEquals(listOf(a1.id, a2.id), runner.calledIds)
+        assertEquals(2, result.total)
+        assertEquals(1, result.synced)
         assertEquals(1, result.failed)
     }
 }
