@@ -192,13 +192,6 @@ kis:
   ws-enabled: ${KIS_WS_ENABLED:false}
   symbols: ${KIS_SYMBOLS:}          # 실시간 구독 종목 ex) 005930,000660
 
-# 키움증권 Open API
-kiwoom:
-  app-key: ${KIWOOM_APP_KEY:}
-  app-secret: ${KIWOOM_APP_SECRET:}
-  base-url: ${KIWOOM_BASE_URL:https://openapi.kiwoom.com}
-  redirect-uri: ${KIWOOM_REDIRECT_URI:http://localhost:8090/api/broker/kiwoom/callback}
-
 # 암호화폐 거래소 WebSocket (국내)
 upbit:
   ws-enabled: ${UPBIT_WS_ENABLED:false}
