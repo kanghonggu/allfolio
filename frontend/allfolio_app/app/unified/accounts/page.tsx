@@ -22,7 +22,7 @@ const PROVIDER_KO: Record<string, string> = {
 }
 
 // Sync를 지원하는 프로바이더
-const SYNCABLE = new Set(['BINANCE', 'UPBIT', 'BITHUMB', 'COINONE', 'BYBIT', 'OKX', 'WALLET'])
+const SYNCABLE = new Set(['BINANCE', 'UPBIT', 'BITHUMB', 'COINONE', 'BYBIT', 'OKX', 'WALLET', 'KIS'])
 
 export default function AccountsPage() {
   const api = useUnifiedApi()

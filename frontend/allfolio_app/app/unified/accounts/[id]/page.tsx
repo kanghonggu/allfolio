@@ -348,7 +348,7 @@ export default function AccountDetailPage() {
               거래내역 관리
             </Link>
           )}
-          {(['STOCK','BINANCE','UPBIT','BITHUMB','COINONE','BYBIT','OKX','WALLET'].includes(account?.provider ?? '')) && (
+          {(['STOCK','BINANCE','UPBIT','BITHUMB','COINONE','BYBIT','OKX','WALLET','KIS'].includes(account?.provider ?? '')) && (
             <button
               onClick={handleSync}
               disabled={syncing}
