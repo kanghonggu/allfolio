@@ -89,6 +89,7 @@ class SyncAccountUseCaseNavTest {
         override fun save(account: Account): Account = account
         override fun findById(id: UUID): Account? = account
         override fun findByUserId(userId: UUID): List<Account> = listOf(account)
+        override fun findByProviders(providers: Collection<AccountProvider>): List<Account> = emptyList()
         override fun delete(id: UUID) = Unit
         override fun updateStatus(id: UUID, status: AccountStatus) = Unit
     }
