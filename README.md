@@ -19,7 +19,7 @@
 ## 주요 기능
 
 ### 자산 통합
-- **멀티 브로커 계좌 연동 (3개)** — Binance, KIS(한국투자증권), 키움증권
+- **멀티 브로커 계좌 연동 (2개)** — Binance, KIS(한국투자증권)
 - **실시간 시세 수집 (WebSocket 7개)** — Binance, KIS, Upbit, Bithumb, Coinone, Bybit, OKX (시세 전용, 계좌 연동 아님)
 - **수동 자산 등록** — 부동산(소유/전세/월세/분양권), 자동차, 금, 현금, 비상장주식 등
 - **국내 주식 거래내역 직접 입력** — 종목 자동완성(Yahoo Finance 검색), 평균단가 자동계산
@@ -136,16 +136,17 @@ allfolio-backend/
 
 ## 브로커 연동 현황
 
-### 계좌·거래내역 연동 (BrokerAdapter, 3개)
+### 계좌·거래내역 연동 (BrokerAdapter, 2개)
 
 | 브로커 | 유형 | 연동 방식 | 상태 |
 |--------|------|----------|------|
 | Binance | 해외 거래소 | REST API | 완료 |
 | KIS (한국투자증권) | 국내 증권사 | OAuth2 (실전/모의 지원) | 완료 |
-| 키움증권 | 국내 증권사 | OAuth2 | 완료 |
 
 > 토스증권·삼성증권 어댑터 코드(`broker/toss`, `broker/samsung`)가 남아 있으나,
 > 두 증권사는 리테일 공개 개발자 API가 없어 실제 연동은 불가능하다(미동작 스캐폴딩).
+> 키움증권은 OpenAPI가 Windows 전용 Studio/OCX를 요구해 서버(Linux)에서 실행 불가라
+> 어댑터를 제거했다.
 
 ### 실시간 시세 수집 (WebSocket, 7개 — 계좌 연동 아님)
 
@@ -304,7 +305,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8090
 
 | 항목 | 상태 |
 |------|------|
-| 멀티 브로커 OAuth 연동 (KIS, 키움) | 완료 |
+| 멀티 브로커 OAuth 연동 (KIS) | 완료 |
 | 암호화폐 거래소 WebSocket (Binance, Upbit, Bithumb, Coinone, Bybit, OKX) | 완료 |
 | Outbox Pattern + Kafka + DLQ | 완료 |
 | JWT 인증 (Allfolio 자체 인증) | 완료 |

@@ -37,7 +37,7 @@ class MarketPriceTickEntity(
     val id: Long = 0,
 
     @Column(nullable = false, length = 20)
-    val exchange: String,       // "BINANCE" | "KIS" | "KIWOOM"
+    val exchange: String,       // "BINANCE" | "KIS"
 
     @Column(nullable = false, length = 20)
     val symbol: String,         // "BTCUSDT" | "005930" 등

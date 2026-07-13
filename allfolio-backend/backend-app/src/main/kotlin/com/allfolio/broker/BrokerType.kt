@@ -13,7 +13,6 @@ enum class BrokerType(
     TOSS("토스증권"),
     SAMSUNG("삼성증권"),
     KIS("한국투자증권"),
-    KIWOOM("키움증권"),
     ;
 
     companion object {
