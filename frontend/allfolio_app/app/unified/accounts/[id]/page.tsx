@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useUnifiedApi } from '@/lib/useApi'
+import { isSyncable } from '@/lib/providers'
 import type { Asset, AssetType, SyncResult, CreateManualAssetPayload } from '@/types/unified'
 
 // ── 상수 ──────────────────────────────────────────────────────
@@ -348,7 +349,8 @@ export default function AccountDetailPage() {
               거래내역 관리
             </Link>
           )}
-          {(['STOCK','BINANCE','UPBIT','BITHUMB','COINONE','BYBIT','OKX','WALLET','KIS'].includes(account?.provider ?? '')) && (
+          {/* STOCK은 수동 거래내역 재계산 sync라 상세에서만 노출(목록 제외) */}
+          {(isSyncable(account?.provider) || account?.provider === 'STOCK') && (
             <button
               onClick={handleSync}
               disabled={syncing}

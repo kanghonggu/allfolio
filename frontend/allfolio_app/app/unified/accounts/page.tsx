@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useUnifiedApi } from '@/lib/useApi'
+import { isSyncable } from '@/lib/providers'
 import type { Account, SyncResult } from '@/types/unified'
 
 const STATUS_STYLE: Record<string, string> = {
@@ -20,9 +21,6 @@ const PROVIDER_KO: Record<string, string> = {
   BYBIT: '바이빗', OKX: 'OKX',
   STOCK: '증권', WALLET: '지갑', MANUAL: '수동',
 }
-
-// Sync를 지원하는 프로바이더
-const SYNCABLE = new Set(['BINANCE', 'UPBIT', 'BITHUMB', 'COINONE', 'BYBIT', 'OKX', 'WALLET', 'KIS'])
 
 export default function AccountsPage() {
   const api = useUnifiedApi()
@@ -90,7 +88,7 @@ export default function AccountsPage() {
           {accounts.map((account: Account) => {
             const syncResult = syncResults[account.id]
             const isSyncing  = syncingId === account.id
-            const canSync    = SYNCABLE.has(account.provider)
+            const canSync    = isSyncable(account.provider)
 
             return (
               <div key={account.id} className="rounded-xl border border-gray-700 bg-gray-900 p-5">
