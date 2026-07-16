@@ -20,7 +20,7 @@
 - Modify: `allfolio-backend/backend-app/src/main/kotlin/com/allfolio/account/AccountDeletionService.kt`
 - Test: `allfolio-backend/backend-app/src/test/kotlin/com/allfolio/account/AccountDeletionServiceTest.kt`
 
-- [ ] **Step 1: init.sql 끝에 DDL 추가**
+- [x] **Step 1: init.sql 끝에 DDL 추가**
 
 ```sql
 -- ── cash_flow ──────────────────────────────────────────────────
@@ -42,7 +42,7 @@ CREATE INDEX IF NOT EXISTS idx_cash_flow_user_date
     ON cash_flow (user_id, flow_date);
 ```
 
-- [ ] **Step 2: AccountDeletionServiceTest에 deleteCashFlow 검증 추가 (RED)**
+- [x] **Step 2: AccountDeletionServiceTest에 deleteCashFlow 검증 추가 (RED)**
 
 두 테스트에 각각 아래 한 줄 추가 (deleteReportArchive 검증 다음 위치):
 
@@ -53,7 +53,7 @@ verify(repo).deleteCashFlow(userId)           // 둘째 테스트
 
 Run: `cd allfolio-backend && ./gradlew :backend-app:compileTestKotlin` → Expected: 컴파일 실패
 
-- [ ] **Step 3: 구현 (GREEN)**
+- [x] **Step 3: 구현 (GREEN)**
 
 AccountPurgeRepository에 (deleteReportArchive 아래):
 
@@ -71,7 +71,7 @@ purgeRepository.deleteCashFlow(userId)
 
 Run: `./gradlew :backend-app:test --tests '*AccountDeletionServiceTest*'` → Expected: PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add allfolio-backend/infra/postgres/init.sql allfolio-backend/backend-app
@@ -84,7 +84,7 @@ git commit -m "feat(returns): cash_flow 원장 DDL + 계정 파기 연결"
 - Create: `allfolio-backend/report/src/main/kotlin/com/allfolio/report/domain/returns/ReturnsCalculator.kt` (NavPoint·Flow·PeriodReturns 포함)
 - Test: `allfolio-backend/report/src/test/kotlin/com/allfolio/report/domain/returns/ReturnsCalculatorTest.kt`
 
-- [ ] **Step 1: 실패하는 테스트 작성 (RED)**
+- [x] **Step 1: 실패하는 테스트 작성 (RED)**
 
 ```kotlin
 package com.allfolio.report.domain.returns
@@ -214,7 +214,7 @@ class ReturnsCalculatorTest {
 
 Run: `./gradlew :report:test --tests '*ReturnsCalculatorTest*'` → Expected: 컴파일 실패
 
-- [ ] **Step 2: 구현 (GREEN)**
+- [x] **Step 2: 구현 (GREEN)**
 
 ```kotlin
 package com.allfolio.report.domain.returns
@@ -353,7 +353,7 @@ object ReturnsCalculator {
 
 Run: `./gradlew :report:test --tests '*ReturnsCalculatorTest*'` → Expected: 7 tests PASS
 
-- [ ] **Step 3: report 모듈 전체 테스트 + Commit**
+- [x] **Step 3: report 모듈 전체 테스트 + Commit**
 
 ```bash
 ./gradlew :report:test
@@ -369,7 +369,7 @@ git commit -m "feat(returns): TWR 체인링킹 + XIRR MWR 순수 계산 엔진"
 - Create: `allfolio-backend/unified-asset/src/main/kotlin/com/allfolio/unifiedasset/application/usecase/RecordCashFlowUseCase.kt`
 - Test: `allfolio-backend/unified-asset/src/test/kotlin/com/allfolio/unifiedasset/application/usecase/RecordCashFlowUseCaseTest.kt`
 
-- [ ] **Step 1: 실패하는 테스트 작성 (RED)**
+- [x] **Step 1: 실패하는 테스트 작성 (RED)**
 
 ```kotlin
 package com.allfolio.unifiedasset.application.usecase
@@ -444,7 +444,7 @@ class RecordCashFlowUseCaseTest {
 
 Run: `./gradlew :unified-asset:compileTestKotlin` → Expected: 컴파일 실패
 
-- [ ] **Step 2: 구현 (GREEN)**
+- [x] **Step 2: 구현 (GREEN)**
 
 ```kotlin
 // CashFlow.kt
@@ -544,7 +544,7 @@ class RecordCashFlowUseCase(
 
 Run: `./gradlew :unified-asset:test --tests '*RecordCashFlowUseCaseTest*'` → Expected: 3 tests PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add allfolio-backend/unified-asset
@@ -559,7 +559,7 @@ git commit -m "feat(returns): 현금흐름 원장 도메인 + 기록 유스케�
 - Create: `allfolio-backend/unified-asset/src/main/kotlin/com/allfolio/unifiedasset/infrastructure/repository/CashFlowRepositoryImpl.kt`
 - Create: `allfolio-backend/unified-asset/src/main/kotlin/com/allfolio/unifiedasset/api/CashFlowController.kt`
 
-- [ ] **Step 1: 엔티티·JPA·어댑터·컨트롤러 구현** (씬 계층 — 컴파일+전체 테스트로 확인)
+- [x] **Step 1: 엔티티·JPA·어댑터·컨트롤러 구현** (씬 계층 — 컴파일+전체 테스트로 확인)
 
 ```kotlin
 // CashFlowEntity.kt
@@ -731,7 +731,7 @@ class CashFlowController(
 
 Run: `./gradlew :unified-asset:build` → Expected: BUILD SUCCESSFUL
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add allfolio-backend/unified-asset
@@ -744,7 +744,7 @@ git commit -m "feat(returns): cash_flow JPA 어댑터 + /api/cashflows API (소�
 - Create: `allfolio-backend/unified-asset/src/main/kotlin/com/allfolio/unifiedasset/application/usecase/ReturnsReportGenerator.kt`
 - Test: `allfolio-backend/unified-asset/src/test/kotlin/com/allfolio/unifiedasset/application/usecase/ReturnsReportGeneratorTest.kt`
 
-- [ ] **Step 1: 실패하는 테스트 작성 (RED)**
+- [x] **Step 1: 실패하는 테스트 작성 (RED)**
 
 NAV 조회 포트를 생성기 내부 인터페이스로 두고 fake 주입:
 
@@ -838,7 +838,7 @@ class ReturnsReportGeneratorTest {
 
 Run: `./gradlew :unified-asset:compileTestKotlin` → Expected: 컴파일 실패
 
-- [ ] **Step 2: 구현 (GREEN)**
+- [x] **Step 2: 구현 (GREEN)**
 
 ```kotlin
 // ReturnsReportGenerator.kt
@@ -935,7 +935,7 @@ class ReturnsReportGenerator(
 
 Run: `./gradlew :unified-asset:test --tests '*ReturnsReportGeneratorTest*'` → Expected: 3 tests PASS
 
-- [ ] **Step 3: NavHistorySource JDBC 구현 + 400 핸들러**
+- [x] **Step 3: NavHistorySource JDBC 구현 + 400 핸들러**
 
 `allfolio-backend/unified-asset/src/main/kotlin/com/allfolio/unifiedasset/infrastructure/adapter/JdbcNavHistorySource.kt`:
 
@@ -975,7 +975,7 @@ fun insufficientData(e: InsufficientDataException): ResponseEntity<Map<String, S
 
 Run: `./gradlew build -x :backend-app:test && ./gradlew test` → Expected: BUILD SUCCESSFUL
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add allfolio-backend/unified-asset
@@ -984,5 +984,5 @@ git commit -m "feat(returns): RETURNS 리포트 생성기 — #32 프레임 첫 
 
 ### Task 6: 스모크 검증 + 마무리
 
-- [ ] **Step 1: 로컬 기동 스모크** — 도커 PG에 cash_flow DDL 적용 → 유저 생성 → performance_daily 시드 3건 + `/api/cashflows`로 입금 기록 → `POST /api/reports/archive/generate` type=RETURNS → 본문 수치 검산(TWR에 입금 미반영 확인) → `GET /api/reports/archive/{id}` → 계정 삭제로 cash_flow 정리 확인
-- [ ] **Step 2: 플랜 체크박스 완료 처리, push, PR 생성(#30 머지 후 main 베이스), 노션 #33 업데이트**
+- [x] **Step 1: 로컬 기동 스모크** — 도커 PG에 cash_flow DDL 적용 → 유저 생성 → performance_daily 시드 3건 + `/api/cashflows`로 입금 기록 → `POST /api/reports/archive/generate` type=RETURNS → 본문 수치 검산(TWR에 입금 미반영 확인) → `GET /api/reports/archive/{id}` → 계정 삭제로 cash_flow 정리 확인
+- [x] **Step 2: 플랜 체크박스 완료 처리, push, PR 생성(#30 머지 후 main 베이스), 노션 #33 업데이트**
