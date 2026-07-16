@@ -31,6 +31,7 @@ class AccountDeletionServiceTest {
         ordered.verify(repo).deleteAiConfigs(userId)
         ordered.verify(repo).deleteGoals(userId)
         ordered.verify(repo).deleteReportArchive(userId)
+        ordered.verify(repo).deleteCashFlow(userId)
         ordered.verify(repo).deleteUaAccounts(userId)
         ordered.verify(repo).deleteRiskDaily(userId)
         ordered.verify(repo).deletePerformanceDaily(userId)
@@ -53,6 +54,7 @@ class AccountDeletionServiceTest {
 
         verify(repo).deleteBrokerAuth(userId)
         verify(repo).deleteReportArchive(userId)
+        verify(repo).deleteCashFlow(userId)
         verify(repo).deleteUaAccounts(userId)
         verify(repo).deleteTradeRaw(userId)
         verify(repo).deletePortfolios(userId)
