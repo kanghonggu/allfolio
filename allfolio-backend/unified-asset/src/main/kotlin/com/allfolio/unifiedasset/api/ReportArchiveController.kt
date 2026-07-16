@@ -7,6 +7,7 @@ import com.allfolio.report.domain.archive.ReportArchive
 import com.allfolio.report.domain.archive.ReportPeriod
 import com.allfolio.report.domain.archive.ReportType
 import com.allfolio.report.domain.archive.ReportWarning
+import com.allfolio.unifiedasset.application.usecase.InsufficientDataException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler
@@ -75,6 +76,10 @@ class ReportArchiveController(
     @ExceptionHandler(UnsupportedReportTypeException::class)
     fun unsupportedType(e: UnsupportedReportTypeException): ResponseEntity<Map<String, String>> =
         ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf("error" to (e.message ?: "unsupported type")))
+
+    @ExceptionHandler(InsufficientDataException::class)
+    fun insufficientData(e: InsufficientDataException): ResponseEntity<Map<String, String>> =
+        ResponseEntity.status(HttpStatus.BAD_REQUEST).body(mapOf("error" to (e.message ?: "insufficient data")))
 
     private fun ReportArchive.toMeta() = ArchiveMetaResponse(
         id          = id,
