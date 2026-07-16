@@ -17,7 +17,7 @@
 **Files:**
 - Modify: `allfolio-backend/infra/postgres/init.sql` (파일 끝에 추가)
 
-- [ ] **Step 1: init.sql 끝에 DDL 추가**
+- [x] **Step 1: init.sql 끝에 DDL 추가**
 
 ```sql
 -- ── report_archive ─────────────────────────────────────────────
@@ -41,7 +41,7 @@ CREATE INDEX IF NOT EXISTS idx_report_archive_user
     ON report_archive (user_id, report_type, period_end DESC);
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add allfolio-backend/infra/postgres/init.sql
@@ -58,7 +58,7 @@ git commit -m "feat(report): report_archive 테이블 DDL"
 - Test: `allfolio-backend/report/src/test/kotlin/com/allfolio/report/domain/archive/ReportPeriodTest.kt`
 - Test: `allfolio-backend/report/src/test/kotlin/com/allfolio/report/domain/archive/ReportArchiveTest.kt`
 
-- [ ] **Step 1: build.gradle.kts에 JPA 의존성 추가** (snapshot 모듈과 동일 스타일)
+- [x] **Step 1: build.gradle.kts에 JPA 의존성 추가** (snapshot 모듈과 동일 스타일)
 
 ```kotlin
 plugins {
@@ -75,7 +75,7 @@ dependencies {
 }
 ```
 
-- [ ] **Step 2: 실패하는 도메인 테스트 작성**
+- [x] **Step 2: 실패하는 도메인 테스트 작성**
 
 ReportPeriodTest: `monthly() 팩토리가 월초~월말 생성`, `start가 end 이후면 예외`.
 ReportArchiveTest: `경고 없으면 FINAL`, `경고 있으면 WARNING`, `본문 공백이면 예외`.
@@ -152,12 +152,12 @@ class ReportArchiveTest {
 }
 ```
 
-- [ ] **Step 3: 테스트 실패 확인**
+- [x] **Step 3: 테스트 실패 확인**
 
 Run: `cd allfolio-backend && ./gradlew :report:test`
 Expected: 컴파일 실패 (클래스 미존재)
 
-- [ ] **Step 4: 도메인 구현**
+- [x] **Step 4: 도메인 구현**
 
 ```kotlin
 // ReportType.kt
@@ -250,12 +250,12 @@ class ReportArchive private constructor(
 }
 ```
 
-- [ ] **Step 5: 테스트 통과 확인**
+- [x] **Step 5: 테스트 통과 확인**
 
 Run: `cd allfolio-backend && ./gradlew :report:test`
 Expected: BUILD SUCCESSFUL, 5 tests pass
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add allfolio-backend/report
@@ -271,7 +271,7 @@ git commit -m "feat(report): 리포트 아카이브 도메인 (ReportType·Perio
 - Create: `allfolio-backend/report/src/main/kotlin/com/allfolio/report/application/GenerateReportUseCase.kt` (UnsupportedReportTypeException 포함)
 - Test: `allfolio-backend/report/src/test/kotlin/com/allfolio/report/application/GenerateReportUseCaseTest.kt`
 
-- [ ] **Step 1: 실패하는 유스케이스 테스트 작성** (fake 포트 3종 인라인 정의)
+- [x] **Step 1: 실패하는 유스케이스 테스트 작성** (fake 포트 3종 인라인 정의)
 
 케이스: ①정상 생성 → FINAL 저장+asOf 전달 ②게이트 경고 → WARNING ③미지원 타입 → UnsupportedReportTypeException ④같은 기간 재생성 → upsert 1건 유지.
 
@@ -355,12 +355,12 @@ class GenerateReportUseCaseTest {
 }
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 Run: `cd allfolio-backend && ./gradlew :report:test`
 Expected: 컴파일 실패
 
-- [ ] **Step 3: 포트 + 유스케이스 구현**
+- [x] **Step 3: 포트 + 유스케이스 구현**
 
 ```kotlin
 // ReportBodyGenerator.kt
@@ -455,12 +455,12 @@ class GenerateReportUseCase(
 }
 ```
 
-- [ ] **Step 4: 테스트 통과 확인**
+- [x] **Step 4: 테스트 통과 확인**
 
 Run: `cd allfolio-backend && ./gradlew :report:test`
 Expected: BUILD SUCCESSFUL, 9 tests pass
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add allfolio-backend/report
@@ -474,7 +474,7 @@ git commit -m "feat(report): as-of 생성 프레임 — Generator·Gate·Reposit
 - Create: `allfolio-backend/report/src/main/kotlin/com/allfolio/report/infrastructure/repository/ReportArchiveJpaRepository.kt`
 - Create: `allfolio-backend/report/src/main/kotlin/com/allfolio/report/infrastructure/repository/ReportArchiveRepositoryImpl.kt`
 
-- [ ] **Step 1: 엔티티 + JPA 리포지토리 + 어댑터 구현** (씬 어댑터 — 단위 테스트 없이 컴파일·기존 테스트로 확인)
+- [x] **Step 1: 엔티티 + JPA 리포지토리 + 어댑터 구현** (씬 어댑터 — 단위 테스트 없이 컴파일·기존 테스트로 확인)
 
 ```kotlin
 // ReportArchiveEntity.kt
@@ -608,12 +608,12 @@ class ReportArchiveRepositoryImpl(
 }
 ```
 
-- [ ] **Step 2: 전체 빌드로 컴파일 확인**
+- [x] **Step 2: 전체 빌드로 컴파일 확인**
 
 Run: `cd allfolio-backend && ./gradlew :report:build`
 Expected: BUILD SUCCESSFUL
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add allfolio-backend/report
@@ -626,7 +626,7 @@ git commit -m "feat(report): report_archive JPA 영속 어댑터 (JSONB 매핑·
 - Create: `allfolio-backend/unified-asset/src/main/kotlin/com/allfolio/unifiedasset/application/usecase/AccountSyncValidationGate.kt`
 - Test: `allfolio-backend/unified-asset/src/test/kotlin/com/allfolio/unifiedasset/application/usecase/AccountSyncValidationGateTest.kt`
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 케이스: ①ERROR 계좌 → SYNC_ERROR ②syncable인데 lastSyncedAt null → NEVER_SYNCED ③lastSyncedAt이 기간말 이전 → STALE_SYNC ④기간말 이후 동기화된 정상 계좌 → 경고 없음 ⑤MANUAL 계좌는 STALE 검사 제외.
 
@@ -706,12 +706,12 @@ class AccountSyncValidationGateTest {
 }
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 Run: `cd allfolio-backend && ./gradlew :unified-asset:test --tests '*AccountSyncValidationGateTest*'`
 Expected: 컴파일 실패
 
-- [ ] **Step 3: 게이트 구현**
+- [x] **Step 3: 게이트 구현**
 
 ```kotlin
 // AccountSyncValidationGate.kt
@@ -752,12 +752,12 @@ class AccountSyncValidationGate(
 }
 ```
 
-- [ ] **Step 4: 테스트 통과 확인**
+- [x] **Step 4: 테스트 통과 확인**
 
 Run: `cd allfolio-backend && ./gradlew :unified-asset:test --tests '*AccountSyncValidationGateTest*'`
 Expected: BUILD SUCCESSFUL, 5 tests pass
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add allfolio-backend/unified-asset
@@ -769,7 +769,7 @@ git commit -m "feat(report): 계좌 sync 상태 기반 검증 게이트 v1"
 **Files:**
 - Create: `allfolio-backend/unified-asset/src/main/kotlin/com/allfolio/unifiedasset/api/ReportArchiveController.kt`
 
-- [ ] **Step 1: 컨트롤러 + DTO 구현** (기존 ReportController 관례: X-User-Id 헤더)
+- [x] **Step 1: 컨트롤러 + DTO 구현** (기존 ReportController 관례: X-User-Id 헤더)
 
 ```kotlin
 // ReportArchiveController.kt
@@ -856,12 +856,12 @@ class ReportArchiveController(
 }
 ```
 
-- [ ] **Step 2: 전체 빌드 + 전 모듈 테스트**
+- [x] **Step 2: 전체 빌드 + 전 모듈 테스트**
 
 Run: `cd allfolio-backend && ./gradlew build -x :backend-app:test 2>&1 | tail -5` 후 `./gradlew test`
 Expected: BUILD SUCCESSFUL
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add allfolio-backend/unified-asset
@@ -870,5 +870,5 @@ git commit -m "feat(report): 리포트 아카이브 API (generate·list·detail,
 
 ### Task 7: 스모크 검증 + 마무리
 
-- [ ] **Step 1: 로컬 기동 스모크** — 앱 컨텍스트가 뜨는지 확인 (게이트·유스케이스 빈 배선 검증). DB 필요 시 docker-compose postgres 사용, 불가하면 `./gradlew :backend-app:build`(컨텍스트 로드 테스트 포함 여부 확인)로 대체
-- [ ] **Step 2: 노션 태스크 #32 상태 → 완료(구현) 업데이트, PR 생성**
+- [x] **Step 1: 로컬 기동 스모크** — 앱 컨텍스트가 뜨는지 확인 (게이트·유스케이스 빈 배선 검증). DB 필요 시 docker-compose postgres 사용, 불가하면 `./gradlew :backend-app:build`(컨텍스트 로드 테스트 포함 여부 확인)로 대체
+- [x] **Step 2: 노션 태스크 #32 상태 → 완료(구현) 업데이트, PR 생성**
