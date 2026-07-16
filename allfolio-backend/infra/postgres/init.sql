@@ -497,3 +497,23 @@ CREATE TABLE IF NOT EXISTS ua_ai_configs (
 
 ALTER TABLE IF EXISTS ua_ai_configs
     ALTER COLUMN api_key TYPE VARCHAR(2048);
+
+-- ── report_archive ─────────────────────────────────────────────
+-- 기관급 리포트 아카이브 (R1 #32): as-of 고정된 본문 JSON을 기간 단위로 보관
+CREATE TABLE IF NOT EXISTS report_archive (
+    id            UUID         PRIMARY KEY,
+    user_id       UUID         NOT NULL,
+    report_type   VARCHAR(30)  NOT NULL,
+    period_start  DATE         NOT NULL,
+    period_end    DATE         NOT NULL,
+    as_of_date    DATE         NOT NULL,
+    status        VARCHAR(20)  NOT NULL,
+    warnings      JSONB        NOT NULL DEFAULT '[]',
+    body          JSONB        NOT NULL,
+    pdf           BYTEA,
+    created_at    TIMESTAMP    NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_report_archive UNIQUE (user_id, report_type, period_start, period_end)
+);
+
+CREATE INDEX IF NOT EXISTS idx_report_archive_user
+    ON report_archive (user_id, report_type, period_end DESC);
