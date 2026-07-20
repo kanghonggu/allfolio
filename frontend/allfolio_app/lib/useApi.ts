@@ -6,6 +6,7 @@ import { createUnifiedApi } from './unified-api'
 import { createReportApi } from './report-api'
 import { createGoalApi } from './goal-api'
 import { createAiApi } from './ai-api'
+import { createCashFlowApi } from './cashflow-api'
 
 export function useUnifiedApi() {
   const { accessToken } = useAuth()
@@ -35,6 +36,14 @@ export function useAiApi() {
   const { accessToken } = useAuth()
   return useMemo(
     () => (accessToken ? createAiApi(accessToken) : null),
+    [accessToken],
+  )
+}
+
+export function useCashFlowApi() {
+  const { accessToken } = useAuth()
+  return useMemo(
+    () => (accessToken ? createCashFlowApi(accessToken) : null),
     [accessToken],
   )
 }

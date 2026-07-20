@@ -5,6 +5,7 @@ import type {
   NetWorthReport, MonthlyPnlReport, EsgReport,
 } from '@/types/report'
 import type { DividendReport } from '@/types/dividend'
+import type { ReturnsAnalysis } from '@/types/returns'
 
 const BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8090'}/api/reports`
 
@@ -45,5 +46,8 @@ export function createReportApi(accessToken: string) {
 
     esg: async (): Promise<EsgReport> =>
       (await api.get<EsgReport>('/esg')).data,
+
+    returns: async (from: string, to: string): Promise<ReturnsAnalysis> =>
+      (await api.get<ReturnsAnalysis>('/returns', { params: { from, to } })).data,
   }
 }
