@@ -22,6 +22,7 @@ class AccountDeletionService(
         purgeRepository.deleteBrokerAuth(userId)
         purgeRepository.deleteAiConfigs(userId)
         purgeRepository.deleteGoals(userId)
+        purgeRepository.deleteReportArchive(userId)
         purgeRepository.deleteUaAccounts(userId)
         purgeRepository.deleteRiskDaily(userId)
         purgeRepository.deletePerformanceDaily(userId)
