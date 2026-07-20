@@ -1,7 +1,9 @@
 package com.allfolio.unifiedasset.api
 
 import com.allfolio.unifiedasset.application.usecase.*
+import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
+import java.time.LocalDate
 import java.util.UUID
 
 @RestController
@@ -10,7 +12,20 @@ class ReportController(
     private val svc: ReportService,
     private val dividendSvc: DividendReportService,
     private val esgSvc: EsgReportService,
+    private val returnsAnalysis: GetReturnsAnalysisUseCase,
 ) {
+
+    /** SCR-RPT-04 인터랙티브 수익률 분석 — 임의 기간 TWR/MWR (아카이브 안 함) */
+    @GetMapping("/returns")
+    fun returns(
+        @RequestHeader("X-User-Id") userId: UUID,
+        @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) from: LocalDate,
+        @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) to: LocalDate,
+    ): ReturnsAnalysis = returnsAnalysis.analyze(userId, from, to)
+
+    @ExceptionHandler(InsufficientDataException::class)
+    fun insufficientData(e: InsufficientDataException): ResponseEntity<Map<String, String>> =
+        ResponseEntity.badRequest().body(mapOf("error" to (e.message ?: "insufficient data")))
 
     @GetMapping("/summary")
     fun summary(@RequestHeader("X-User-Id") userId: UUID): SummaryReport =

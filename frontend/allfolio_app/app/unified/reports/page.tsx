@@ -18,6 +18,13 @@ const REPORTS = [
     badge: '📈',
   },
   {
+    href:  '/unified/reports/returns',
+    title: '수익률 보고서 (TWR·MWR)',
+    desc:  '기관급 수익률 — 입출금 왜곡 제거(TWR), 체감 수익률(MWR), 입출금 효과 분해',
+    color: 'border-lime-700 hover:border-lime-500',
+    badge: '📉',
+  },
+  {
     href:  '/unified/reports/allocation',
     title: '자산 배분',
     desc:  '유형·통화별 비중, 상위 보유 종목, HHI 집중도',
