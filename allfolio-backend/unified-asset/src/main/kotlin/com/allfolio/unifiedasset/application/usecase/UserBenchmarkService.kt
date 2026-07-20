@@ -7,9 +7,9 @@ import java.util.UUID
 
 /** 사용자 벤치마크 설정 (R1 #35) — user_benchmark 단일행 UPSERT/DELETE */
 @Service
-class UserBenchmarkService(private val jdbc: JdbcTemplate) {
+class UserBenchmarkService(private val jdbc: JdbcTemplate) : com.allfolio.unifiedasset.application.port.UserBenchmarkLookup {
 
-    fun get(userId: UUID): BenchmarkType? =
+    override fun get(userId: UUID): BenchmarkType? =
         jdbc.query(
             "SELECT index_type FROM user_benchmark WHERE user_id = ?",
             { rs, _ -> rs.getString("index_type") },
