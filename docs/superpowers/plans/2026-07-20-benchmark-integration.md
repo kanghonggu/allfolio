@@ -14,7 +14,7 @@
 
 ### Task 1: DDL — user_benchmark + 계정 파기 (TDD)
 
-- [ ] init.sql 끝에 추가:
+- [x] init.sql 끝에 추가:
 
 ```sql
 -- ── user_benchmark ─────────────────────────────────────────────
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS user_benchmark (
 );
 ```
 
-- [ ] AccountDeletionServiceTest 두 테스트에 `deleteUserBenchmark(userId)` 검증 추가(RED) → AccountPurgeRepository에 `DELETE FROM user_benchmark WHERE user_id = :userId` + AccountDeletionService 호출 추가(GREEN) → 테스트 → 커밋 `feat(benchmark): user_benchmark DDL + 계정 파기 연결`
+- [x] AccountDeletionServiceTest 두 테스트에 `deleteUserBenchmark(userId)` 검증 추가(RED) → AccountPurgeRepository에 `DELETE FROM user_benchmark WHERE user_id = :userId` + AccountDeletionService 호출 추가(GREEN) → 테스트 → 커밋 `feat(benchmark): user_benchmark DDL + 계정 파기 연결`
 
 ### Task 2: 수집 — BenchmarkType·Yahoo 히스토리·BenchmarkSyncService (TDD)
 
