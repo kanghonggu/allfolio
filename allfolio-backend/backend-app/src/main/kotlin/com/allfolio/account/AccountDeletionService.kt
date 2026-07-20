@@ -24,6 +24,7 @@ class AccountDeletionService(
         purgeRepository.deleteGoals(userId)
         purgeRepository.deleteReportArchive(userId)
         purgeRepository.deleteCashFlow(userId)
+        purgeRepository.deleteUserBenchmark(userId)
         purgeRepository.deleteUaAccounts(userId)
         purgeRepository.deleteRiskDaily(userId)
         purgeRepository.deletePerformanceDaily(userId)

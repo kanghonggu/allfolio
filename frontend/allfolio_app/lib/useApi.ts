@@ -7,6 +7,7 @@ import { createReportApi } from './report-api'
 import { createGoalApi } from './goal-api'
 import { createAiApi } from './ai-api'
 import { createCashFlowApi } from './cashflow-api'
+import { createBenchmarkApi } from './benchmark-api'
 
 export function useUnifiedApi() {
   const { accessToken } = useAuth()
@@ -44,6 +45,14 @@ export function useCashFlowApi() {
   const { accessToken } = useAuth()
   return useMemo(
     () => (accessToken ? createCashFlowApi(accessToken) : null),
+    [accessToken],
+  )
+}
+
+export function useBenchmarkApi() {
+  const { accessToken } = useAuth()
+  return useMemo(
+    () => (accessToken ? createBenchmarkApi(accessToken) : null),
     [accessToken],
   )
 }

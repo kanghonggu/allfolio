@@ -535,3 +535,12 @@ CREATE TABLE IF NOT EXISTS cash_flow (
 
 CREATE INDEX IF NOT EXISTS idx_cash_flow_user_date
     ON cash_flow (user_id, flow_date);
+
+-- ── user_benchmark ─────────────────────────────────────────────
+-- 사용자 벤치마크 설정 (R1 #35): R-01/R-02 "BM 대비"의 기준 지수
+CREATE TABLE IF NOT EXISTS user_benchmark (
+    user_id     UUID        NOT NULL,
+    index_type  VARCHAR(20) NOT NULL,
+    updated_at  TIMESTAMP   NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_user_benchmark PRIMARY KEY (user_id)
+);

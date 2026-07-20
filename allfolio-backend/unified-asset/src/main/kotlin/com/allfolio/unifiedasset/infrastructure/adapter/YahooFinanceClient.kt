@@ -48,6 +48,34 @@ class YahooFinanceClient {
             log.warn("[Yahoo] price lookup failed for {}: {}", ticker, e.message)
         }.getOrNull()
 
+    /**
+     * 일별 종가 히스토리 (벤치마크 수집용, R1 #35)
+     * @param range Yahoo range 문자열 ("1mo", "1y" 등)
+     * @return (일자, 종가) 오름차순 — null 종가(휴장 등)는 스킵
+     */
+    fun getDailyHistory(ticker: String, range: String): List<Pair<java.time.LocalDate, BigDecimal>> =
+        runCatching {
+            val url = "https://query1.finance.yahoo.com/v8/finance/chart/$ticker?interval=1d&range=$range"
+            val resp = client.get().uri(url)
+                .retrieve()
+                .bodyToMono(YahooChartResponse::class.java)
+                .block(Duration.ofSeconds(10))
+
+            val result = resp?.chart?.result?.firstOrNull() ?: return emptyList()
+            val timestamps = result.timestamp ?: return emptyList()
+            val closes = result.indicators?.quote?.firstOrNull()?.close ?: return emptyList()
+
+            timestamps.zip(closes)
+                .mapNotNull { (ts, close) ->
+                    if (close == null) null
+                    else java.time.Instant.ofEpochSecond(ts)
+                        .atZone(java.time.ZoneOffset.UTC).toLocalDate() to BigDecimal(close.toString())
+                }
+                .sortedBy { it.first }
+        }.onFailure { e ->
+            log.warn("[Yahoo] daily history failed for {} ({}): {}", ticker, range, e.message)
+        }.getOrDefault(emptyList())
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class YahooChartResponse(val chart: Chart? = null)
 
@@ -55,8 +83,18 @@ class YahooFinanceClient {
     data class Chart(val result: List<ChartResult>? = null)
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    data class ChartResult(val meta: Meta? = null)
+    data class ChartResult(
+        val meta: Meta? = null,
+        val timestamp: List<Long>? = null,
+        val indicators: Indicators? = null,
+    )
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class Meta(val regularMarketPrice: Double? = null)
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class Indicators(val quote: List<Quote>? = null)
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class Quote(val close: List<Double?>? = null)
 }
