@@ -4,8 +4,8 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import axios from 'axios'
-import { useCashFlowApi, useReportApi } from '@/lib/useApi'
-import type { CashFlowItem, FlowType, RecordCashFlowRequest } from '@/types/returns'
+import { useBenchmarkApi, useCashFlowApi, useReportApi } from '@/lib/useApi'
+import type { BenchmarkType, CashFlowItem, FlowType, RecordCashFlowRequest } from '@/types/returns'
 import {
   Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ReferenceDot,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -62,6 +62,7 @@ function interpret(twr: number | null, mwr: number | null): string {
 export default function ReturnsReportPage() {
   const reportApi = useReportApi()
   const cashFlowApi = useCashFlowApi()
+  const benchmarkApi = useBenchmarkApi()
   const queryClient = useQueryClient()
 
   const [preset, setPreset] = useState<Preset>('YTD')
@@ -90,6 +91,20 @@ export default function ReturnsReportPage() {
     enabled: !!cashFlowApi && !!range,
   })
 
+  const benchmarkConfigQuery = useQuery({
+    queryKey: ['benchmark-config'],
+    queryFn: () => benchmarkApi!.get(),
+    enabled: !!benchmarkApi,
+  })
+
+  const setBenchmark = useMutation({
+    mutationFn: (indexType: BenchmarkType | null) => benchmarkApi!.set(indexType),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['benchmark-config'] })
+      queryClient.invalidateQueries({ queryKey: ['report', 'returns'] })
+    },
+  })
+
   const removeFlow = useMutation({
     mutationFn: (id: string) => cashFlowApi!.remove(id),
     onSuccess: () => {
@@ -106,10 +121,14 @@ export default function ReturnsReportPage() {
   const analysis = analysisQuery.data
   const flows = flowsQuery.data ?? []
 
-  const chartData = useMemo(
-    () => (analysis?.navSeries ?? []).map((p) => ({ date: p.date, nav: p.nav })),
-    [analysis],
-  )
+  const chartData = useMemo(() => {
+    const bmByDate = new Map((analysis?.benchmark?.series ?? []).map((p) => [p.date, p.nav]))
+    return (analysis?.navSeries ?? []).map((p) => ({
+      date: p.date,
+      nav: p.nav,
+      bm: bmByDate.get(p.date) ?? null,
+    }))
+  }, [analysis])
   const flowByDate = useMemo(() => {
     const m = new Map<string, CashFlowItem[]>()
     flows.forEach((f) => {
@@ -181,6 +200,18 @@ export default function ReturnsReportPage() {
               className="rounded-md border border-gray-700 bg-gray-900 px-2 py-1.5 text-gray-200" />
           </div>
         )}
+        <select
+          value={benchmarkConfigQuery.data?.indexType ?? ''}
+          onChange={(e) => setBenchmark.mutate((e.target.value || null) as BenchmarkType | null)}
+          disabled={!benchmarkConfigQuery.data || setBenchmark.isPending}
+          className="rounded-lg border border-gray-700 bg-gray-900 px-2 py-2 text-sm text-gray-300"
+          title="벤치마크 설정"
+        >
+          <option value="">BM 미설정</option>
+          {(benchmarkConfigQuery.data?.available ?? []).map((o) => (
+            <option key={o.type} value={o.type}>vs {o.label}</option>
+          ))}
+        </select>
         <button
           onClick={() => setShowModal(true)}
           className="ml-auto rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600"
@@ -224,6 +255,24 @@ export default function ReturnsReportPage() {
               <p className="text-xs text-gray-500">순입출금</p>
               <p className="mt-1 text-2xl font-bold text-gray-200">{fmtKrw(analysis.summary.netFlow)}</p>
             </div>
+            {analysis.benchmark && (
+              <>
+                <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+                  <p className="text-xs text-gray-500">BM 수익률 ({analysis.benchmark.label})</p>
+                  <p className={`mt-1 text-2xl font-bold ${pctColor(analysis.benchmark.periodReturn)}`}>
+                    {fmtPct(analysis.benchmark.periodReturn)}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+                  <p className="text-xs text-gray-500">초과수익 (TWR − BM)</p>
+                  <p className={`mt-1 text-2xl font-bold ${pctColor(analysis.benchmark.excessReturn)}`}>
+                    {analysis.benchmark.excessReturn === null
+                      ? '—'
+                      : `${analysis.benchmark.excessReturn >= 0 ? '+' : ''}${(analysis.benchmark.excessReturn * 100).toFixed(2)}%p`}
+                  </p>
+                </div>
+              </>
+            )}
           </div>
 
           {/* ③ TWR vs MWR 해석 */}
@@ -246,7 +295,14 @@ export default function ReturnsReportPage() {
 
           {/* ④ NAV 곡선 + 입출금 마커 */}
           <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-            <h2 className="mb-4 text-sm font-semibold text-gray-300">자산 추이 (NAV) — ▲입금 ▼출금</h2>
+            <h2 className="mb-4 text-sm font-semibold text-gray-300">
+              자산 추이 (NAV) — ▲입금 ▼출금
+              {analysis.benchmark && (
+                <span className="ml-2 text-xs font-normal text-gray-500">
+                  회색 점선 = {analysis.benchmark.label} (기초 자산 기준 정규화)
+                </span>
+              )}
+            </h2>
             <ResponsiveContainer width="100%" height={320}>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
@@ -255,9 +311,20 @@ export default function ReturnsReportPage() {
                 <Tooltip
                   contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
                   labelStyle={{ color: '#9ca3af' }}
-                  formatter={(value: number) => [fmtKrw(value), 'NAV']}
+                  formatter={(value: number, name: string) => [fmtKrw(value), name === 'bm' ? 'BM' : 'NAV']}
                 />
                 <Line type="monotone" dataKey="nav" stroke="#34d399" dot={false} strokeWidth={2} />
+                {analysis.benchmark && (
+                  <Line
+                    type="monotone"
+                    dataKey="bm"
+                    stroke="#9ca3af"
+                    strokeDasharray="5 4"
+                    dot={false}
+                    strokeWidth={1.5}
+                    connectNulls
+                  />
+                )}
                 {chartData
                   .filter((p) => flowByDate.has(p.date))
                   .map((p) => {
