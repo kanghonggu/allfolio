@@ -19,7 +19,7 @@
 - Modify: `allfolio-backend/unified-asset/src/main/kotlin/com/allfolio/unifiedasset/api/ReportController.kt` (returns 엔드포인트 + InsufficientData 핸들러)
 - Test: `allfolio-backend/unified-asset/src/test/kotlin/com/allfolio/unifiedasset/application/usecase/GetReturnsAnalysisUseCaseTest.kt`
 
-- [ ] **Step 1: 실패하는 테스트 (RED)** — 케이스: ①정상 분석(TWR·navSeries·asOf) ②관측 부족 → InsufficientDataException ③from>to → IllegalArgumentException
+- [x] **Step 1: 실패하는 테스트 (RED)** — 케이스: ①정상 분석(TWR·navSeries·asOf) ②관측 부족 → InsufficientDataException ③from>to → IllegalArgumentException
 
 테스트는 ReturnsReportGeneratorTest의 FakeNavSource/FakeCashFlowRepo 패턴 재사용:
 
@@ -86,7 +86,7 @@ class GetReturnsAnalysisUseCaseTest {
 }
 ```
 
-- [ ] **Step 2: 구현 (GREEN)**
+- [x] **Step 2: 구현 (GREEN)**
 
 ```kotlin
 // GetReturnsAnalysisUseCase.kt
@@ -154,7 +154,7 @@ fun insufficientData(e: InsufficientDataException): org.springframework.http.Res
 
 (생성자에 `private val returnsAnalysis: GetReturnsAnalysisUseCase` 추가. LocalDate 파라미터는 ISO yyyy-MM-dd 자동 바인딩 확인 — 안 되면 `@DateTimeFormat(iso = DateTimeFormat.ISO.DATE)`)
 
-- [ ] **Step 3: 테스트 + 빌드 + Commit**
+- [x] **Step 3: 테스트 + 빌드 + Commit**
 
 ```bash
 ./gradlew :unified-asset:test --tests '*GetReturnsAnalysisUseCaseTest*' && ./gradlew :unified-asset:build
@@ -170,7 +170,7 @@ git commit -m "feat(returns): 임의 기간 수익률 분석 API GET /api/report
 - Create: `frontend/allfolio_app/lib/cashflow-api.ts`
 - Modify: `frontend/allfolio_app/lib/useApi.ts` (useCashFlowApi 추가)
 
-- [ ] **Step 1: 타입 정의**
+- [x] **Step 1: 타입 정의**
 
 ```typescript
 // types/returns.ts
@@ -216,7 +216,7 @@ export interface RecordCashFlowRequest {
 }
 ```
 
-- [ ] **Step 2: API 클라이언트**
+- [x] **Step 2: API 클라이언트**
 
 report-api.ts에 (import 추가: `import type { ReturnsAnalysis } from '@/types/returns'`):
 
@@ -263,7 +263,7 @@ export function useCashFlowApi() {
 }
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add frontend/allfolio_app
@@ -275,9 +275,9 @@ git commit -m "feat(returns-fe): 수익률 분석·현금흐름 API 클라이언
 **Files:**
 - Create: `frontend/allfolio_app/app/unified/reports/returns/page.tsx`
 
-- [ ] **Step 1: 페이지 구현** — 스펙 §3 구성 그대로. 구조: 기간 선택바(프리셋 세그먼트+커스텀 date input) → 요약 카드 4 → TWR vs MWR 패널(해석 문구) → 누적 곡선(LineChart+입출금 ReferenceDot) → 워터폴(투명 베이스 스택 BarChart) → 입출금 그리드(기록 모달·삭제). 400 응답이면 스냅샷 부족 안내 + 그리드는 유지. 스타일은 performance/page.tsx의 다크 클래스 재사용.
+- [x] **Step 1: 페이지 구현** — 스펙 §3 구성 그대로. 구조: 기간 선택바(프리셋 세그먼트+커스텀 date input) → 요약 카드 4 → TWR vs MWR 패널(해석 문구) → 누적 곡선(LineChart+입출금 ReferenceDot) → 워터폴(투명 베이스 스택 BarChart) → 입출금 그리드(기록 모달·삭제). 400 응답이면 스냅샷 부족 안내 + 그리드는 유지. 스타일은 performance/page.tsx의 다크 클래스 재사용.
 
-- [ ] **Step 2: 허브 카드 추가** — `app/unified/reports/page.tsx` REPORTS 배열 '수익률 분석' 다음에:
+- [x] **Step 2: 허브 카드 추가** — `app/unified/reports/page.tsx` REPORTS 배열 '수익률 분석' 다음에:
 
 ```typescript
 {
@@ -289,7 +289,7 @@ git commit -m "feat(returns-fe): 수익률 분석·현금흐름 API 클라이언
 },
 ```
 
-- [ ] **Step 3: 타입체크·빌드 + Commit**
+- [x] **Step 3: 타입체크·빌드 + Commit**
 
 ```bash
 cd frontend/allfolio_app && npx tsc --noEmit && npm run build
@@ -299,5 +299,5 @@ git commit -m "feat(returns-fe): 수익률 보고서 화면 — TWR·MWR·워터
 
 ### Task 4: 스모크 + 마무리
 
-- [ ] **Step 1: 로컬 스모크** — 도커 PG(+DDL)·백엔드 기동, `npm run dev` 프론트 기동, 브라우저로: 로그인 → NAV 시드 → 화면 진입 → 프리셋 전환 → 입출금 기록 → 곡선 마커·워터폴·카드 수치 일치 확인
-- [ ] **Step 2: push, PR 생성, 노션 #34 진행 업데이트**
+- [x] **Step 1: 로컬 스모크** — 도커 PG(+DDL)·백엔드 기동, `npm run dev` 프론트 기동, 브라우저로: 로그인 → NAV 시드 → 화면 진입 → 프리셋 전환 → 입출금 기록 → 곡선 마커·워터폴·카드 수치 일치 확인
+- [x] **Step 2: push, PR 생성, 노션 #34 진행 업데이트**
