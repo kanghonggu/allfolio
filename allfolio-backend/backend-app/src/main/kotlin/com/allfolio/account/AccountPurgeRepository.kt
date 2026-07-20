@@ -34,6 +34,10 @@ interface AccountPurgeRepository : Repository<UserEntity, UUID> {
     @Query("DELETE FROM report_archive WHERE user_id = :userId", nativeQuery = true)
     fun deleteReportArchive(userId: UUID): Int
 
+    @Modifying
+    @Query("DELETE FROM cash_flow WHERE user_id = :userId", nativeQuery = true)
+    fun deleteCashFlow(userId: UUID): Int
+
     /** ua_assets / ua_stock_trades 는 ua_accounts FK cascade 로 함께 삭제된다. */
     @Modifying
     @Query("DELETE FROM ua_accounts WHERE user_id = :userId", nativeQuery = true)
