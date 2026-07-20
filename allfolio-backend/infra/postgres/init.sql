@@ -517,3 +517,21 @@ CREATE TABLE IF NOT EXISTS report_archive (
 
 CREATE INDEX IF NOT EXISTS idx_report_archive_user
     ON report_archive (user_id, report_type, period_end DESC);
+
+-- ── cash_flow ──────────────────────────────────────────────────
+-- 입출금 원장 (R1 #33): TWR/MWR 계산의 현금흐름 조정 입력. KRW 환산은 기록 시점 고정
+CREATE TABLE IF NOT EXISTS cash_flow (
+    id           UUID           PRIMARY KEY,
+    user_id      UUID           NOT NULL,
+    account_id   UUID,
+    flow_date    DATE           NOT NULL,
+    flow_type    VARCHAR(20)    NOT NULL,
+    amount       NUMERIC(30,10) NOT NULL,
+    currency     VARCHAR(10)    NOT NULL,
+    amount_krw   NUMERIC(30,10) NOT NULL,
+    memo         VARCHAR(500),
+    created_at   TIMESTAMP      NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cash_flow_user_date
+    ON cash_flow (user_id, flow_date);
