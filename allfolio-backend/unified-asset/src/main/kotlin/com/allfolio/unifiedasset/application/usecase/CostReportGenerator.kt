@@ -31,6 +31,7 @@ class CostReportGenerator(
 
     private val mapper = jacksonObjectMapper()
     private val mc = MathContext(10, RoundingMode.HALF_UP)
+    private val log = org.slf4j.LoggerFactory.getLogger(javaClass)
 
     override fun generate(userId: UUID, period: ReportPeriod): GeneratedReport {
         val records = costLedger.findCosts(userId, period.start, period.end)
@@ -39,7 +40,9 @@ class CostReportGenerator(
         val tradingTax = records.sum { it.tax }
         val totalCost = brokerFee + tradingTax
 
-        val analysis = runCatching { returnsAnalysis.analyze(userId, period.start, period.end) }.getOrNull()
+        val analysis = runCatching { returnsAnalysis.analyze(userId, period.start, period.end) }
+            .onFailure { log.debug("비용률 산출용 수익률 분석 실패(비용률·수익대비 생략): {}", it.message) }
+            .getOrNull()
         val avgNav: BigDecimal? = analysis?.navSeries?.takeIf { it.isNotEmpty() }
             ?.let { s -> s.fold(BigDecimal.ZERO) { a, p -> a + p.nav }.divide(BigDecimal(s.size), mc) }
         val pnl: BigDecimal? = analysis?.summary?.investmentPnl
@@ -80,6 +83,7 @@ class CostReportGenerator(
                 "totalCost" to totalCost, "brokerFee" to brokerFee, "tradingTax" to tradingTax,
                 "tradeCount" to records.size,
                 "costRatio" to costRatio, "annualizedTer" to ter, "costVsProfit" to costVsProfit,
+                "investmentPnl" to pnl,
             ),
             "byType" to byType,
             "byBroker" to byBroker,

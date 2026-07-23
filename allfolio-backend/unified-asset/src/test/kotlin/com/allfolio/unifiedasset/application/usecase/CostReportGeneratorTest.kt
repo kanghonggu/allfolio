@@ -108,7 +108,7 @@ class CostReportGeneratorTest {
                 .generate(userId, period).bodyJson
         )
         assertEquals(0.01, body["summary"]["costRatio"].asDouble(), 0.001)
-        assertTrue(body["summary"]["annualizedTer"].isNumber)
+        assertEquals(0.12, body["summary"]["annualizedTer"].asDouble(), 0.01)
     }
 
     @Test
@@ -130,6 +130,7 @@ class CostReportGeneratorTest {
         )
         assertTrue(body["summary"]["costVsProfit"].isNull)
         assertTrue(body["summary"]["costRatio"].isNumber)
+        assertEquals(0.0, body["summary"]["investmentPnl"].asDouble(), 0.01)
     }
 
     @Test
