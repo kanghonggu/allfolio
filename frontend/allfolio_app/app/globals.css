@@ -1,3 +1,16 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* === 월간 운용보고서 인쇄 (#37) === */
+@media print {
+  .no-print { display: none !important; }
+  body { background: #ffffff !important; color: #111111 !important; }
+  .print-invert, .print-invert * {
+    background: #ffffff !important;
+    color: #111111 !important;
+    border-color: #d1d5db !important;
+  }
+  section { break-inside: avoid; }
+  @page { margin: 14mm; }
+}
