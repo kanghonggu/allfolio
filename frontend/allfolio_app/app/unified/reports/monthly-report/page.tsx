@@ -16,7 +16,7 @@ export default function MonthlyReportListPage() {
   const api = useReportArchiveApi()
   const router = useRouter()
   const qc = useQueryClient()
-  const [year, setYear] = useState(NOW.getFullYear())
+  const [year, setYear] = useState(NOW.getMonth() === 0 ? NOW.getFullYear() - 1 : NOW.getFullYear())
   const [month, setMonth] = useState(NOW.getMonth() === 0 ? 12 : NOW.getMonth())
   const [error, setError] = useState<string | null>(null)
 
@@ -77,7 +77,7 @@ export default function MonthlyReportListPage() {
 
       <div className="space-y-3">
         <h2 className="text-lg font-semibold">생성 이력</h2>
-        {isLoading ? (
+        {!api || isLoading ? (
           <div className="h-32 animate-pulse rounded-xl bg-gray-800" />
         ) : !list || list.length === 0 ? (
           <p className="rounded-xl border border-gray-800 bg-gray-900 p-6 text-center text-sm text-gray-500">
@@ -96,8 +96,11 @@ export default function MonthlyReportListPage() {
                 {list.map((r: ArchiveMeta) => (
                   <tr
                     key={r.id}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => router.push(`/unified/reports/monthly-report/${r.id}`)}
-                    className="cursor-pointer border-b border-gray-800 last:border-b-0 hover:bg-gray-800/50"
+                    onKeyDown={(e) => { if (e.key === 'Enter') router.push(`/unified/reports/monthly-report/${r.id}`) }}
+                    className="cursor-pointer border-b border-gray-800 last:border-b-0 hover:bg-gray-800/50 focus:bg-gray-800/50 focus:outline-none"
                   >
                     <td className="p-3 font-medium text-gray-100">
                       {r.periodStart.slice(0, 4)}년 {Number(r.periodStart.slice(5, 7))}월
