@@ -17,11 +17,15 @@ export default function MonthlyReportDetailPage() {
   const api = useReportArchiveApi()
   const { data, isLoading, isError } = useQuery({
     queryKey: ['monthly-report', id],
-    queryFn: () => api!.detail(id),
+    queryFn: async () => {
+      const detail = await api!.detail(id)
+      return { meta: detail.meta, body: parseMonthlyReportBody(detail.body) }
+    },
     enabled: !!api && !!id,
+    retry: false,
   })
 
-  if (isLoading) return <div className="h-96 animate-pulse rounded-xl bg-gray-800" />
+  if (!api || isLoading) return <div className="h-96 animate-pulse rounded-xl bg-gray-800" />
   if (isError || !data) {
     return (
       <div className="space-y-4">
@@ -34,7 +38,7 @@ export default function MonthlyReportDetailPage() {
   }
 
   const { meta } = data
-  const body = parseMonthlyReportBody(data.body)
+  const body = data.body
   const [y, m] = [meta.periodStart.slice(0, 4), meta.periodStart.slice(5, 7)]
 
   return (

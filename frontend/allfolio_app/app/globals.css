@@ -11,6 +11,8 @@
     color: #111111 !important;
     border-color: #d1d5db !important;
   }
-  section { break-inside: avoid; }
+  nav { display: none !important; }
+  .print-invert section { break-inside: avoid; }
+  .print-invert svg text { fill: #111111 !important; }
   @page { margin: 14mm; }
 }
