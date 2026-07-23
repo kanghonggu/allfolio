@@ -24,12 +24,15 @@ export function TopHoldingsTable({ holdings }: { holdings: Holding[] }) {
                   <span className="ml-2 text-xs text-gray-500">{h.symbol}</span>
                 </td>
                 <td className="p-3 text-gray-400">{h.type}</td>
-                <td className="p-3 text-right tabular-nums text-gray-300">{h.quantity.toLocaleString()}</td>
+                <td className="p-3 text-right tabular-nums text-gray-300">{h.quantity.toLocaleString('ko-KR', { maximumFractionDigits: 8 })}</td>
                 <td className="p-3 text-right tabular-nums">{fmtKrw(h.valueKrw)}</td>
                 <td className="p-3 text-right tabular-nums text-gray-300">{h.weight.toFixed(2)}%</td>
                 <td className={`p-3 text-right tabular-nums ${pctColor(h.returnRate)}`}>{fmtPctScaled(h.returnRate)}</td>
               </tr>
             ))}
+            {holdings.length === 0 && (
+              <tr><td colSpan={6} className="p-4 text-center text-gray-500">보유 종목이 없습니다.</td></tr>
+            )}
           </tbody>
         </table>
       </div>

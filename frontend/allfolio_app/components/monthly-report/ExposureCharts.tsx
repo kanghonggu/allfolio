@@ -20,15 +20,19 @@ function Donut({ title, data }: { title: string; data: { label: string; valueKrw
   return (
     <div className="rounded-xl border border-gray-700 bg-gray-900 p-4">
       <p className="mb-2 text-xs text-gray-500">{title}</p>
-      <ResponsiveContainer width="100%" height={240}>
-        <PieChart>
-          <Pie data={rows} dataKey="valueKrw" nameKey="label" innerRadius={50} outerRadius={80} paddingAngle={2}>
-            {rows.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-          </Pie>
-          <Tooltip formatter={(v: number) => fmtKrw(v)} contentStyle={{ background: '#111827', border: '1px solid #374151' }} />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-        </PieChart>
-      </ResponsiveContainer>
+      {rows.length === 0 ? (
+        <div className="flex h-[240px] items-center justify-center text-sm text-gray-500">데이터 없음</div>
+      ) : (
+        <ResponsiveContainer width="100%" height={240}>
+          <PieChart>
+            <Pie data={rows} dataKey="valueKrw" nameKey="label" innerRadius={50} outerRadius={80} paddingAngle={2}>
+              {rows.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+            </Pie>
+            <Tooltip formatter={(v: number) => [fmtKrw(v), '평가액']} contentStyle={{ background: '#111827', border: '1px solid #374151' }} />
+            <Legend formatter={(v) => <span className="text-xs text-gray-300">{v}</span>} />
+          </PieChart>
+        </ResponsiveContainer>
+      )}
     </div>
   )
 }

@@ -25,6 +25,9 @@ export function AccountsTable({ accounts }: { accounts: AccountRow[] }) {
                 <td className="p-3 text-right tabular-nums text-gray-300">{a.assetCount}</td>
               </tr>
             ))}
+            {accounts.length === 0 && (
+              <tr><td colSpan={5} className="p-4 text-center text-gray-500">계좌가 없습니다.</td></tr>
+            )}
           </tbody>
         </table>
       </div>

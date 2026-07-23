@@ -37,7 +37,9 @@ export function FlowWaterfall({ flow }: { flow: FlowDecomposition }) {
             <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 12 }} />
             <YAxis tickFormatter={(v) => fmtKrw(v)} tick={{ fill: '#9ca3af', fontSize: 11 }} width={80} />
             <Tooltip
-              formatter={(v: number) => fmtKrw(v)}
+              formatter={(value: number, name: string) =>
+                name === 'value' ? [fmtKrw(value), '금액'] : [null, null]
+              }
               contentStyle={{ background: '#111827', border: '1px solid #374151' }}
             />
             <Bar dataKey="base" stackId="wf" fill="transparent" />

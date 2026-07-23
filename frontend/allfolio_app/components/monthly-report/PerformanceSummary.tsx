@@ -14,7 +14,7 @@ export function PerformanceSummary({ perf }: { perf: Performance }) {
         <Kpi label="TWR (시간가중)" value={fmtPct(m.twr)} color={pctColor(m.twr)} />
         <Kpi label="MWR (금액가중)" value={fmtPct(m.mwr)} color={pctColor(m.mwr)} />
         <Kpi label="기말 NAV" value={fmtKrw(m.endNav)} />
-        <Kpi label="순증(입출금)" value={fmtKrw(m.netFlow)} color={pctColor(m.netFlow)} />
+        <Kpi label="순증(입출금)" value={fmtKrw(m.netFlow)} />
       </div>
 
       {m.benchmark && (
