@@ -433,7 +433,8 @@ git commit -m "feat(monthly-fe): 입출금 효과 분해 워터폴 (R1 #37)"
 ```tsx
 // components/monthly-report/TopHoldingsTable.tsx
 import type { Holding } from '@/types/monthly-report'
-import { fmtKrw, fmtPct, pctColor } from '@/lib/report-format'
+import { fmtKrw, fmtPctScaled, pctColor } from '@/lib/report-format'
+// 주의: returnRate·weight는 백엔드에서 이미 0~100으로 스케일됨 → fmtPct(×100) 금지, fmtPctScaled/.toFixed 사용
 
 export function TopHoldingsTable({ holdings }: { holdings: Holding[] }) {
   return (
@@ -459,7 +460,7 @@ export function TopHoldingsTable({ holdings }: { holdings: Holding[] }) {
                 <td className="p-3 text-right tabular-nums text-gray-300">{h.quantity.toLocaleString()}</td>
                 <td className="p-3 text-right tabular-nums">{fmtKrw(h.valueKrw)}</td>
                 <td className="p-3 text-right tabular-nums text-gray-300">{h.weight.toFixed(2)}%</td>
-                <td className={`p-3 text-right tabular-nums ${pctColor(h.returnRate)}`}>{fmtPct(h.returnRate)}</td>
+                <td className={`p-3 text-right tabular-nums ${pctColor(h.returnRate)}`}>{fmtPctScaled(h.returnRate)}</td>
               </tr>
             ))}
           </tbody>
