@@ -27,7 +27,8 @@ class CurrencyConverter(
     fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
         when (currency.uppercase()) {
             "KRW"  -> amount
-            "USDT" -> {
+            // USD는 USDT 환율로 근사 — 1:1(원화 취급) 폴백은 달러 자산을 1/1400로 축소하는 버그
+            "USDT", "USD" -> {
                 val rate = fxRateService.getUsdtToKrw()
                 (amount * rate).setScale(0, RoundingMode.HALF_UP)
             }
