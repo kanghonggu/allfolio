@@ -331,6 +331,10 @@ CREATE TABLE IF NOT EXISTS ua_stock_trades (
 CREATE INDEX IF NOT EXISTS idx_ua_stock_trades_account
     ON ua_stock_trades (account_id, traded_at DESC);
 
+-- 유저 단위 배당/거래 조회용 (DividendReportService, AiConsultantService 등)
+CREATE INDEX IF NOT EXISTS idx_ua_stock_trades_user_dividend
+    ON ua_stock_trades (user_id, trade_type, traded_at DESC);
+
 -- ── market_price_tick ────────────────────────────────────────────
 -- WebSocket 실시간 시세 틱 데이터
 -- BinanceWsAdapter / KisWsAdapter → MarketPriceBatchWriter → 배치 INSERT
