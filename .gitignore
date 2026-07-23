@@ -22,6 +22,7 @@
 # 프론트엔드
 /frontend/allfolio_app/node_modules/
 /frontend/allfolio_app/.next/
+/frontend/allfolio_app/*.tsbuildinfo
 
 # IDE
 .idea/
