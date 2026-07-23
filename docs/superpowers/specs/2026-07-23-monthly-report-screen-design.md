@@ -90,10 +90,12 @@ Next.js App Router, 기존 스택(react-query + axios + recharts, dark 테마). 
 
 ## 7. 테스트·검증
 
-- 컴포넌트: 본문 JSON fixture로 상세 렌더 검증 — 8개 섹션 존재, Top10 비중 표기, 워터폴 4단, benchmark/volatility null 폴백("—"), WARNING 배너.
-- API 클라이언트: axios 모킹 단위(generate/list/detail 경로·파라미터).
-- 인쇄: `@media print` 레이아웃은 브라우저 프린트 미리보기로 수동 검증.
-- 스모크: 로컬 기동 → 연·월 생성 → 목록/상세 → 인쇄 미리보기.
+프론트엔드에는 테스트 러너가 없고(기존 화면 #34 등도 유닛 테스트 없이 출하), 이 화면도 동일 패턴을 따른다. 새 테스트 인프라(vitest/RTL)는 도입하지 않는다.
+
+- **타입 안전성**: `tsc`(next build 타입체크)로 body JSON 타입·컴포넌트 props 정합성 확인.
+- **브라우저 프리뷰 검증**: `next dev` 기동 → read_page/console/스크린샷으로 렌더 확인 — 8개 섹션 존재, Top10 비중 표기, 워터폴 4단, benchmark/volatility null 폴백("—"), WARNING 배너, 빈/에러 상태.
+- **인쇄**: `@media print` 레이아웃은 브라우저 프린트 미리보기로 수동 검증(배경 반전·버튼 숨김·섹션 페이지 나눔).
+- **스모크**: 로컬 → 연·월 생성 → 목록/상세 → 인쇄 미리보기.
 
 ## 8. 제외 (후속)
 
