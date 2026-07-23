@@ -145,4 +145,27 @@ class DividendInterestReportGeneratorTest {
         val body = mapper.readTree(gen.generate(userId, period).bodyJson)
         assertTrue(body["summary"]["ttmYield"].isNull)
     }
+
+    @Test
+    fun `ttm yield includes dividends outside the report month but within trailing year`() {
+        val gen = generator(listOf(
+            rec(20, "삼성전자", "005930", "10000", "0"),
+            DividendRecord(LocalDate.of(2025, 11, 15), "AAPL", "AAPL", "한투", "KIS", BigDecimal("90000"), BigDecimal.ZERO),
+        ), assets = listOf(asset("100000000")))
+        val body = mapper.readTree(gen.generate(userId, period).bodyJson)
+        // report period sees only the June record
+        assertEquals(1, body["receipts"].size())
+        assertEquals(1, body["summary"]["receiptCount"].asInt())
+        // ttm net = 10000 + 90000 = 100000; /100,000,000 ×100 = 0.10
+        assertEquals(0.10, body["summary"]["ttmYield"].asDouble(), 0.001)
+    }
+
+    @Test
+    fun `asOfDate is the latest pay date within the period`() {
+        val gen = generator(listOf(
+            rec(3, "삼성전자", "005930", "10000", "0"),
+            rec(20, "AAPL", "AAPL", "20000", "0"),
+        ))
+        assertEquals(LocalDate.of(2026, 6, 20), gen.generate(userId, period).asOfDate)
+    }
 }

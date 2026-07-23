@@ -33,6 +33,7 @@ class DividendInterestReportGenerator(
 
     private val mapper = jacksonObjectMapper()
     private val mc = MathContext(10, RoundingMode.HALF_UP)
+    private val numericSymbol = Regex("^[0-9]+$")
 
     override fun generate(userId: UUID, period: ReportPeriod): GeneratedReport {
         val records = ledger.findDividends(userId, period.start, period.end)
@@ -68,7 +69,7 @@ class DividendInterestReportGenerator(
                 )
             }.sortedByDescending { it["net"] as BigDecimal }
 
-        val byCountry = records.groupBy { if (it.symbol?.matches(Regex("^[0-9]+$")) == true) "국내" else "해외" }
+        val byCountry = records.groupBy { if (it.symbol?.matches(numericSymbol) == true) "국내" else "해외" }
             .map { (country, rs) ->
                 val g = rs.sum { it.gross }; val t = rs.sum { it.tax }
                 mapOf(
@@ -98,5 +99,5 @@ class DividendInterestReportGenerator(
     /** a/b × 100, 0~100 스케일 (b<=0이면 0) */
     private fun pct(a: BigDecimal, b: BigDecimal): BigDecimal =
         if (b <= BigDecimal.ZERO) BigDecimal.ZERO
-        else a.divide(b, mc).multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
+        else a.divide(b, mc).multiply(BigDecimal(100), mc).setScale(2, RoundingMode.HALF_UP)
 }
