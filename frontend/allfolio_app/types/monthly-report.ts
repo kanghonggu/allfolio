@@ -48,11 +48,11 @@ export interface Holding {
   type: string
   quantity: number
   valueKrw: number
-  weight: number
-  returnRate: number | null
+  weight: number       // 0~100 스케일 (fmtPct 금지, fmtPctScaled/.toFixed 사용)
+  returnRate: number | null   // 0~100 스케일 (fmtPct 금지, fmtPctScaled/.toFixed 사용)
 }
 
-export interface ExposureRow { valueKrw: number; weight: number; type?: string; currency?: string }
+export interface ExposureRow { valueKrw: number; weight: number; type?: string; currency?: string }   // weight: 0~100 스케일 (fmtPct 금지, fmtPctScaled/.toFixed 사용)
 
 export interface Exposure {
   byType: (ExposureRow & { type: string })[]
@@ -63,7 +63,7 @@ export interface AccountRow {
   accountName: string
   provider: string
   valueKrw: number
-  weight: number
+  weight: number       // 0~100 스케일 (fmtPct 금지, fmtPctScaled/.toFixed 사용)
   assetCount: number
 }
 
