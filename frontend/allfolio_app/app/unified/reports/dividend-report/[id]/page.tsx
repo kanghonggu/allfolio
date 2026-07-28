@@ -1,25 +1,26 @@
-// app/unified/reports/monthly-report/[id]/page.tsx
+// app/unified/reports/dividend-report/[id]/page.tsx
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useReportArchiveApi } from '@/lib/useApi'
-import { parseMonthlyReportBody, MONTHLY_REPORT } from '@/lib/report-archive-api'
-import { PerformanceSummary } from '@/components/monthly-report/PerformanceSummary'
-import { FlowWaterfall } from '@/components/monthly-report/FlowWaterfall'
-import { TopHoldingsTable } from '@/components/monthly-report/TopHoldingsTable'
-import { ExposureCharts } from '@/components/monthly-report/ExposureCharts'
-import { AccountsTable } from '@/components/monthly-report/AccountsTable'
+import { parseReportBody, DIVIDEND_INTEREST } from '@/lib/report-archive-api'
+import type { DividendReportBody } from '@/types/dividend-report'
+import { DividendSummary } from '@/components/dividend-report/DividendSummary'
+import { ReceiptsTable } from '@/components/dividend-report/ReceiptsTable'
+import { MonthlyNetTrend } from '@/components/dividend-report/MonthlyNetTrend'
+import { BySymbolTable } from '@/components/dividend-report/BySymbolTable'
+import { ByCountryTable } from '@/components/dividend-report/ByCountryTable'
 
-export default function MonthlyReportDetailPage() {
+export default function DividendReportDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const api = useReportArchiveApi(MONTHLY_REPORT)
+  const api = useReportArchiveApi(DIVIDEND_INTEREST)
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['monthly-report', id],
+    queryKey: ['dividend-report', id],
     queryFn: async () => {
       const detail = await api!.detail(id)
-      return { meta: detail.meta, body: parseMonthlyReportBody(detail.body) }
+      return { meta: detail.meta, body: parseReportBody<DividendReportBody>(detail.body) }
     },
     enabled: !!api && !!id,
     retry: false,
@@ -32,7 +33,7 @@ export default function MonthlyReportDetailPage() {
         <div className="rounded-xl border border-red-800 bg-red-950 p-6 text-sm text-red-400">
           보고서를 찾을 수 없습니다.
         </div>
-        <Link href="/unified/reports/monthly-report" className="text-sm text-gray-400 hover:text-gray-200">← 목록</Link>
+        <Link href="/unified/reports/dividend-report" className="text-sm text-gray-400 hover:text-gray-200">← 목록</Link>
       </div>
     )
   }
@@ -45,8 +46,8 @@ export default function MonthlyReportDetailPage() {
     <div className="space-y-8 print-invert">
       <div className="flex items-center justify-between gap-3 no-print">
         <div className="flex items-center gap-3">
-          <Link href="/unified/reports/monthly-report" className="text-sm text-gray-500 hover:text-gray-300">← 목록</Link>
-          <h1 className="text-2xl font-bold">{y}년 {Number(m)}월 운용보고서</h1>
+          <Link href="/unified/reports/dividend-report" className="text-sm text-gray-500 hover:text-gray-300">← 목록</Link>
+          <h1 className="text-2xl font-bold">{y}년 {Number(m)}월 배당·이자 보고서</h1>
         </div>
         <button
           onClick={() => window.print()}
@@ -69,13 +70,11 @@ export default function MonthlyReportDetailPage() {
         </div>
       )}
 
-      <PerformanceSummary perf={body.performance} />
-      <FlowWaterfall flow={body.flowDecomposition} />
-      <TopHoldingsTable holdings={body.topHoldings} />
-      <ExposureCharts exposure={body.exposure} />
-      <AccountsTable accounts={body.accounts} />
-
-      <p className="text-xs text-gray-500">{body.note}</p>
+      <DividendSummary summary={body.summary} />
+      <ReceiptsTable receipts={body.receipts} />
+      <MonthlyNetTrend rows={body.monthly} />
+      <BySymbolTable rows={body.bySymbol} />
+      <ByCountryTable rows={body.byCountry} />
     </div>
   )
 }

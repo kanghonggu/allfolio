@@ -1,4 +1,4 @@
-// app/unified/reports/monthly-report/page.tsx
+// app/unified/reports/dividend-report/page.tsx
 'use client'
 
 import { useState } from 'react'
@@ -6,15 +6,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useReportArchiveApi } from '@/lib/useApi'
-import { MONTHLY_REPORT } from '@/lib/report-archive-api'
-import type { ArchiveMeta } from '@/types/monthly-report'
+import { DIVIDEND_INTEREST } from '@/lib/report-archive-api'
+import type { ArchiveMeta } from '@/types/report-archive'
 
 const NOW = new Date()
 const YEARS = Array.from({ length: 6 }, (_, i) => NOW.getFullYear() - i)
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
 
-export default function MonthlyReportListPage() {
-  const api = useReportArchiveApi(MONTHLY_REPORT)
+export default function DividendReportListPage() {
+  const api = useReportArchiveApi(DIVIDEND_INTEREST)
   const router = useRouter()
   const qc = useQueryClient()
   const [year, setYear] = useState(NOW.getMonth() === 0 ? NOW.getFullYear() - 1 : NOW.getFullYear())
@@ -22,16 +22,17 @@ export default function MonthlyReportListPage() {
   const [error, setError] = useState<string | null>(null)
 
   const { data: list, isLoading } = useQuery({
-    queryKey: ['monthly-report', 'list'],
+    queryKey: ['dividend-report', 'list'],
     queryFn: () => api!.list(),
     enabled: !!api,
+    retry: false,
   })
 
   const gen = useMutation({
     mutationFn: () => api!.generate(year, month),
     onSuccess: (meta) => {
-      qc.invalidateQueries({ queryKey: ['monthly-report', 'list'] })
-      router.push(`/unified/reports/monthly-report/${meta.id}`)
+      qc.invalidateQueries({ queryKey: ['dividend-report', 'list'] })
+      router.push(`/unified/reports/dividend-report/${meta.id}`)
     },
     onError: (e: unknown) => {
       const msg =
@@ -45,7 +46,7 @@ export default function MonthlyReportListPage() {
     <div className="space-y-8">
       <div className="flex items-center gap-3">
         <Link href="/unified/reports" className="text-sm text-gray-500 hover:text-gray-300">← 보고서</Link>
-        <h1 className="text-2xl font-bold">월간 운용보고서</h1>
+        <h1 className="text-2xl font-bold">배당·이자 보고서</h1>
       </div>
 
       <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-700 bg-gray-900 p-4">
@@ -82,7 +83,7 @@ export default function MonthlyReportListPage() {
           <div className="h-32 animate-pulse rounded-xl bg-gray-800" />
         ) : !list || list.length === 0 ? (
           <p className="rounded-xl border border-gray-800 bg-gray-900 p-6 text-center text-sm text-gray-500">
-            아직 생성된 월간 운용보고서가 없습니다. 위에서 연·월을 골라 생성하세요.
+            아직 생성된 배당·이자 보고서가 없습니다. 위에서 연·월을 골라 생성하세요.
           </p>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-gray-700 bg-gray-900">
@@ -99,8 +100,8 @@ export default function MonthlyReportListPage() {
                     key={r.id}
                     role="button"
                     tabIndex={0}
-                    onClick={() => router.push(`/unified/reports/monthly-report/${r.id}`)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') router.push(`/unified/reports/monthly-report/${r.id}`) }}
+                    onClick={() => router.push(`/unified/reports/dividend-report/${r.id}`)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') router.push(`/unified/reports/dividend-report/${r.id}`) }}
                     className="cursor-pointer border-b border-gray-800 last:border-b-0 hover:bg-gray-800/50 focus:bg-gray-800/50 focus:outline-none"
                   >
                     <td className="p-3 font-medium text-gray-100">
