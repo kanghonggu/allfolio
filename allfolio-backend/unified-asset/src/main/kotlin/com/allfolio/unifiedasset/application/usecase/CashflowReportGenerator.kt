@@ -8,7 +8,6 @@ import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.CashFlowRepository
 import com.allfolio.unifiedasset.application.port.CashflowTradeSource
 import com.allfolio.unifiedasset.application.port.TradeCashRecord
-import com.allfolio.unifiedasset.domain.cashflow.CashFlow
 import com.allfolio.unifiedasset.domain.cashflow.FlowType
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.springframework.stereotype.Component

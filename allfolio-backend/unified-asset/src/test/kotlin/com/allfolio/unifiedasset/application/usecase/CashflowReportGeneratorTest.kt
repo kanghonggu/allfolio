@@ -126,6 +126,24 @@ class CashflowReportGeneratorTest {
         assertEquals(1000000.0, d[0]["amount"].asDouble(), 0.01)
         assertEquals("2026-06-05", d[1]["date"].asText())
         assertEquals(-5000000.0, d[1]["amount"].asDouble(), 0.01)
+        assertEquals("한투", d[1]["account"].asText())
+        assertEquals("삼성전자", d[1]["description"].asText())
+        // sorted tail: 06-10 배당 → 06-20 출금 → 06-25 매도
+        assertEquals("2026-06-20", d[3]["date"].asText())
+        assertEquals(-300000.0, d[3]["amount"].asDouble(), 0.01)  // 출금 음수
+        assertEquals("2026-06-25", d[4]["date"].asText())
+        assertEquals("매도대금", d[4]["type"].asText())
+        assertEquals(2000000.0, d[4]["amount"].asDouble(), 0.01)
+    }
+
+    @Test
+    fun `byType omits zero-amount types`() {
+        val body = mapper.readTree(generator(listOf(deposit(1, "1000000")), emptyList()).generate(userId, period).bodyJson)
+        val types = body["byType"].map { it["type"].asText() }.toSet()
+        assertTrue(types.contains("입금"))
+        assertTrue(!types.contains("출금"))
+        assertTrue(!types.contains("매수대금"))
+        assertEquals(1, body["byType"].size())
     }
 
     @Test
