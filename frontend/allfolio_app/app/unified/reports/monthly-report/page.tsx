@@ -13,7 +13,7 @@ const YEARS = Array.from({ length: 6 }, (_, i) => NOW.getFullYear() - i)
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
 
 export default function MonthlyReportListPage() {
-  const api = useReportArchiveApi()
+  const api = useReportArchiveApi('MONTHLY_REPORT')
   const router = useRouter()
   const qc = useQueryClient()
   const [year, setYear] = useState(NOW.getMonth() === 0 ? NOW.getFullYear() - 1 : NOW.getFullYear())

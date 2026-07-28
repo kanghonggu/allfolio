@@ -58,10 +58,10 @@ export function useBenchmarkApi() {
   )
 }
 
-export function useReportArchiveApi() {
+export function useReportArchiveApi(reportType: string) {
   const { accessToken } = useAuth()
   return useMemo(
-    () => (accessToken ? createReportArchiveApi(accessToken) : null),
-    [accessToken],
+    () => (accessToken ? createReportArchiveApi(accessToken, reportType) : null),
+    [accessToken, reportType],
   )
 }

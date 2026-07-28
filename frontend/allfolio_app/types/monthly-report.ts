@@ -1,21 +1,5 @@
 // types/monthly-report.ts
-export type ReportStatus = 'FINAL' | 'WARNING'   // 백엔드 enum ReportStatus { FINAL, WARNING }
-
-export interface ReportWarning {
-  code: string
-  message: string
-}
-
-export interface ArchiveMeta {
-  id: string
-  type: string
-  periodStart: string   // ISO date
-  periodEnd: string
-  asOfDate: string
-  status: ReportStatus
-  warnings: ReportWarning[]
-  createdAt: string      // ISO datetime
-}
+export type { ReportStatus, ReportWarning, ArchiveMeta, ArchiveDetail } from './report-archive'
 
 export interface BenchmarkBlock {
   indexType: string
@@ -81,9 +65,4 @@ export interface MonthlyReportBody {
   accounts: AccountRow[]
   flowDecomposition: FlowDecomposition
   note: string
-}
-
-export interface ArchiveDetail {
-  meta: ArchiveMeta
-  body: string   // JSON 문자열 — parseMonthlyReportBody로 파싱
 }

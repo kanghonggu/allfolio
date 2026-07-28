@@ -1,12 +1,14 @@
 // lib/report-archive-api.ts
 import axios from 'axios'
-import type { ArchiveMeta, ArchiveDetail, MonthlyReportBody } from '@/types/monthly-report'
+import type { ArchiveMeta, ArchiveDetail } from '@/types/report-archive'
+import type { MonthlyReportBody } from '@/types/monthly-report'
 
 const BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8090'}/api/reports/archive`
 
 export const MONTHLY_REPORT = 'MONTHLY_REPORT'
+export const DIVIDEND_INTEREST = 'DIVIDEND_INTEREST'
 
-export function createReportArchiveApi(accessToken: string) {
+export function createReportArchiveApi(accessToken: string, reportType: string) {
   const api = axios.create({
     baseURL: BASE_URL,
     timeout: 30_000,
@@ -15,16 +17,20 @@ export function createReportArchiveApi(accessToken: string) {
 
   return {
     generate: async (year: number, month: number): Promise<ArchiveMeta> =>
-      (await api.post<ArchiveMeta>('/generate', { type: MONTHLY_REPORT, year, month })).data,
+      (await api.post<ArchiveMeta>('/generate', { type: reportType, year, month })).data,
 
     list: async (): Promise<ArchiveMeta[]> =>
-      (await api.get<ArchiveMeta[]>('', { params: { type: MONTHLY_REPORT } })).data,
+      (await api.get<ArchiveMeta[]>('', { params: { type: reportType } })).data,
 
     detail: async (id: string): Promise<ArchiveDetail> =>
       (await api.get<ArchiveDetail>(`/${id}`)).data,
   }
 }
 
+export function parseReportBody<T>(body: string): T {
+  return JSON.parse(body) as T
+}
+
 export function parseMonthlyReportBody(body: string): MonthlyReportBody {
-  return JSON.parse(body) as MonthlyReportBody
+  return parseReportBody<MonthlyReportBody>(body)
 }

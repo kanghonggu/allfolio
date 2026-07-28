@@ -14,7 +14,7 @@ import { AccountsTable } from '@/components/monthly-report/AccountsTable'
 
 export default function MonthlyReportDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const api = useReportArchiveApi()
+  const api = useReportArchiveApi('MONTHLY_REPORT')
   const { data, isLoading, isError } = useQuery({
     queryKey: ['monthly-report', id],
     queryFn: async () => {
