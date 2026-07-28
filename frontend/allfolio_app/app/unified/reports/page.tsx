@@ -39,6 +39,13 @@ const REPORTS = [
     badge: '💵',
   },
   {
+    href:  '/unified/reports/cost-report',
+    title: '비용 보고서',
+    desc:  'R-04 기관급 비용 리포트 — 수수료·거래세, 비용률·TER, 브로커별 매트릭스, PDF 인쇄',
+    color: 'border-orange-700 hover:border-orange-500',
+    badge: '💳',
+  },
+  {
     href:  '/unified/reports/allocation',
     title: '자산 배분',
     desc:  '유형·통화별 비중, 상위 보유 종목, HHI 집중도',
