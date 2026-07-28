@@ -32,6 +32,13 @@ const REPORTS = [
     badge: '📄',
   },
   {
+    href:  '/unified/reports/dividend-report',
+    title: '배당·이자 보고서',
+    desc:  'R-03 기관급 배당 리포트 — 세전·원천징수·세후, 종목·국가별 집계, PDF 인쇄',
+    color: 'border-amber-700 hover:border-amber-500',
+    badge: '💰',
+  },
+  {
     href:  '/unified/reports/allocation',
     title: '자산 배분',
     desc:  '유형·통화별 비중, 상위 보유 종목, HHI 집중도',
