@@ -118,6 +118,18 @@ class HoldingsReportGeneratorTest {
         assertEquals(13000000.0, kis["valueKrw"].asDouble(), 0.01)
         assertEquals(2, kis["holdingCount"].asInt())
         assertEquals(81.25, kis["weight"].asDouble(), 0.01)
+        assertEquals("KIS", kis["provider"].asText())
+    }
+
+    @Test
+    fun `usd holding keeps native currency values and converts valueKrw`() {
+        val body = mapper.readTree(generator(standardAssets(), standardAccounts()).generate(userId, period).bodyJson)
+        val apple = body["holdings"].first { it["name"].asText() == "Apple" }
+        assertEquals(5000.0, apple["currentValue"].asDouble(), 0.01)   // 원통화(USD) 유지
+        assertEquals(4000.0, apple["avgPrice"].asDouble(), 0.01)        // 원통화(USD) 유지
+        assertEquals(5000000.0, apple["valueKrw"].asDouble(), 0.01)     // ×1000 환산
+        assertEquals(31.25, apple["weight"].asDouble(), 0.01)          // 5M/16M
+        assertEquals(25.0, apple["returnRate"].asDouble(), 0.01)       // 1000/4000×100
     }
 
     @Test
