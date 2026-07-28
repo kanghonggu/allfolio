@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useReportArchiveApi } from '@/lib/useApi'
+import { DIVIDEND_INTEREST } from '@/lib/report-archive-api'
 import type { ArchiveMeta } from '@/types/report-archive'
 
 const NOW = new Date()
@@ -13,7 +14,7 @@ const YEARS = Array.from({ length: 6 }, (_, i) => NOW.getFullYear() - i)
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
 
 export default function DividendReportListPage() {
-  const api = useReportArchiveApi('DIVIDEND_INTEREST')
+  const api = useReportArchiveApi(DIVIDEND_INTEREST)
   const router = useRouter()
   const qc = useQueryClient()
   const [year, setYear] = useState(NOW.getMonth() === 0 ? NOW.getFullYear() - 1 : NOW.getFullYear())

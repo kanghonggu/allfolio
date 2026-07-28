@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useReportArchiveApi } from '@/lib/useApi'
-import { parseReportBody } from '@/lib/report-archive-api'
+import { parseReportBody, DIVIDEND_INTEREST } from '@/lib/report-archive-api'
 import type { DividendReportBody } from '@/types/dividend-report'
 import { DividendSummary } from '@/components/dividend-report/DividendSummary'
 import { ReceiptsTable } from '@/components/dividend-report/ReceiptsTable'
@@ -15,7 +15,7 @@ import { ByCountryTable } from '@/components/dividend-report/ByCountryTable'
 
 export default function DividendReportDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const api = useReportArchiveApi('DIVIDEND_INTEREST')
+  const api = useReportArchiveApi(DIVIDEND_INTEREST)
   const { data, isLoading, isError } = useQuery({
     queryKey: ['dividend-report', id],
     queryFn: async () => {
