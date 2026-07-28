@@ -25,6 +25,13 @@ const REPORTS = [
     badge: '📉',
   },
   {
+    href:  '/unified/reports/monthly-report',
+    title: '월간 운용보고서',
+    desc:  'R-01 기관급 월간 리포트 — 성과·익스포저·계좌·입출금 분해, PDF 인쇄',
+    color: 'border-indigo-700 hover:border-indigo-500',
+    badge: '📄',
+  },
+  {
     href:  '/unified/reports/allocation',
     title: '자산 배분',
     desc:  '유형·통화별 비중, 상위 보유 종목, HHI 집중도',

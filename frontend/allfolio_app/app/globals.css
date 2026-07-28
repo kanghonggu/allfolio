@@ -1,3 +1,29 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* === 월간 운용보고서 인쇄 (#37) === */
+@media print {
+  .no-print { display: none !important; }
+  nav { display: none !important; }
+  body { background: #ffffff !important; color: #111111 !important; }
+  /* 배경·테두리만 반전 — 텍스트 색은 아래에서 선별 처리 */
+  .print-invert, .print-invert * {
+    background: #ffffff !important;
+    border-color: #d1d5db !important;
+  }
+  /* 회색 계열·기본 텍스트 → 흰 배경에서 읽히도록 어둡게 */
+  .print-invert, .print-invert h1, .print-invert h2, .print-invert p, .print-invert span,
+  .print-invert td, .print-invert th, .print-invert li,
+  .print-invert .text-gray-100, .print-invert .text-gray-200, .print-invert .text-gray-300,
+  .print-invert .text-gray-400, .print-invert .text-gray-500, .print-invert .text-gray-600 {
+    color: #111111 !important;
+  }
+  /* 손익 부호 색은 유지(흰 배경용으로 진하게) */
+  .print-invert .text-emerald-400 { color: #047857 !important; }
+  .print-invert .text-red-400 { color: #b91c1c !important; }
+  .print-invert .text-yellow-300, .print-invert .text-yellow-400 { color: #a16207 !important; }
+  .print-invert svg text { fill: #111111 !important; }
+  .print-invert section { break-inside: avoid; }
+  @page { margin: 14mm; }
+}
