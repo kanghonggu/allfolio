@@ -8,7 +8,9 @@ const BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:80
 export const MONTHLY_REPORT = 'MONTHLY_REPORT'
 export const DIVIDEND_INTEREST = 'DIVIDEND_INTEREST'
 
-export function createReportArchiveApi(accessToken: string, reportType: string) {
+export type ReportType = typeof MONTHLY_REPORT | typeof DIVIDEND_INTEREST
+
+export function createReportArchiveApi(accessToken: string, reportType: ReportType) {
   const api = axios.create({
     baseURL: BASE_URL,
     timeout: 30_000,

@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useReportArchiveApi } from '@/lib/useApi'
-import { parseMonthlyReportBody } from '@/lib/report-archive-api'
+import { parseMonthlyReportBody, MONTHLY_REPORT } from '@/lib/report-archive-api'
 import { PerformanceSummary } from '@/components/monthly-report/PerformanceSummary'
 import { FlowWaterfall } from '@/components/monthly-report/FlowWaterfall'
 import { TopHoldingsTable } from '@/components/monthly-report/TopHoldingsTable'
@@ -14,7 +14,7 @@ import { AccountsTable } from '@/components/monthly-report/AccountsTable'
 
 export default function MonthlyReportDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const api = useReportArchiveApi('MONTHLY_REPORT')
+  const api = useReportArchiveApi(MONTHLY_REPORT)
   const { data, isLoading, isError } = useQuery({
     queryKey: ['monthly-report', id],
     queryFn: async () => {

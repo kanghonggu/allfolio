@@ -4,7 +4,7 @@ import { useMemo } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { createUnifiedApi } from './unified-api'
 import { createReportApi } from './report-api'
-import { createReportArchiveApi } from './report-archive-api'
+import { createReportArchiveApi, type ReportType } from './report-archive-api'
 import { createGoalApi } from './goal-api'
 import { createAiApi } from './ai-api'
 import { createCashFlowApi } from './cashflow-api'
@@ -58,7 +58,7 @@ export function useBenchmarkApi() {
   )
 }
 
-export function useReportArchiveApi(reportType: string) {
+export function useReportArchiveApi(reportType: ReportType) {
   const { accessToken } = useAuth()
   return useMemo(
     () => (accessToken ? createReportArchiveApi(accessToken, reportType) : null),

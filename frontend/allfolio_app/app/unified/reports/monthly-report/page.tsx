@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useReportArchiveApi } from '@/lib/useApi'
+import { MONTHLY_REPORT } from '@/lib/report-archive-api'
 import type { ArchiveMeta } from '@/types/monthly-report'
 
 const NOW = new Date()
@@ -13,7 +14,7 @@ const YEARS = Array.from({ length: 6 }, (_, i) => NOW.getFullYear() - i)
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
 
 export default function MonthlyReportListPage() {
-  const api = useReportArchiveApi('MONTHLY_REPORT')
+  const api = useReportArchiveApi(MONTHLY_REPORT)
   const router = useRouter()
   const qc = useQueryClient()
   const [year, setYear] = useState(NOW.getMonth() === 0 ? NOW.getFullYear() - 1 : NOW.getFullYear())

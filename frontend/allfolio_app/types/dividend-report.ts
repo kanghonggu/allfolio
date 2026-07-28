@@ -6,9 +6,9 @@ export interface DividendSummary {
   grossTotal: number
   withholdingTax: number
   netTotal: number
-  effectiveTaxRate: number   // 0~100 스케일
+  effectiveTaxRate: number   // 0~100 스케일 (fmtPct 금지, fmtPctScaled/.toFixed 사용)
   receiptCount: number
-  ttmYield: number | null    // 0~100 스케일
+  ttmYield: number | null    // 0~100 스케일 (fmtPct 금지, fmtPctScaled/.toFixed 사용)
 }
 
 export interface DividendReceipt {
@@ -32,7 +32,7 @@ export interface DividendBySymbol {
   gross: number
   tax: number
   net: number
-  weight: number             // 0~100 스케일
+  weight: number             // 0~100 스케일 (fmtPct 금지, fmtPctScaled/.toFixed 사용)
 }
 
 export interface DividendByCountry {
@@ -40,7 +40,7 @@ export interface DividendByCountry {
   gross: number
   tax: number
   net: number
-  effectiveTaxRate: number   // 0~100 스케일
+  effectiveTaxRate: number   // 0~100 스케일 (fmtPct 금지, fmtPctScaled/.toFixed 사용)
 }
 
 export interface DividendReportBody {
