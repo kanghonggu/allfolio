@@ -1,6 +1,13 @@
 // components/esg-screening/EsgBreakdownTable.tsx
 import type { EsgBreakdownRow } from '@/types/esg-screening'
 
+function ratingColor(rating: string): string {
+  if (rating.startsWith('A')) return 'text-emerald-400'
+  if (rating.startsWith('B')) return 'text-amber-400'
+  if (rating.startsWith('C')) return 'text-red-400'
+  return 'text-gray-100'
+}
+
 export function EsgBreakdownTable({ rows }: { rows: EsgBreakdownRow[] }) {
   return (
     <section className="space-y-3 break-inside-avoid">
@@ -24,7 +31,7 @@ export function EsgBreakdownTable({ rows }: { rows: EsgBreakdownRow[] }) {
                 <td className="p-3 text-right tabular-nums text-gray-300">{r.s}</td>
                 <td className="p-3 text-right tabular-nums text-gray-300">{r.g}</td>
                 <td className="p-3 text-right tabular-nums font-medium text-gray-100">{r.total.toFixed(1)}</td>
-                <td className="p-3 text-gray-300">{r.rating}</td>
+                <td className={`p-3 font-medium ${ratingColor(r.rating)}`}>{r.rating}</td>
               </tr>
             ))}
             {rows.length === 0 && (

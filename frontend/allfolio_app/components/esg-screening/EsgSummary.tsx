@@ -2,13 +2,20 @@
 import type { EsgScores, EsgScreeningSummary } from '@/types/esg-screening'
 import { fmtKrw } from '@/lib/report-format'
 
+function ratingColor(rating: string): string {
+  if (rating.startsWith('A')) return 'text-emerald-400'
+  if (rating.startsWith('B')) return 'text-amber-400'
+  if (rating.startsWith('C')) return 'text-red-400'
+  return 'text-gray-100'
+}
+
 export function EsgSummary({ esg, screening }: { esg: EsgScores; screening: EsgScreeningSummary }) {
   const clean = screening.violationCount === 0
   return (
     <section className="space-y-3 break-inside-avoid">
       <h2 className="text-lg font-semibold">요약</h2>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card label="ESG 등급" value={esg.rating} color="text-emerald-400" />
+        <Card label="ESG 등급" value={esg.rating} color={ratingColor(esg.rating)} />
         <Card label="종합점수" value={`${esg.totalScore.toFixed(1)}점`} color="text-gray-100" />
         <Card
           label="배제 위반"
