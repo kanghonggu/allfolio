@@ -124,5 +124,5 @@ class AuthService(
     }
 
     private fun UserEntity.toResponse(): AuthUserResponse =
-        AuthUserResponse(id = id, email = email, displayName = displayName)
+        AuthUserResponse(id = id, email = email, displayName = displayName, role = role)
 }
