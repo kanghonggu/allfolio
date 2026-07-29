@@ -46,6 +46,13 @@ const REPORTS = [
     badge: '💳',
   },
   {
+    href:  '/unified/reports/cashflow-report',
+    title: '현금흐름 보고서',
+    desc:  'R-06 기관급 현금흐름 — 입금·출금·매수·매도·배당·수수료, 순현금흐름, 월별 추이, PDF 인쇄',
+    color: 'border-fuchsia-700 hover:border-fuchsia-500',
+    badge: '💧',
+  },
+  {
     href:  '/unified/reports/allocation',
     title: '자산 배분',
     desc:  '유형·통화별 비중, 상위 보유 종목, HHI 집중도',
