@@ -46,6 +46,13 @@ const REPORTS = [
     badge: '💳',
   },
   {
+    href:  '/unified/reports/holdings-report',
+    title: '월말 보유 명세서',
+    desc:  'R-05 기관급 보유 명세 — 종목별 수량·평단·평가액·평가손익, 계좌·자산군별 소계, PDF 인쇄',
+    color: 'border-pink-700 hover:border-pink-500',
+    badge: '📑',
+  },
+  {
     href:  '/unified/reports/allocation',
     title: '자산 배분',
     desc:  '유형·통화별 비중, 상위 보유 종목, HHI 집중도',
