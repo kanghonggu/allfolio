@@ -46,10 +46,24 @@ const REPORTS = [
     badge: '💳',
   },
   {
+    href:  '/unified/reports/holdings-report',
+    title: '월말 보유 명세서',
+    desc:  'R-05 기관급 보유 명세 — 종목별 수량·평단·평가액·평가손익, 계좌·자산군별 소계, PDF 인쇄',
+    color: 'border-pink-700 hover:border-pink-500',
+    badge: '📑',
+  },
+  {
+    href:  '/unified/reports/cashflow-report',
+    title: '현금흐름 보고서',
+    desc:  'R-06 기관급 현금흐름 — 입금·출금·매수·매도·배당·수수료, 순현금흐름, 월별 추이, PDF 인쇄',
+    color: 'border-fuchsia-700 hover:border-fuchsia-500',
+    badge: '💧',
+  },
+  {
     href:  '/unified/reports/esg-screening',
     title: 'ESG 스크리닝',
     desc:  'R-07 투자배제·ESG — E/S/G 점수, 종목별 등급, 배제리스트 위반 스크리닝, PDF 인쇄',
-    color: 'border-pink-700 hover:border-pink-500',
+    color: 'border-green-700 hover:border-green-500',
     badge: '🌿',
   },
   {
