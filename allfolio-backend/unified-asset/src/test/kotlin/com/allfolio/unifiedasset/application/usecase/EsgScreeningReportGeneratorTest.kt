@@ -109,4 +109,17 @@ class EsgScreeningReportGeneratorTest {
         assertEquals(0, body["screening"]["violationCount"].asInt())
         assertTrue(body["violations"].isEmpty)
     }
+
+    @Test
+    fun `breakdown sorted by esg total not value`() {
+        val assets = listOf(
+            asset("비트코인", "BTC", "10000000", type = AssetType.CRYPTO),  // total 36, 값 큼
+            asset("현금", "KRW-CASH", "1000000", type = AssetType.CASH),      // total 78.5, 값 작음
+        )
+        val body = mapper.readTree(generator(assets).generate(userId, period).bodyJson)
+        val bd = body["esgBreakdown"]
+        assertEquals("현금", bd[0]["name"].asText())        // total 78.5 최상위
+        assertEquals(78.5, bd[0]["total"].asDouble(), 0.01)
+        assertEquals("비트코인", bd[1]["name"].asText())     // total 36
+    }
 }

@@ -38,7 +38,7 @@ class EsgScreeningReportGenerator(
         val body: Map<String, Any?> = if (totalKrw <= BigDecimal.ZERO) emptyReport() else {
             val score = EsgEngine.calculate(valued.map { (a, v) -> EsgEngine.AssetInput(a.type.name, v) })
 
-            val breakdown = valued.sortedByDescending { it.second }.map { (a, v) ->
+            val breakdown = valued.map { (a, v) ->
                 val (e, s, g) = EsgEngine.scoreOf(a.type.name)
                 val assetTotal = BigDecimal(e).multiply(BigDecimal("0.35"))
                     .add(BigDecimal(s).multiply(BigDecimal("0.30")))
@@ -48,7 +48,7 @@ class EsgScreeningReportGenerator(
                     "name" to a.name, "type" to a.type.name, "weight" to pct(v, totalKrw),
                     "e" to e, "s" to s, "g" to g, "total" to assetTotal, "rating" to EsgEngine.rating(assetTotal),
                 )
-            }
+            }.sortedByDescending { it["total"] as BigDecimal }
 
             val violated = valued.mapNotNull { (a, v) ->
                 EsgExclusionPreset.lookup(a.symbol)?.let { ex -> Triple(a, v, ex) }
