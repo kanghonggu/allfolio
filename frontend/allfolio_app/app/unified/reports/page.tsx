@@ -46,6 +46,13 @@ const REPORTS = [
     badge: '💳',
   },
   {
+    href:  '/unified/reports/esg-screening',
+    title: 'ESG 스크리닝',
+    desc:  'R-07 투자배제·ESG — E/S/G 점수, 종목별 등급, 배제리스트 위반 스크리닝, PDF 인쇄',
+    color: 'border-pink-700 hover:border-pink-500',
+    badge: '🌿',
+  },
+  {
     href:  '/unified/reports/allocation',
     title: '자산 배분',
     desc:  '유형·통화별 비중, 상위 보유 종목, HHI 집중도',
