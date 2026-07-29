@@ -32,21 +32,7 @@ class JwtTokenService(
         return token to accessTokenMinutes * 60
     }
 
-    fun parseUserId(token: String): UUID {
-        try {
-            val subject = Jwts.parser()
-                .verifyWith(key)
-                .build()
-                .parseSignedClaims(token)
-                .payload
-                .subject
-            return UUID.fromString(subject)
-        } catch (e: IllegalArgumentException) {
-            throw JwtException("Invalid subject", e)
-        }
-    }
-
-    data class JwtPrincipal(val userId: java.util.UUID, val role: UserRole)
+    data class JwtPrincipal(val userId: UUID, val role: UserRole)
 
     fun parsePrincipal(token: String): JwtPrincipal {
         val claims = Jwts.parser()
