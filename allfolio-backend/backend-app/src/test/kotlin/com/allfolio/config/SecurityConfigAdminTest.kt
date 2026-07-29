@@ -3,6 +3,7 @@ package com.allfolio.config
 import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.auth.JwtTokenService
 import com.allfolio.auth.UserEntity
+import com.allfolio.auth.UserRole
 import com.allfolio.fx.FxRateService
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -63,31 +64,44 @@ class SecurityConfigAdminTest {
     }
 
     @Test
-    fun `admin FX 조회는 유효한 토큰이 있어도 403으로 차단된다`() {
+    fun `admin FX 조회는 USER 토큰이면 403으로 차단된다`() {
         mockMvc.get("/api/admin/fx/usdtkrw") {
-            header("Authorization", "Bearer ${validToken()}")
-        }.andExpect {
-            status { isForbidden() }
-        }
+            header("Authorization", "Bearer ${tokenFor(UserRole.USER)}")
+        }.andExpect { status { isForbidden() } }
     }
 
     @Test
-    fun `admin FX 변경은 유효한 토큰이 있어도 403으로 차단된다`() {
+    fun `admin FX 변경은 USER 토큰이면 403으로 차단된다`() {
         mockMvc.put("/api/admin/fx/usdtkrw") {
-            header("Authorization", "Bearer ${validToken()}")
+            header("Authorization", "Bearer ${tokenFor(UserRole.USER)}")
             contentType = MediaType.APPLICATION_JSON
             content = """{"rate":1350}"""
-        }.andExpect {
-            status { isForbidden() }
-        }
+        }.andExpect { status { isForbidden() } }
     }
 
-    private fun validToken(): String =
+    @Test
+    fun `admin FX 조회는 ADMIN 토큰이면 200으로 허용된다`() {
+        mockMvc.get("/api/admin/fx/usdtkrw") {
+            header("Authorization", "Bearer ${tokenFor(UserRole.ADMIN)}")
+        }.andExpect { status { isOk() } }
+    }
+
+    @Test
+    fun `admin FX 변경은 ADMIN 토큰이면 200으로 허용된다`() {
+        mockMvc.put("/api/admin/fx/usdtkrw") {
+            header("Authorization", "Bearer ${tokenFor(UserRole.ADMIN)}")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"rate":1350}"""
+        }.andExpect { status { isOk() } }
+    }
+
+    private fun tokenFor(role: UserRole): String =
         jwtTokenService.issue(
             UserEntity(
                 email = "security-test@example.com",
                 passwordHash = "hash",
                 displayName = null,
+                role = role,
             ),
         ).first
 
