@@ -12,11 +12,13 @@ interface AuthState {
   userName:     string | null
   userEmail:    string | null
   userId:       string | null
+  role:         string | null
 }
 
 interface AuthContextValue extends AuthState {
   initialized:   boolean
   authenticated: boolean
+  isAdmin: boolean
   login:  (email: string, password: string) => Promise<void>
   register: (email: string, password: string, displayName?: string) => Promise<void>
   logout: () => void
@@ -30,8 +32,8 @@ const REFRESH_URL  = `${API_BASE_URL}/api/auth/refresh`
 
 const AuthContext = createContext<AuthContextValue>({
   accessToken: null, refreshToken: null, expiresAt: null,
-  userName: null, userEmail: null, userId: null,
-  initialized: false, authenticated: false,
+  userName: null, userEmail: null, userId: null, role: null,
+  initialized: false, authenticated: false, isAdmin: false,
   login: async () => {}, register: async () => {}, logout: () => {},
 })
 
@@ -43,6 +45,7 @@ interface AuthApiResponse {
     id: string
     email: string
     displayName: string | null
+    role: string
   }
 }
 
@@ -54,6 +57,7 @@ function toAuthState(data: AuthApiResponse): AuthState {
     userName:     data.user.displayName ?? data.user.email,
     userEmail:    data.user.email,
     userId:       data.user.id,
+    role:         data.user.role,
   }
 }
 
@@ -73,7 +77,7 @@ async function requestToken(url: string, body: Record<string, string>): Promise<
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state,       setState]       = useState<AuthState>({
     accessToken: null, refreshToken: null, expiresAt: null,
-    userName: null, userEmail: null, userId: null,
+    userName: null, userEmail: null, userId: null, role: null,
   })
   const [initialized, setInitialized] = useState(false)
 
@@ -128,7 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const logout = useCallback(() => {
-    setState({ accessToken: null, refreshToken: null, expiresAt: null, userName: null, userEmail: null, userId: null })
+    setState({ accessToken: null, refreshToken: null, expiresAt: null, userName: null, userEmail: null, userId: null, role: null })
     localStorage.removeItem(STORAGE_KEY)
   }, [])
 
@@ -137,6 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ...state,
       initialized,
       authenticated: !!state.accessToken,
+      isAdmin: state.role === 'ADMIN',
       login,
       register,
       logout,
