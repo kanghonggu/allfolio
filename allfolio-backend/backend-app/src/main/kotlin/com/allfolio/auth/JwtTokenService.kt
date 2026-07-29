@@ -24,6 +24,7 @@ class JwtTokenService(
             .subject(user.id.toString())
             .claim("email", user.email)
             .claim("name", user.displayName ?: user.email)
+            .claim("role", user.role.name)
             .issuedAt(Date.from(now))
             .expiration(Date.from(expiresAt))
             .signWith(key)
@@ -43,5 +44,24 @@ class JwtTokenService(
         } catch (e: IllegalArgumentException) {
             throw JwtException("Invalid subject", e)
         }
+    }
+
+    data class JwtPrincipal(val userId: java.util.UUID, val role: UserRole)
+
+    fun parsePrincipal(token: String): JwtPrincipal {
+        val claims = Jwts.parser()
+            .verifyWith(key)
+            .build()
+            .parseSignedClaims(token)
+            .payload
+        val userId = try {
+            UUID.fromString(claims.subject)
+        } catch (e: IllegalArgumentException) {
+            throw JwtException("Invalid subject", e)
+        }
+        val role = claims["role"]?.toString()
+            ?.let { runCatching { UserRole.valueOf(it) }.getOrNull() }
+            ?: UserRole.USER
+        return JwtPrincipal(userId, role)
     }
 }
