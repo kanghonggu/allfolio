@@ -6,6 +6,7 @@ import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletRequestWrapper
 import jakarta.servlet.http.HttpServletResponse
+import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.web.authentication.preauth.PreAuthenticatedAuthenticationToken
 import org.springframework.stereotype.Component
@@ -31,15 +32,17 @@ class JwtUserIdFilter(
             ?.substringAfter(" ")
 
         if (token != null) {
-            val userId = try {
-                jwtTokenService.parseUserId(token).toString()
+            val principal = try {
+                jwtTokenService.parsePrincipal(token)
             } catch (e: JwtException) {
                 SecurityContextHolder.clearContext()
                 response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid access token")
                 return
             }
+            val userId = principal.userId.toString()
+            val authorities = listOf(SimpleGrantedAuthority("ROLE_${principal.role.name}"))
             SecurityContextHolder.getContext().authentication =
-                PreAuthenticatedAuthenticationToken(userId, token, emptyList())
+                PreAuthenticatedAuthenticationToken(userId, token, authorities)
             val wrapped = UserIdInjectedRequest(request, userId)
             chain.doFilter(wrapped, response)
         } else {
