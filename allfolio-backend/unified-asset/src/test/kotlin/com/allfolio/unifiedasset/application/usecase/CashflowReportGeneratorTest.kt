@@ -2,13 +2,20 @@ package com.allfolio.unifiedasset.application.usecase
 
 import com.allfolio.report.domain.archive.ReportPeriod
 import com.allfolio.unifiedasset.application.port.AccountRepository
+import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.CashFlowRepository
 import com.allfolio.unifiedasset.application.port.CashflowTradeSource
+import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.application.port.TradeCashRecord
 import com.allfolio.unifiedasset.domain.account.Account
 import com.allfolio.unifiedasset.domain.account.AccountProvider
 import com.allfolio.unifiedasset.domain.account.AccountStatus
 import com.allfolio.unifiedasset.domain.account.AccountType
+import com.allfolio.unifiedasset.domain.asset.Asset
+import com.allfolio.unifiedasset.domain.asset.AssetCategory
+import com.allfolio.unifiedasset.domain.asset.AssetSourceType
+import com.allfolio.unifiedasset.domain.asset.AssetType
+import com.allfolio.unifiedasset.domain.asset.ValuationMethod
 import com.allfolio.unifiedasset.domain.cashflow.CashFlow
 import com.allfolio.unifiedasset.domain.cashflow.FlowType
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -65,8 +72,34 @@ class CashflowReportGeneratorTest {
         walletAddress = null, chain = null,
     )
 
-    private fun generator(flows: List<CashFlow>, trades: List<TradeCashRecord>) =
-        CashflowReportGenerator(FakeCashFlowRepo(flows), FakeTradeSource(trades), FakeAccountRepo(listOf(account())))
+    private class FakeAssetRepo(private val assets: List<Asset>) : AssetRepository {
+        override fun save(asset: Asset) = asset
+        override fun saveAll(assets: List<Asset>) = assets
+        override fun findById(id: UUID): Asset? = null
+        override fun findByAccountId(accountId: UUID) = assets
+        override fun findByUserId(userId: UUID) = assets
+        override fun deleteByAccountId(accountId: UUID) {}
+        override fun delete(id: UUID) {}
+    }
+    private val fx = object : FxConverter {
+        override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
+            if (currency.uppercase() == "KRW") amount else amount * BigDecimal("1000")
+    }
+    private fun cashAsset(krw: String) = Asset.create(
+        userId = userId, accountId = acctId, category = AssetCategory.FINANCIAL, type = AssetType.CASH,
+        sourceType = AssetSourceType.STOCK_API, name = "현금", symbol = null,
+        quantity = BigDecimal.ONE, purchasePrice = BigDecimal(krw), currentValue = BigDecimal(krw),
+        currency = "KRW", valuationMethod = ValuationMethod.MARKET_PRICE,
+    )
+    private fun flowOn(date: LocalDate, type: FlowType, krw: String) = CashFlow.create(
+        userId = userId, accountId = acctId, flowDate = date, type = type,
+        amount = BigDecimal(krw), currency = "KRW", amountKrw = BigDecimal(krw), memo = "x",
+    )
+    private fun tradeOn(date: LocalDate, type: String, total: String) =
+        TradeCashRecord(date, type, "n", "한투", BigDecimal(total), BigDecimal.ZERO, BigDecimal.ZERO)
+
+    private fun generator(flows: List<CashFlow>, trades: List<TradeCashRecord>, cashAssets: List<Asset> = emptyList()) =
+        CashflowReportGenerator(FakeCashFlowRepo(flows), FakeTradeSource(trades), FakeAccountRepo(listOf(account())), FakeAssetRepo(cashAssets), fx)
 
     private fun standardFlows() = listOf(deposit(1, "1000000"), withdrawal(20, "300000"))
     private fun standardTrades() = listOf(
@@ -154,5 +187,62 @@ class CashflowReportGeneratorTest {
         assertEquals(0.0, body["summary"]["netFlow"].asDouble(), 0.01)
         assertEquals(0, body["details"].size())
         assertTrue(body["byType"].isEmpty)
+    }
+
+    @Test
+    fun `기초잔고는 기간 이전 이력에서 재구성되고 기말은 기초 더하기 순흐름이다`() {
+        val before = listOf(flowOn(LocalDate.of(2026, 5, 10), FlowType.DEPOSIT, "100000"))
+        val beforeT = listOf(tradeOn(LocalDate.of(2026, 5, 15), "BUY", "40000"))
+        val periodFlows = before + deposit(2, "50000") // 6월 입금 +50000
+        val body = mapper.readTree(generator(periodFlows, beforeT).generate(userId, period).bodyJson)
+        val r = body["reconciliation"]
+        assertEquals(60000.0, r["openingBalance"].asDouble(), 0.01)      // 100000 - 40000
+        assertEquals(110000.0, r["closingCalculated"].asDouble(), 0.01)  // 60000 + 50000(netFlow)
+    }
+
+    @Test
+    fun `기말 계산이 실제 현금과 일치하고 이후 활동 없으면 정합된다`() {
+        val body = mapper.readTree(
+            generator(listOf(deposit(2, "200000")), emptyList(), cashAssets = listOf(cashAsset("200000")))
+                .generate(userId, period).bodyJson,
+        )
+        val r = body["reconciliation"]
+        assertEquals(200000.0, r["closingCalculated"].asDouble(), 0.01)
+        assertEquals(200000.0, r["actualCash"].asDouble(), 0.01)
+        assertEquals(0.0, r["difference"].asDouble(), 0.01)
+        assertTrue(r["reconcilable"].asBoolean())
+        assertTrue(r["reconciled"].asBoolean())
+    }
+
+    @Test
+    fun `실제 현금이 계산 기말과 다르면 정합 실패하고 차액이 표시된다`() {
+        val body = mapper.readTree(
+            generator(listOf(deposit(2, "200000")), emptyList(), cashAssets = listOf(cashAsset("250000")))
+                .generate(userId, period).bodyJson,
+        )
+        val r = body["reconciliation"]
+        assertEquals(50000.0, r["difference"].asDouble(), 0.01) // 실제 250000 - 계산 200000
+        assertTrue(r["reconcilable"].asBoolean())
+        assertEquals(false, r["reconciled"].asBoolean())
+    }
+
+    @Test
+    fun `기간 이후 현금활동이 있으면 reconcilable false 이다`() {
+        val flows = listOf(deposit(2, "200000"), flowOn(LocalDate.of(2026, 7, 5), FlowType.DEPOSIT, "10000"))
+        val body = mapper.readTree(
+            generator(flows, emptyList(), cashAssets = listOf(cashAsset("210000"))).generate(userId, period).bodyJson,
+        )
+        val r = body["reconciliation"]
+        assertEquals(false, r["reconcilable"].asBoolean())
+        assertEquals(false, r["reconciled"].asBoolean())
+    }
+
+    @Test
+    fun `조정표 항등식 - 기초 더하기 증감합 등 기말`() {
+        val body = mapper.readTree(generator(standardFlows(), standardTrades()).generate(userId, period).bodyJson)
+        val r = body["reconciliation"]
+        val opening = r["openingBalance"].asDouble()
+        val changesSum = r["changes"].sumOf { it["amount"].asDouble() }
+        assertEquals(r["closingCalculated"].asDouble(), opening + changesSum, 0.01)
     }
 }
