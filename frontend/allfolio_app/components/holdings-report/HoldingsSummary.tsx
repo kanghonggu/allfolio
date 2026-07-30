@@ -11,6 +11,7 @@ export function HoldingsSummary({ summary }: { summary: Summary }) {
         <Card label="보유 종목 / 계좌" value={`${summary.holdingCount}종목 / ${summary.accountCount}계좌`} />
         <Card label="현금 비중" value={fmtPctScaled(summary.cashWeight)} />
         <Card label="평가손익 합계" value={fmtKrw(summary.unrealizedPnlKrw)} color={pctColor(summary.unrealizedPnlKrw)} />
+        <Card label="당월 실현손익" value={fmtKrw(summary.realizedPnlKrw)} color={pctColor(summary.realizedPnlKrw)} />
       </div>
     </section>
   )

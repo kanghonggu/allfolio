@@ -8,6 +8,7 @@ dependencies {
     implementation(project(":common"))
     implementation(project(":esg"))
     implementation(project(":report"))
+    implementation(project(":trade"))
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-validation")

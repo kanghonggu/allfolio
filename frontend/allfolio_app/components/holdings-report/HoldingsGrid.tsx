@@ -19,6 +19,7 @@ export function HoldingsGrid({ holdings }: { holdings: Holding[] }) {
               <th className="p-3 text-right">수량</th><th className="p-3 text-right">평단</th>
               <th className="p-3 text-right">평가액</th><th className="p-3 text-right">비중</th>
               <th className="p-3 text-right">평가손익</th><th className="p-3 text-right">수익률</th>
+              <th className="p-3 text-right">당월 실현손익</th>
             </tr>
           </thead>
           <tbody>
@@ -39,10 +40,11 @@ export function HoldingsGrid({ holdings }: { holdings: Holding[] }) {
                 <td className="p-3 text-right tabular-nums text-gray-300">{h.weight.toFixed(2)}%</td>
                 <td className={`p-3 text-right tabular-nums ${pctColor(h.unrealizedPnl)}`}>{fmtKrw(h.unrealizedPnl)}</td>
                 <td className={`p-3 text-right tabular-nums ${pctColor(h.returnRate)}`}>{fmtPctScaled(h.returnRate)}</td>
+                <td className={`p-3 text-right tabular-nums ${pctColor(h.realizedPnl)}`}>{fmtKrw(h.realizedPnl)}</td>
               </tr>
             ))}
             {holdings.length === 0 && (
-              <tr><td colSpan={9} className="p-4 text-center text-gray-500">보유 종목이 없습니다.</td></tr>
+              <tr><td colSpan={10} className="p-4 text-center text-gray-500">보유 종목이 없습니다.</td></tr>
             )}
           </tbody>
         </table>

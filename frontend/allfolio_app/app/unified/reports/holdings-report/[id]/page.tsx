@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useReportArchiveApi } from '@/lib/useApi'
 import { parseReportBody, HOLDINGS } from '@/lib/report-archive-api'
+import { fmtKrw, pctColor } from '@/lib/report-format'
 import type { HoldingsReportBody } from '@/types/holdings-report'
 import { HoldingsSummary } from '@/components/holdings-report/HoldingsSummary'
 import { HoldingsGrid } from '@/components/holdings-report/HoldingsGrid'
@@ -72,6 +73,29 @@ export default function HoldingsReportDetailPage() {
 
       <HoldingsSummary summary={body.summary} />
       <HoldingsGrid holdings={body.holdings} />
+      {(body.realized ?? []).length > 0 && (
+        <section className="rounded-xl border border-gray-700 bg-gray-900 p-5">
+          <h3 className="mb-3 text-sm font-semibold text-gray-300">당월 실현손익 (종목별 · 전량매도 포함)</h3>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-700 text-left text-gray-400">
+                <th className="p-2">종목</th><th className="p-2 text-right">당월 실현손익</th>
+              </tr>
+            </thead>
+            <tbody>
+              {body.realized.map((r) => (
+                <tr key={r.symbol} className="border-b border-gray-800 last:border-b-0">
+                  <td className="p-2">
+                    <span className="text-gray-100">{r.name}</span>
+                    <span className="ml-2 text-xs text-gray-500">{r.symbol}</span>
+                  </td>
+                  <td className={`p-2 text-right tabular-nums ${pctColor(r.realizedPnl)}`}>{fmtKrw(r.realizedPnl)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
       <div className="grid gap-4 lg:grid-cols-2">
         <ByAccountTable rows={body.byAccount} />
         <ByTypeTable rows={body.byType} />
