@@ -56,10 +56,11 @@ class EsgScreeningReportGenerator(
                 )
             }.sortedByDescending { it["total"] as BigDecimal }
 
+            val activeLists = exclusionRepo.findActiveByUser(userId)
             // 내장 프리셋 ∪ 유저 active 리스트 (같은 symbol이면 유저 리스트 우선)
             val lookup = LinkedHashMap<String, Pair<String, String>>() // symbol -> (listName, reason)
             EsgExclusionPreset.entries.forEach { (sym, ex) -> lookup[sym] = ex.listName to ex.reason }
-            exclusionRepo.findActiveByUser(userId).forEach { list ->
+            activeLists.forEach { list ->
                 list.items.forEach { it -> lookup[it.symbol] = list.name to list.category }
             }
 
@@ -69,7 +70,7 @@ class EsgScreeningReportGenerator(
             val violationValueKrw = violated.fold(BigDecimal.ZERO) { acc, t -> acc + t.value }
 
             val trades = accountRepository.findByUserId(userId).flatMap { stockTradeRepository.findByAccountId(it.id) }
-            val listedAtBySymbol = exclusionRepo.findActiveByUser(userId)
+            val listedAtBySymbol = activeLists
                 .flatMap { it.items }.groupBy { it.symbol }
                 .mapValues { (_, items) -> items.minOf { it.addedAt.toLocalDate() } }
             val nameBySymbol = (trades.mapNotNull { t -> t.symbol?.let { it to t.stockName } } +

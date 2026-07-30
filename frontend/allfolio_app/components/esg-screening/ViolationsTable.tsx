@@ -31,7 +31,7 @@ export function ViolationsTable({ rows }: { rows: EsgViolation[] }) {
                   <td className="p-3"><span className="rounded bg-red-950 px-2 py-0.5 text-xs text-red-300">{r.reason}</span></td>
                   <td className="p-3 text-xs text-gray-400">
                     {r.firstBuyDate ?? '-'}
-                    <span className="ml-1 rounded bg-gray-800 px-1.5 py-0.5 text-[10px] text-gray-400">{r.sinceListed}</span>
+                    {r.sinceListed && <span className="ml-1 rounded bg-gray-800 px-1.5 py-0.5 text-[10px] text-gray-400">{r.sinceListed}</span>}
                   </td>
                   <td className="p-3 text-right tabular-nums text-red-300">{fmtKrw(r.valueKrw)}</td>
                   <td className="p-3 text-right tabular-nums text-gray-300">{r.weight.toFixed(2)}%</td>

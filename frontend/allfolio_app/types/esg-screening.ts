@@ -34,8 +34,8 @@ export interface EsgViolation {
   reason: string
   valueKrw: number
   weight: number              // 0~100 스케일
-  firstBuyDate: string | null
-  sinceListed: string
+  firstBuyDate?: string | null   // 구 아카이브엔 부재
+  sinceListed?: string
 }
 
 export interface EsgViolationEvent {

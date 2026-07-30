@@ -91,6 +91,21 @@ class ViolationHistoryCalculatorTest {
     }
 
     @Test
+    fun `같은 날짜 매수 매도 재매수는 시간순 편입 청산 편입 순서를 유지한다`() {
+        // 모두 2026-06-05, createdAt 생성순으로 편입→청산→편입. 정렬이 event 문자열이면 청산이 앞서 깨짐.
+        val h = ViolationHistoryCalculator.build(
+            setOf("SD"),
+            listOf(
+                t(StockTradeType.BUY, "SD", "10", LocalDate.of(2026, 6, 5)),
+                t(StockTradeType.SELL, "SD", "10", LocalDate.of(2026, 6, 5)),
+                t(StockTradeType.BUY, "SD", "5", LocalDate.of(2026, 6, 5)),
+            ),
+            emptyMap(), mapOf("SD" to "SD"), period,
+        )
+        assertThat(h.events.map { it.event }).containsExactly("편입", "청산", "편입")
+    }
+
+    @Test
     fun `배당 미수는 무시되고 기간 이후 거래는 제외된다`() {
         val h = ViolationHistoryCalculator.build(
             setOf("FFF"),

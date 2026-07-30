@@ -63,6 +63,11 @@ object ViolationHistoryCalculator {
             perSymbol[sym] = SymbolViolationInfo(firstBuy, sinceListed)
         }
 
-        return ViolationHistory(perSymbol, events.sortedWith(compareBy({ it.date }, { it.symbol }, { it.event })))
+        // 동일 날짜 다중 교차(당일 매수→매도→재매수)의 시간순 보존 위해 생성순 index를 tie-breaker로 사용
+        // (event 문자열 정렬은 청산이 편입보다 앞서는 오류 유발). 생성순은 (tradedAt, createdAt) 오름차순.
+        val ordered = events.withIndex()
+            .sortedWith(compareBy({ it.value.date }, { it.value.symbol }, { it.index }))
+            .map { it.value }
+        return ViolationHistory(perSymbol, ordered)
     }
 }
