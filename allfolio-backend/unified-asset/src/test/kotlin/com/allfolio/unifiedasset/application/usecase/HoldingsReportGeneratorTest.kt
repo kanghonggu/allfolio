@@ -185,6 +185,24 @@ class HoldingsReportGeneratorTest {
     }
 
     @Test
+    fun `같은 심볼이 여러 행이어도 실현손익은 한 행에만 귀속돼 합계가 요약과 일치한다`() {
+        val assets = listOf(
+            asset(acctA, "YYY", AssetType.STOCK, "10", "100", "150"),
+            asset(acctB, "YYY", AssetType.STOCK, "5", "100", "150"),
+        )
+        val trades = listOf(
+            stockTrade(acctA, StockTradeType.BUY, "YYY", "10", "100", LocalDate.of(2026, 6, 5)),
+            stockTrade(acctA, StockTradeType.SELL, "YYY", "4", "150", LocalDate.of(2026, 6, 20)),
+        )
+        val body = mapper.readTree(generator(assets, standardAccounts(), trades).generate(userId, period).bodyJson)
+        val yyy = body["holdings"].filter { it["symbol"].asText() == "YYY" }
+        assertEquals(2, yyy.size)
+        assertEquals(1, yyy.count { it["realizedPnl"].asDouble() != 0.0 }) // 한 행에만 귀속
+        assertEquals(200.0, yyy.sumOf { it["realizedPnl"].asDouble() }, 0.01) // 합계 == 요약
+        assertEquals(200.0, body["summary"]["realizedPnlKrw"].asDouble(), 0.01)
+    }
+
+    @Test
     fun `거래 없으면 실현손익 0이고 realized 섹션 비어있다`() {
         val body = mapper.readTree(
             generator(standardAssets(), standardAccounts()).generate(userId, period).bodyJson,

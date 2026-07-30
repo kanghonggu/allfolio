@@ -51,8 +51,11 @@ class HoldingsReportGenerator(
         val valued = assets.map { it to it.currentValueInKrw(fx) }
         val totalKrw = valued.fold(BigDecimal.ZERO) { acc, (_, v) -> acc + v }
 
+        // 실현손익은 심볼 단위 → 같은 심볼이 여러 행(계좌)일 때 중복 표시 방지 위해 첫(최대 평가액) 행에만 귀속.
+        val realizedAttributed = HashSet<String>()
         val holdings = valued.sortedByDescending { it.second }.map { (a, valueKrw) ->
             val (accName, provider) = labels[a.accountId] ?: Pair("-", "-")
+            val rowRealized = a.symbol?.takeIf { realizedAttributed.add(it) }?.let { realizedBySymbol[it] } ?: BigDecimal.ZERO
             mapOf(
                 "name" to a.name, "symbol" to a.symbol, "type" to a.type.name,
                 "account" to accName, "provider" to provider,
@@ -60,7 +63,7 @@ class HoldingsReportGenerator(
                 "currentValue" to a.currentValue, "valueKrw" to valueKrw,
                 "weight" to pct(valueKrw, totalKrw),
                 "unrealizedPnl" to a.unrealizedPnlInKrw(fx), "returnRate" to a.returnRate(),
-                "realizedPnl" to (a.symbol?.let { realizedBySymbol[it] } ?: BigDecimal.ZERO),
+                "realizedPnl" to rowRealized,
             )
         }
 

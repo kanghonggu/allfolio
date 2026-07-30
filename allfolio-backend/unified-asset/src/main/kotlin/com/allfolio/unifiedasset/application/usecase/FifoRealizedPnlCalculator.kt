@@ -13,6 +13,8 @@ import java.math.BigDecimal
  * 검증된 trade 모듈 FifoCostEngine.apply를 재사용한다.
  * period.start 직전 누적 실현손익을 스냅샷해 당월분(= 최종 − 직전)만 반환한다.
  * 통화 컬럼 부재 → KRW 취급. DIVIDEND/MARGIN·symbol 없음은 제외.
+ * 한계: tradedAt는 일 단위 → 당일 다중 거래는 createdAt(입력순, 결정적)로 정렬(실제 체결순 보장 아님).
+ *       계좌 무관 심볼 단위 FIFO(계좌 A 매수를 계좌 B 매도가 소진 가능) — 명세의 심볼 단위 설계 준수.
  */
 object FifoRealizedPnlCalculator {
     private val BUY_TYPES = setOf(StockTradeType.BUY, StockTradeType.CREDIT_BUY)
