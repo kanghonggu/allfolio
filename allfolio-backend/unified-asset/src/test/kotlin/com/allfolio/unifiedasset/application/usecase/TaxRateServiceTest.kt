@@ -90,4 +90,15 @@ class TaxRateServiceTest {
         assertThatThrownBy { svc.register(cmd(country = "USA"), admin) }.isInstanceOf(ResponseStatusException::class.java)
         assertThatThrownBy { svc.register(cmd(country = ""), admin) }.isInstanceOf(ResponseStatusException::class.java)
     }
+
+    @Test
+    fun `국가는 대문자로 정규화되어 소문자 입력이 기존 체인을 포크하지 않는다`() {
+        val (svc, repo) = service()
+        svc.register(cmd(country = "US", start = LocalDate.of(2024, 1, 1)), admin)
+        // 소문자 "us"는 "US"로 정규화 → 같은 open 을 마감하고 버저닝(포크 아님)
+        val r = svc.register(cmd(country = " us ", rate = "16", start = LocalDate.of(2025, 1, 1)), admin)
+        assertThat(r.country).isEqualTo("US")
+        assertThat(repo.findAll().map { it.country }.toSet()).containsExactly("US")
+        assertThat(repo.findAll().filter { it.effectiveEnd == null }).hasSize(1) // open 1개 유지
+    }
 }

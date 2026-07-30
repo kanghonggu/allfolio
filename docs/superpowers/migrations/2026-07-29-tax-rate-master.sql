@@ -16,6 +16,10 @@ CREATE TABLE IF NOT EXISTS tax_rates (
     CONSTRAINT uk_tax_rates_ver UNIQUE (country, income_type, effective_start)
 );
 
+-- (country, income_type)당 현행(open) 행은 최대 1개 — 동시 등록 시 open 중복 방어
+CREATE UNIQUE INDEX IF NOT EXISTS uk_tax_rates_open
+    ON tax_rates (country, income_type) WHERE effective_end IS NULL;
+
 INSERT INTO tax_rates (id, country, income_type, rate, effective_start) VALUES
   (gen_random_uuid(), 'US', 'DIVIDEND', 15,     '2000-01-01'),
   (gen_random_uuid(), 'KR', 'DIVIDEND', 15.4,   '2000-01-01'),

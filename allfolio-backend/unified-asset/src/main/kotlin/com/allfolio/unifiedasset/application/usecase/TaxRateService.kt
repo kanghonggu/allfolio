@@ -29,7 +29,8 @@ class TaxRateService(
         repository.findEffective(country, incomeType, date)
 
     @Transactional
-    fun register(cmd: RegisterTaxRateCommand, adminId: UUID): TaxRate {
+    fun register(command: RegisterTaxRateCommand, adminId: UUID): TaxRate {
+        val cmd = command.copy(country = command.country.trim().uppercase())
         validate(cmd)
         val now = LocalDateTime.now()
         val open = repository.findOpen(cmd.country, cmd.incomeType)
