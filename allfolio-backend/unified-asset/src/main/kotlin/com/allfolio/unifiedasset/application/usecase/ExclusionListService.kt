@@ -41,11 +41,13 @@ class ExclusionListService(
     fun update(userId: UUID, id: UUID, cmd: UpdateListCommand): ExclusionList {
         val existing = owned(userId, id)
         validateName(cmd.name)
-        return repository.saveList(
+        repository.saveList(
             existing.copy(name = cmd.name.trim(), category = cmd.category.trim(),
                 description = cmd.description?.trim()?.takeIf { it.isNotBlank() },
                 active = cmd.active, updatedAt = LocalDateTime.now()),
         )
+        // saveList는 메타만 반환(items 제외) → 종목 포함 응답을 위해 재조회
+        return repository.findById(id)!!
     }
 
     @Transactional
@@ -95,7 +97,7 @@ class ExclusionListService(
         val now = LocalDateTime.now()
         val list = repository.saveList(
             ExclusionList(UUID.randomUUID(), userId, "${preset.name} (복제)",
-                preset.symbols.firstOrNull()?.reason ?: "사용자지정", "내장 프리셋 복제", true, now, now),
+                "프리셋복제", "내장 프리셋 복제", true, now, now),
         )
         preset.symbols.forEach { ps ->
             repository.addItem(ExclusionItem(UUID.randomUUID(), list.id, ps.symbol, ps.reason, now))

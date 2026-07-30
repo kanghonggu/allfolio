@@ -77,6 +77,16 @@ class ExclusionListServiceTest {
     }
 
     @Test
+    fun `수정 응답은 종목을 포함해 반환한다`() {
+        val (s, _) = svc()
+        val l = s.create(user, CreateListCommand("a", "석탄", null))
+        s.addItem(user, l.id, AddItemCommand("AAA", null))
+        val updated = s.update(user, l.id, UpdateListCommand("a", "석탄", null, false))
+        assertThat(updated.active).isFalse()
+        assertThat(updated.items.map { it.symbol }).containsExactly("AAA")
+    }
+
+    @Test
     fun `프리셋을 복제하면 심볼이 담긴 사용자 리스트가 생긴다`() {
         val (s, _) = svc()
         val cloned = s.clonePreset(user, "예시 프리셋")

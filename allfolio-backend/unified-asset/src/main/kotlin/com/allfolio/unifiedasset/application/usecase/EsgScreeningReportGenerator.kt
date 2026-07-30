@@ -17,9 +17,9 @@ import java.util.UUID
 
 /**
  * R-07 투자배제·ESG 스크리닝 생성 엔진 (R2 #42 BE).
- * 기존 EsgEngine 재사용 ESG 스코어(자산유형 기반) + 코드 내장 프리셋 기반 배제 스크리닝.
+ * 기존 EsgEngine 재사용 ESG 스코어(자산유형 기반) + 배제 스크리닝(내장 프리셋 ∪ 사용자 활성 리스트).
  * 총평가액 0(자산 없음)은 EsgEngine.calculate 예외를 피해 유효한 0 보고서.
- * v1 제외: 사용자 배제리스트·관리(SCR-RPT-11), 위반 이력·감시로그·편입일, 국가/ISIN 매칭.
+ * 제외(후속): 위반 이력·감시로그·편입일, 국가/ISIN 정밀 매칭.
  */
 @Component
 class EsgScreeningReportGenerator(
@@ -98,7 +98,7 @@ class EsgScreeningReportGenerator(
         if (b <= BigDecimal.ZERO) BigDecimal.ZERO
         else a.divide(b, mc).multiply(BigDecimal(100), mc).setScale(2, RoundingMode.HALF_UP)
 
-    companion object { private const val NOTE = "ESG 점수는 자산유형 기반 · 배제는 v1 내장 프리셋 기준" }
+    companion object { private const val NOTE = "ESG 점수는 자산유형 기반 · 배제는 내장 프리셋 및 사용자 활성 리스트 기준" }
 }
 
 private data class Quad(val asset: com.allfolio.unifiedasset.domain.asset.Asset, val value: BigDecimal, val listName: String, val reason: String)
