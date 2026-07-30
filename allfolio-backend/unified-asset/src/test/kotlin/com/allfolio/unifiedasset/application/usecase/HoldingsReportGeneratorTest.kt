@@ -4,10 +4,13 @@ import com.allfolio.report.domain.archive.ReportPeriod
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
+import com.allfolio.unifiedasset.application.port.StockTradeRepository
 import com.allfolio.unifiedasset.domain.account.Account
 import com.allfolio.unifiedasset.domain.account.AccountProvider
 import com.allfolio.unifiedasset.domain.account.AccountStatus
 import com.allfolio.unifiedasset.domain.account.AccountType
+import com.allfolio.unifiedasset.domain.account.StockTrade
+import com.allfolio.unifiedasset.domain.account.StockTradeType
 import com.allfolio.unifiedasset.domain.asset.Asset
 import com.allfolio.unifiedasset.domain.asset.AssetCategory
 import com.allfolio.unifiedasset.domain.asset.AssetSourceType
@@ -51,6 +54,20 @@ class HoldingsReportGeneratorTest {
             if (currency.uppercase() == "KRW") amount else amount * BigDecimal("1000")
     }
 
+    private class FakeStockTradeRepo(private val trades: List<StockTrade>) : StockTradeRepository {
+        override fun save(trade: StockTrade) = trade
+        override fun findByAccountId(accountId: UUID) = trades.filter { it.accountId == accountId }
+        override fun findById(id: UUID): StockTrade? = null
+        override fun delete(id: UUID) {}
+    }
+
+    private fun stockTrade(accountId: UUID, type: StockTradeType, symbol: String, qty: String, price: String, on: LocalDate) =
+        StockTrade.create(
+            accountId = accountId, userId = userId, tradeType = type, stockName = symbol, symbol = symbol,
+            quantity = BigDecimal(qty), price = BigDecimal(price),
+            totalAmount = BigDecimal(qty).multiply(BigDecimal(price)), tradedAt = on, memo = null,
+        )
+
     private fun asset(accountId: UUID, name: String, type: AssetType, qty: String, purchase: String, current: String, currency: String = "KRW") =
         Asset.create(
             userId = userId, accountId = accountId, category = AssetCategory.FINANCIAL,
@@ -66,8 +83,8 @@ class HoldingsReportGeneratorTest {
         walletAddress = null, chain = null,
     )
 
-    private fun generator(assets: List<Asset>, accounts: List<Account>) =
-        HoldingsReportGenerator(FakeAssetRepo(assets), FakeAccountRepo(accounts), fx)
+    private fun generator(assets: List<Asset>, accounts: List<Account>, trades: List<StockTrade> = emptyList()) =
+        HoldingsReportGenerator(FakeAssetRepo(assets), FakeAccountRepo(accounts), fx, FakeStockTradeRepo(trades))
 
     private fun standardAssets() = listOf(
         asset(acctA, "삼성전자", AssetType.STOCK, "1", "7000000", "8000000"),
@@ -148,5 +165,32 @@ class HoldingsReportGeneratorTest {
         assertEquals(0.0, body["summary"]["totalValueKrw"].asDouble(), 0.01)
         assertEquals(0, body["holdings"].size())
         assertEquals(0.0, body["summary"]["cashWeight"].asDouble(), 0.01)
+    }
+
+    @Test
+    fun `당월 실현손익이 요약과 realized 섹션에 반영된다`() {
+        val accId = acctA
+        val trades = listOf(
+            stockTrade(accId, StockTradeType.BUY, "ZZZ", "10", "100", LocalDate.of(2026, 6, 5)),
+            stockTrade(accId, StockTradeType.SELL, "ZZZ", "4", "150", LocalDate.of(2026, 6, 20)),
+        )
+        val body = mapper.readTree(
+            generator(standardAssets(), standardAccounts(), trades).generate(userId, period).bodyJson,
+        )
+        assertEquals(200.0, body["summary"]["realizedPnlKrw"].asDouble(), 0.01)
+        val realized = body["realized"]
+        assertEquals(1, realized.size())
+        assertEquals("ZZZ", realized[0]["symbol"].asText())
+        assertEquals(200.0, realized[0]["realizedPnl"].asDouble(), 0.01)
+    }
+
+    @Test
+    fun `거래 없으면 실현손익 0이고 realized 섹션 비어있다`() {
+        val body = mapper.readTree(
+            generator(standardAssets(), standardAccounts()).generate(userId, period).bodyJson,
+        )
+        assertEquals(0.0, body["summary"]["realizedPnlKrw"].asDouble(), 0.01)
+        assertEquals(0, body["realized"].size())
+        assertEquals(0.0, body["holdings"][0]["realizedPnl"].asDouble(), 0.01)
     }
 }
