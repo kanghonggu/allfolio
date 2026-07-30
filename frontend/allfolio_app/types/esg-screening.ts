@@ -34,6 +34,16 @@ export interface EsgViolation {
   reason: string
   valueKrw: number
   weight: number              // 0~100 스케일
+  firstBuyDate: string | null
+  sinceListed: string
+}
+
+export interface EsgViolationEvent {
+  date: string
+  symbol: string
+  name: string
+  event: string
+  note: string
 }
 
 export interface EsgScreeningReportBody {
@@ -41,4 +51,5 @@ export interface EsgScreeningReportBody {
   esgBreakdown: EsgBreakdownRow[]
   screening: EsgScreeningSummary
   violations: EsgViolation[]
+  violationHistory?: EsgViolationEvent[]
 }
