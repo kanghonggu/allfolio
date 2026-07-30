@@ -6,6 +6,7 @@ import com.allfolio.report.application.ReportBodyGenerator
 import com.allfolio.report.domain.archive.ReportPeriod
 import com.allfolio.report.domain.archive.ReportType
 import com.allfolio.unifiedasset.application.port.AssetRepository
+import com.allfolio.unifiedasset.application.port.ExclusionListRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.springframework.stereotype.Component
@@ -16,14 +17,15 @@ import java.util.UUID
 
 /**
  * R-07 투자배제·ESG 스크리닝 생성 엔진 (R2 #42 BE).
- * 기존 EsgEngine 재사용 ESG 스코어(자산유형 기반) + 코드 내장 프리셋 기반 배제 스크리닝.
+ * 기존 EsgEngine 재사용 ESG 스코어(자산유형 기반) + 배제 스크리닝(내장 프리셋 ∪ 사용자 활성 리스트).
  * 총평가액 0(자산 없음)은 EsgEngine.calculate 예외를 피해 유효한 0 보고서.
- * v1 제외: 사용자 배제리스트·관리(SCR-RPT-11), 위반 이력·감시로그·편입일, 국가/ISIN 매칭.
+ * 제외(후속): 위반 이력·감시로그·편입일, 국가/ISIN 정밀 매칭.
  */
 @Component
 class EsgScreeningReportGenerator(
     private val assetRepository: AssetRepository,
     private val fx: FxConverter,
+    private val exclusionRepo: ExclusionListRepository,
 ) : ReportBodyGenerator {
 
     override val type = ReportType.ESG_SCREENING
@@ -50,13 +52,20 @@ class EsgScreeningReportGenerator(
                 )
             }.sortedByDescending { it["total"] as BigDecimal }
 
+            // 내장 프리셋 ∪ 유저 active 리스트 (같은 symbol이면 유저 리스트 우선)
+            val lookup = LinkedHashMap<String, Pair<String, String>>() // symbol -> (listName, reason)
+            EsgExclusionPreset.entries.forEach { (sym, ex) -> lookup[sym] = ex.listName to ex.reason }
+            exclusionRepo.findActiveByUser(userId).forEach { list ->
+                list.items.forEach { it -> lookup[it.symbol] = list.name to list.category }
+            }
+
             val violated = valued.mapNotNull { (a, v) ->
-                EsgExclusionPreset.lookup(a.symbol)?.let { ex -> Triple(a, v, ex) }
-            }.sortedByDescending { it.second }
-            val violationValueKrw = violated.fold(BigDecimal.ZERO) { acc, t -> acc + t.second }
-            val violations = violated.map { (a, v, ex) ->
-                mapOf("name" to a.name, "symbol" to a.symbol, "listName" to ex.listName,
-                    "reason" to ex.reason, "valueKrw" to v, "weight" to pct(v, totalKrw))
+                a.symbol?.let { sym -> lookup[sym]?.let { (ln, rs) -> Quad(a, v, ln, rs) } }
+            }.sortedByDescending { it.value }
+            val violationValueKrw = violated.fold(BigDecimal.ZERO) { acc, t -> acc + t.value }
+            val violations = violated.map { q ->
+                mapOf("name" to q.asset.name, "symbol" to q.asset.symbol, "listName" to q.listName,
+                    "reason" to q.reason, "valueKrw" to q.value, "weight" to pct(q.value, totalKrw))
             }
 
             mapOf(
@@ -89,5 +98,7 @@ class EsgScreeningReportGenerator(
         if (b <= BigDecimal.ZERO) BigDecimal.ZERO
         else a.divide(b, mc).multiply(BigDecimal(100), mc).setScale(2, RoundingMode.HALF_UP)
 
-    companion object { private const val NOTE = "ESG 점수는 자산유형 기반 · 배제는 v1 내장 프리셋 기준" }
+    companion object { private const val NOTE = "ESG 점수는 자산유형 기반 · 배제는 내장 프리셋 및 사용자 활성 리스트 기준" }
 }
+
+private data class Quad(val asset: com.allfolio.unifiedasset.domain.asset.Asset, val value: BigDecimal, val listName: String, val reason: String)

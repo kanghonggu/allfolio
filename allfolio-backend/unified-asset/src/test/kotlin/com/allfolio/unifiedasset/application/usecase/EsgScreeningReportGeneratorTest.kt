@@ -2,18 +2,22 @@ package com.allfolio.unifiedasset.application.usecase
 
 import com.allfolio.report.domain.archive.ReportPeriod
 import com.allfolio.unifiedasset.application.port.AssetRepository
+import com.allfolio.unifiedasset.application.port.ExclusionListRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.domain.asset.Asset
 import com.allfolio.unifiedasset.domain.asset.AssetCategory
 import com.allfolio.unifiedasset.domain.asset.AssetSourceType
 import com.allfolio.unifiedasset.domain.asset.AssetType
 import com.allfolio.unifiedasset.domain.asset.ValuationMethod
+import com.allfolio.unifiedasset.domain.exclusion.ExclusionItem
+import com.allfolio.unifiedasset.domain.exclusion.ExclusionList
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.util.UUID
 
 class EsgScreeningReportGeneratorTest {
@@ -45,7 +49,26 @@ class EsgScreeningReportGeneratorTest {
             currency = currency, valuationMethod = ValuationMethod.MARKET_PRICE,
         )
 
-    private fun generator(assets: List<Asset>) = EsgScreeningReportGenerator(FakeAssetRepo(assets), fx)
+    private class FakeExclusionRepo(private val lists: List<ExclusionList>) : ExclusionListRepository {
+        override fun findByUser(userId: UUID) = lists.filter { it.userId == userId }
+        override fun findActiveByUser(userId: UUID) = lists.filter { it.userId == userId && it.active }
+        override fun findById(id: UUID) = lists.firstOrNull { it.id == id }
+        override fun saveList(list: ExclusionList) = list
+        override fun deleteList(id: UUID) {}
+        override fun addItem(item: ExclusionItem) = item
+        override fun deleteItem(itemId: UUID) {}
+        override fun existsItem(listId: UUID, symbol: String) = false
+    }
+
+    private fun userList(active: Boolean, owner: UUID, vararg symbols: String): ExclusionList {
+        val lid = UUID.randomUUID()
+        val now = LocalDateTime.now()
+        return ExclusionList(lid, owner, "내 리스트", "사용자지정", null, active, now, now,
+            symbols.map { ExclusionItem(UUID.randomUUID(), lid, it, null, now) })
+    }
+
+    private fun generator(assets: List<Asset>, exclusion: ExclusionListRepository = FakeExclusionRepo(emptyList())) =
+        EsgScreeningReportGenerator(FakeAssetRepo(assets), fx, exclusion)
 
     private fun standardAssets() = listOf(
         asset("삼성전자", "005930", "8000000"),
@@ -121,5 +144,30 @@ class EsgScreeningReportGeneratorTest {
         assertEquals("현금", bd[0]["name"].asText())        // total 78.5 최상위
         assertEquals(78.5, bd[0]["total"].asDouble(), 0.01)
         assertEquals("비트코인", bd[1]["name"].asText())     // total 36
+    }
+
+    @Test
+    fun `user active list flags a held symbol as violation`() {
+        val assets = listOf(asset("삼성전자", "005930", "8000000"))
+        val repo = FakeExclusionRepo(listOf(userList(true, userId, "005930")))
+        val body = mapper.readTree(generator(assets, repo).generate(userId, period).bodyJson)
+        assertEquals(1, body["screening"]["violationCount"].asInt())
+        assertEquals("005930", body["violations"][0]["symbol"].asText())
+    }
+
+    @Test
+    fun `inactive user list is ignored`() {
+        val assets = listOf(asset("삼성전자", "005930", "8000000"))
+        val repo = FakeExclusionRepo(listOf(userList(false, userId, "005930")))
+        val body = mapper.readTree(generator(assets, repo).generate(userId, period).bodyJson)
+        assertEquals(0, body["screening"]["violationCount"].asInt())
+    }
+
+    @Test
+    fun `other users list is ignored`() {
+        val assets = listOf(asset("삼성전자", "005930", "8000000"))
+        val repo = FakeExclusionRepo(listOf(userList(true, UUID.randomUUID(), "005930")))
+        val body = mapper.readTree(generator(assets, repo).generate(userId, period).bodyJson)
+        assertEquals(0, body["screening"]["violationCount"].asInt())
     }
 }
