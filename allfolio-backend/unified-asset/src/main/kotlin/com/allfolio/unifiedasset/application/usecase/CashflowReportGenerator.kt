@@ -70,7 +70,7 @@ class CashflowReportGenerator(
 
         val totalInflow = deposit + sell + dividend
         val totalOutflow = withdrawal + buy + feesTax
-        val netFlow = totalInflow - totalOutflow
+        val netFlow = netCash(flows, trades)   // 기초 재구성과 동일 공식(단일 소스). == totalInflow − totalOutflow
 
         val byType = buildList {
             fun row(type: String, amount: BigDecimal, dir: String) =

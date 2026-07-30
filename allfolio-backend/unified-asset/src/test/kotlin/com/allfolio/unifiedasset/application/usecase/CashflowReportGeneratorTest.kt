@@ -238,6 +238,36 @@ class CashflowReportGeneratorTest {
     }
 
     @Test
+    fun `비원화 현금은 fx로 환산돼 실제 현금에 반영된다`() {
+        // 6월 입금 200000 → 기말 200000. 실제현금 = USD 200 → ×1000 = 200000 → 정합.
+        val usdCash = Asset.create(
+            userId = userId, accountId = acctId, category = AssetCategory.FINANCIAL, type = AssetType.CASH,
+            sourceType = AssetSourceType.STOCK_API, name = "USD현금", symbol = null,
+            quantity = BigDecimal.ONE, purchasePrice = BigDecimal("200"), currentValue = BigDecimal("200"),
+            currency = "USD", valuationMethod = ValuationMethod.MARKET_PRICE,
+        )
+        val body = mapper.readTree(
+            generator(listOf(deposit(2, "200000")), emptyList(), cashAssets = listOf(usdCash)).generate(userId, period).bodyJson,
+        )
+        val r = body["reconciliation"]
+        assertEquals(200000.0, r["actualCash"].asDouble(), 0.01) // 200 USD × 1000
+        assertTrue(r["reconciled"].asBoolean())
+    }
+
+    @Test
+    fun `기초 재구성은 출금 매도 배당 부호를 모두 반영한다`() {
+        val beforeFlows = listOf(flowOn(LocalDate.of(2026, 5, 3), FlowType.WITHDRAWAL, "30000"))
+        val beforeTrades = listOf(
+            tradeOn(LocalDate.of(2026, 5, 4), "SELL", "100000"),
+            tradeOn(LocalDate.of(2026, 5, 5), "DIVIDEND", "5000"),
+        )
+        val body = mapper.readTree(generator(beforeFlows, beforeTrades).generate(userId, period).bodyJson)
+        // opening = -30000 + 100000 + 5000 = 75000, 기간 흐름 없음 → 기말 동일
+        assertEquals(75000.0, body["reconciliation"]["openingBalance"].asDouble(), 0.01)
+        assertEquals(75000.0, body["reconciliation"]["closingCalculated"].asDouble(), 0.01)
+    }
+
+    @Test
     fun `조정표 항등식 - 기초 더하기 증감합 등 기말`() {
         val body = mapper.readTree(generator(standardFlows(), standardTrades()).generate(userId, period).bodyJson)
         val r = body["reconciliation"]
