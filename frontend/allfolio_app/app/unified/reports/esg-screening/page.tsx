@@ -47,6 +47,7 @@ export default function EsgScreeningListPage() {
       <div className="flex items-center gap-3">
         <Link href="/unified/reports" className="text-sm text-gray-500 hover:text-gray-300">← 보고서</Link>
         <h1 className="text-2xl font-bold">ESG 스크리닝</h1>
+        <Link href="/unified/reports/esg-screening/lists" className="ml-auto text-sm text-amber-400 hover:text-amber-300">배제리스트 관리 →</Link>
       </div>
 
       <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-700 bg-gray-900 p-4">
