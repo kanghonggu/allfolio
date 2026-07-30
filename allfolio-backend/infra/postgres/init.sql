@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS app_users (
     display_name  VARCHAR(100),
     created_at    TIMESTAMP     NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMP     NOT NULL DEFAULT NOW(),
+    role          VARCHAR(20)   NOT NULL DEFAULT 'USER',
     CONSTRAINT pk_app_users PRIMARY KEY (id),
     CONSTRAINT uk_app_users_email UNIQUE (email)
 );

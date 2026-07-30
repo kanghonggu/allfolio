@@ -28,4 +28,5 @@ data class AuthUserResponse(
     val id: UUID,
     val email: String,
     val displayName: String?,
+    val role: UserRole,
 )

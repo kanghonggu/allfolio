@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
@@ -21,6 +22,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 class SecurityConfig(
     private val jwtUserIdFilter: JwtUserIdFilter,
     private val sseTokenFilter: SseTokenFilter,
@@ -58,7 +60,7 @@ class SecurityConfig(
                     .requestMatchers("/api/broker/*/callback").permitAll()
                     .requestMatchers("/api/sse/prices").permitAll()
                     .requestMatchers("/api/sse/pnl/**").authenticated()
-                    .requestMatchers("/api/admin/**").denyAll()
+                    .requestMatchers("/api/admin/**").hasRole("ADMIN")
                     .anyRequest().authenticated()
             }
             .addFilterBefore(jwtUserIdFilter, UsernamePasswordAuthenticationFilter::class.java)
