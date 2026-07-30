@@ -490,6 +490,27 @@ INSERT INTO kr_stocks (symbol, name, market) VALUES
 ('486290','KODEX 미국S&P500TR','ETF'),('486300','TIGER 미국S&P500TR','ETF')
 ON CONFLICT (symbol) DO NOTHING;
 
+-- ── tax_rates : 원천징수 세율 마스터 (국가×유형×유효기간 버저닝) ─────────
+CREATE TABLE IF NOT EXISTS tax_rates (
+    id              UUID          NOT NULL,
+    country         VARCHAR(2)    NOT NULL,
+    income_type     VARCHAR(20)   NOT NULL,
+    rate            NUMERIC(6,3)  NOT NULL,
+    effective_start DATE          NOT NULL,
+    effective_end   DATE,
+    updated_by      UUID,
+    created_at      TIMESTAMP     NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP     NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_tax_rates PRIMARY KEY (id),
+    CONSTRAINT uk_tax_rates_ver UNIQUE (country, income_type, effective_start)
+);
+INSERT INTO tax_rates (id, country, income_type, rate, effective_start) VALUES
+  (gen_random_uuid(), 'US', 'DIVIDEND', 15,     '2000-01-01'),
+  (gen_random_uuid(), 'KR', 'DIVIDEND', 15.4,   '2000-01-01'),
+  (gen_random_uuid(), 'KR', 'INTEREST', 15.4,   '2000-01-01'),
+  (gen_random_uuid(), 'JP', 'DIVIDEND', 15.315, '2000-01-01')
+ON CONFLICT (country, income_type, effective_start) DO NOTHING;
+
 -- ── ua_ai_configs ─────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ua_ai_configs (
     user_id     UUID          NOT NULL,
