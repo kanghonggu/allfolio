@@ -224,6 +224,33 @@ CREATE TABLE IF NOT EXISTS ua_goals (
 CREATE INDEX IF NOT EXISTS idx_ua_goals_user
     ON ua_goals (user_id);
 
+-- ── ua_exclusion_lists / ua_exclusion_items : R-07 사용자 배제리스트 ──────
+CREATE TABLE IF NOT EXISTS ua_exclusion_lists (
+    id          UUID          NOT NULL,
+    user_id     UUID          NOT NULL,
+    name        VARCHAR(100)  NOT NULL,
+    category    VARCHAR(30)   NOT NULL,
+    description VARCHAR(500),
+    active      BOOLEAN       NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMP     NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMP     NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_ua_exclusion_lists PRIMARY KEY (id)
+);
+CREATE INDEX IF NOT EXISTS idx_ua_exclusion_lists_user ON ua_exclusion_lists (user_id);
+
+CREATE TABLE IF NOT EXISTS ua_exclusion_items (
+    id       UUID         NOT NULL,
+    list_id  UUID         NOT NULL,
+    symbol   VARCHAR(40)  NOT NULL,
+    memo     VARCHAR(300),
+    added_at TIMESTAMP    NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_ua_exclusion_items PRIMARY KEY (id),
+    CONSTRAINT fk_ua_exclusion_items_list FOREIGN KEY (list_id)
+        REFERENCES ua_exclusion_lists(id) ON DELETE CASCADE,
+    CONSTRAINT uk_ua_exclusion_items UNIQUE (list_id, symbol)
+);
+CREATE INDEX IF NOT EXISTS idx_ua_exclusion_items_list ON ua_exclusion_items (list_id);
+
 -- ── kafka_processed_event ──────────────────────────────────────
 -- Kafka Consumer 멱등성 마커
 -- SELECT 없이 INSERT PK 충돌로 중복 감지 (race condition 없음)
