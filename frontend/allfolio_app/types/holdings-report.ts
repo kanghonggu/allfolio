@@ -8,6 +8,7 @@ export interface HoldingsSummary {
   accountCount: number
   cashWeight: number         // 0~100 스케일 (fmtPct 금지, fmtPctScaled/.toFixed 사용)
   unrealizedPnlKrw: number   // 부호 있는 KRW
+  realizedPnlKrw: number     // 당월 FIFO 실현손익, 부호 있는 KRW
 }
 
 export interface Holding {
@@ -23,6 +24,7 @@ export interface Holding {
   weight: number             // 0~100 스케일
   unrealizedPnl: number      // KRW, 부호
   returnRate: number         // 0~100 스케일
+  realizedPnl: number        // 당월 실현손익 KRW, 부호
 }
 
 export interface HoldingByAccount {
@@ -46,10 +48,17 @@ export interface HoldingCash {
   valueKrw: number
 }
 
+export interface HoldingRealized {
+  symbol: string
+  name: string
+  realizedPnl: number
+}
+
 export interface HoldingsReportBody {
   summary: HoldingsSummary
   holdings: Holding[]
   byAccount: HoldingByAccount[]
   byType: HoldingByType[]
   cash: HoldingCash[]
+  realized: HoldingRealized[]
 }
