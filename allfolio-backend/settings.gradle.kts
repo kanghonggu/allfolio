@@ -13,5 +13,6 @@ include(
     ":esg",
     ":report",
     ":unified-asset",
-    ":reconciliation"
+    ":reconciliation",
+    ":workflow"
 )
