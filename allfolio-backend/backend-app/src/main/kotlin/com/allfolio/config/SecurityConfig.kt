@@ -60,6 +60,7 @@ class SecurityConfig(
                     .requestMatchers("/api/broker/*/callback").permitAll()
                     .requestMatchers("/api/sse/prices").permitAll()
                     .requestMatchers("/api/sse/pnl/**").authenticated()
+                    .requestMatchers("/api/sse/closing").hasRole("ADMIN")
                     .requestMatchers("/api/admin/**").hasRole("ADMIN")
                     .anyRequest().authenticated()
             }
