@@ -24,6 +24,9 @@ export default function NavBar() {
             <Link href="/unified/reports" className="text-sm text-gray-400 hover:text-white transition-colors">
               보고서
             </Link>
+            <Link href="/unified/cashflow" className="text-sm text-gray-400 hover:text-white transition-colors">
+              현금흐름
+            </Link>
             {isAdmin && (
               <Link href="/unified/admin/tax-rates" className="text-sm text-amber-400 hover:text-amber-300 transition-colors">
                 세율 마스터
