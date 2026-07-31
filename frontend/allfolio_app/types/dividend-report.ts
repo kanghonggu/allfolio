@@ -41,6 +41,9 @@ export interface DividendByCountry {
   tax: number
   net: number
   effectiveTaxRate: number   // 0~100 스케일 (fmtPct 금지, fmtPctScaled/.toFixed 사용)
+  expectedTaxRate?: number | null
+  taxDeviationPp?: number | null
+  taxFlagged?: boolean
 }
 
 export interface DividendCalendarEntry {
