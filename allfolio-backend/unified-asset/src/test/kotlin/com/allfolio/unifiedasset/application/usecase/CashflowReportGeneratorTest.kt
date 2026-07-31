@@ -275,4 +275,25 @@ class CashflowReportGeneratorTest {
         val changesSum = r["changes"].sumOf { it["amount"].asDouble() }
         assertEquals(r["closingCalculated"].asDouble(), opening + changesSum, 0.01)
     }
+
+    @Test
+    fun `특이거래 - 대규모 이동과 미분류 흐름`() {
+        val flows = listOf(deposit(2, "150000"))
+        val trades = listOf(tradeOn(LocalDate.of(2026, 6, 5), "MARGIN", "10000"))
+        val body = mapper.readTree(
+            generator(flows, trades, cashAssets = listOf(cashAsset("1000000"))).generate(userId, period).bodyJson,
+        )
+        val st = body["specialTransactions"]
+        assertEquals(1, st["largeMovements"].size())
+        assertEquals(150000.0, st["largeMovements"][0]["amountKrw"].asDouble(), 0.01)
+        assertEquals(1, st["unclassified"].size())
+        assertEquals("MARGIN", st["unclassified"][0]["tradeType"].asText())
+    }
+
+    @Test
+    fun `특이거래 - 총자산 없으면 대규모 이동 비어있다`() {
+        val body = mapper.readTree(generator(standardFlows(), standardTrades()).generate(userId, period).bodyJson)
+        val st = body["specialTransactions"]
+        assertEquals(0, st["largeMovements"].size())
+    }
 }
