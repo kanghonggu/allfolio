@@ -25,9 +25,14 @@ export default function NavBar() {
               보고서
             </Link>
             {isAdmin && (
-              <Link href="/unified/admin/tax-rates" className="text-sm text-amber-400 hover:text-amber-300 transition-colors">
-                세율 마스터
-              </Link>
+              <>
+                <Link href="/unified/admin/tax-rates" className="text-sm text-amber-400 hover:text-amber-300 transition-colors">
+                  세율 마스터
+                </Link>
+                <Link href="/unified/admin/exclusion-presets" className="text-sm text-amber-400 hover:text-amber-300 transition-colors">
+                  배제 프리셋
+                </Link>
+              </>
             )}
           </>
         )}
