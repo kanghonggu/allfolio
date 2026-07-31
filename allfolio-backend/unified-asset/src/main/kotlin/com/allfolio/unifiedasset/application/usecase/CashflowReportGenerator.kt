@@ -102,7 +102,8 @@ class CashflowReportGenerator(
                   "description" to it.desc, "amount" to it.amount)
         }
 
-        val months = (flows.map { ym(it.flowDate) } + trades.map { ym(it.tradeDate) }).distinct().sorted()
+        val months = (flows.filter { !it.type.isInternal() }.map { ym(it.flowDate) } +
+            trades.map { ym(it.tradeDate) }).distinct().sorted()
         val monthly = months.map { m ->
             val mf = flows.filter { ym(it.flowDate) == m }
             val mt = trades.filter { ym(it.tradeDate) == m }
