@@ -384,11 +384,17 @@ export default function ClosingDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">마감 대시보드</h1>
-        <p className="mt-1 text-sm text-gray-400">
-          일일마감 워크플로우 현황·수동 개입 (실시간 SSE 갱신)
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">마감 대시보드</h1>
+          <p className="mt-1 text-sm text-gray-400">
+            일일마감 워크플로우 현황·수동 개입 (실시간 SSE 갱신)
+          </p>
+        </div>
+        <a href="/unified/admin/closing/define"
+          className="rounded-lg border border-gray-600 px-4 py-2 text-sm hover:border-amber-500 hover:text-amber-400 transition-colors">
+          워크플로우 정의 관리
+        </a>
       </div>
 
       <div className="flex gap-1 border-b border-gray-800">
