@@ -5,9 +5,11 @@ import com.allfolio.report.application.GeneratedReport
 import com.allfolio.report.application.ReportBodyGenerator
 import com.allfolio.report.domain.archive.ReportPeriod
 import com.allfolio.report.domain.archive.ReportType
+import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.ExclusionListRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
+import com.allfolio.unifiedasset.application.port.StockTradeRepository
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.springframework.stereotype.Component
 import java.math.BigDecimal
@@ -19,13 +21,15 @@ import java.util.UUID
  * R-07 투자배제·ESG 스크리닝 생성 엔진 (R2 #42 BE).
  * 기존 EsgEngine 재사용 ESG 스코어(자산유형 기반) + 배제 스크리닝(내장 프리셋 ∪ 사용자 활성 리스트).
  * 총평가액 0(자산 없음)은 EsgEngine.calculate 예외를 피해 유효한 0 보고서.
- * 제외(후속): 위반 이력·감시로그·편입일, 국가/ISIN 정밀 매칭.
+ * 제외(후속): 리스트 제외 이벤트·감시로그, 국가/ISIN 정밀 매칭.
  */
 @Component
 class EsgScreeningReportGenerator(
     private val assetRepository: AssetRepository,
     private val fx: FxConverter,
     private val exclusionRepo: ExclusionListRepository,
+    private val accountRepository: AccountRepository,
+    private val stockTradeRepository: StockTradeRepository,
 ) : ReportBodyGenerator {
 
     override val type = ReportType.ESG_SCREENING
@@ -52,10 +56,11 @@ class EsgScreeningReportGenerator(
                 )
             }.sortedByDescending { it["total"] as BigDecimal }
 
+            val activeLists = exclusionRepo.findActiveByUser(userId)
             // 내장 프리셋 ∪ 유저 active 리스트 (같은 symbol이면 유저 리스트 우선)
             val lookup = LinkedHashMap<String, Pair<String, String>>() // symbol -> (listName, reason)
             EsgExclusionPreset.entries.forEach { (sym, ex) -> lookup[sym] = ex.listName to ex.reason }
-            exclusionRepo.findActiveByUser(userId).forEach { list ->
+            activeLists.forEach { list ->
                 list.items.forEach { it -> lookup[it.symbol] = list.name to list.category }
             }
 
@@ -63,9 +68,20 @@ class EsgScreeningReportGenerator(
                 a.symbol?.let { sym -> lookup[sym]?.let { (ln, rs) -> Quad(a, v, ln, rs) } }
             }.sortedByDescending { it.value }
             val violationValueKrw = violated.fold(BigDecimal.ZERO) { acc, t -> acc + t.value }
+
+            val trades = accountRepository.findByUserId(userId).flatMap { stockTradeRepository.findByAccountId(it.id) }
+            val listedAtBySymbol = activeLists
+                .flatMap { it.items }.groupBy { it.symbol }
+                .mapValues { (_, items) -> items.minOf { it.addedAt.toLocalDate() } }
+            val nameBySymbol = (trades.mapNotNull { t -> t.symbol?.let { it to t.stockName } } +
+                violated.mapNotNull { q -> q.asset.symbol?.let { it to q.asset.name } }).toMap()
+            val history = ViolationHistoryCalculator.build(lookup.keys, trades, listedAtBySymbol, nameBySymbol, period)
+
             val violations = violated.map { q ->
+                val info = q.asset.symbol?.let { history.perSymbol[it] }
                 mapOf("name" to q.asset.name, "symbol" to q.asset.symbol, "listName" to q.listName,
-                    "reason" to q.reason, "valueKrw" to q.value, "weight" to pct(q.value, totalKrw))
+                    "reason" to q.reason, "valueKrw" to q.value, "weight" to pct(q.value, totalKrw),
+                    "firstBuyDate" to info?.firstBuyDate?.toString(), "sinceListed" to (info?.sinceListed ?: "-"))
             }
 
             mapOf(
@@ -79,6 +95,10 @@ class EsgScreeningReportGenerator(
                     "violationWeight" to pct(violationValueKrw, totalKrw),
                 ),
                 "violations" to violations,
+                "violationHistory" to history.events.map {
+                    mapOf("date" to it.date.toString(), "symbol" to it.symbol, "name" to it.name,
+                        "event" to it.event, "note" to it.note)
+                },
                 "note" to NOTE,
             )
         }
@@ -91,6 +111,7 @@ class EsgScreeningReportGenerator(
         "esgBreakdown" to emptyList<Any>(),
         "screening" to mapOf("violationCount" to 0, "violationValueKrw" to BigDecimal.ZERO, "violationWeight" to BigDecimal.ZERO),
         "violations" to emptyList<Any>(),
+        "violationHistory" to emptyList<Any>(),
         "note" to NOTE,
     )
 

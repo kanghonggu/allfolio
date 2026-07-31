@@ -1,9 +1,17 @@
 package com.allfolio.unifiedasset.application.usecase
 
 import com.allfolio.report.domain.archive.ReportPeriod
+import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.ExclusionListRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
+import com.allfolio.unifiedasset.application.port.StockTradeRepository
+import com.allfolio.unifiedasset.domain.account.Account
+import com.allfolio.unifiedasset.domain.account.AccountProvider
+import com.allfolio.unifiedasset.domain.account.AccountStatus
+import com.allfolio.unifiedasset.domain.account.AccountType
+import com.allfolio.unifiedasset.domain.account.StockTrade
+import com.allfolio.unifiedasset.domain.account.StockTradeType
 import com.allfolio.unifiedasset.domain.asset.Asset
 import com.allfolio.unifiedasset.domain.asset.AssetCategory
 import com.allfolio.unifiedasset.domain.asset.AssetSourceType
@@ -67,8 +75,38 @@ class EsgScreeningReportGeneratorTest {
             symbols.map { ExclusionItem(UUID.randomUUID(), lid, it, null, now) })
     }
 
-    private fun generator(assets: List<Asset>, exclusion: ExclusionListRepository = FakeExclusionRepo(emptyList())) =
-        EsgScreeningReportGenerator(FakeAssetRepo(assets), fx, exclusion)
+    private class FakeAccountRepo(private val accounts: List<Account>) : AccountRepository {
+        override fun save(account: Account) = account
+        override fun findById(id: UUID): Account? = null
+        override fun findByUserId(userId: UUID) = accounts
+        override fun findByProviders(providers: Collection<AccountProvider>) = emptyList<Account>()
+        override fun delete(id: UUID) {}
+        override fun updateStatus(id: UUID, status: AccountStatus) {}
+    }
+    private class FakeStockTradeRepo(private val trades: List<StockTrade>) : StockTradeRepository {
+        override fun save(trade: StockTrade) = trade
+        override fun findByAccountId(accountId: UUID) = trades.filter { it.accountId == accountId }
+        override fun findById(id: UUID): StockTrade? = null
+        override fun delete(id: UUID) {}
+    }
+    private fun account() = Account.reconstruct(
+        id = acctId, userId = userId, provider = AccountProvider.KIS, accountType = AccountType.STOCK,
+        accountName = "한투", externalId = null, currency = "KRW", status = AccountStatus.ACTIVE,
+        lastSyncedAt = null, createdAt = LocalDateTime.now(), apiKey = null, apiSecret = null,
+        walletAddress = null, chain = null,
+    )
+    private fun stockTrade(type: StockTradeType, symbol: String, qty: String, on: LocalDate) =
+        StockTrade.create(
+            accountId = acctId, userId = userId, tradeType = type, stockName = symbol, symbol = symbol,
+            quantity = BigDecimal(qty), price = BigDecimal.ONE, totalAmount = BigDecimal(qty), tradedAt = on, memo = null,
+        )
+
+    private fun generator(
+        assets: List<Asset>,
+        exclusion: ExclusionListRepository = FakeExclusionRepo(emptyList()),
+        accounts: List<Account> = emptyList(),
+        trades: List<StockTrade> = emptyList(),
+    ) = EsgScreeningReportGenerator(FakeAssetRepo(assets), fx, exclusion, FakeAccountRepo(accounts), FakeStockTradeRepo(trades))
 
     private fun standardAssets() = listOf(
         asset("삼성전자", "005930", "8000000"),
@@ -169,5 +207,30 @@ class EsgScreeningReportGeneratorTest {
         val repo = FakeExclusionRepo(listOf(userList(true, UUID.randomUUID(), "005930")))
         val body = mapper.readTree(generator(assets, repo).generate(userId, period).bodyJson)
         assertEquals(0, body["screening"]["violationCount"].asInt())
+    }
+
+    @Test
+    fun `위반 종목에 편입일과 배지가 붙고 위반이력 섹션이 생긴다`() {
+        val assets = listOf(asset("종목Z", "ZZZ", "1000000"))
+        val list = userList(active = true, owner = userId, "ZZZ")
+        val trades = listOf(stockTrade(StockTradeType.BUY, "ZZZ", "10", LocalDate.of(2026, 6, 5)))
+        val body = mapper.readTree(
+            generator(assets, FakeExclusionRepo(listOf(list)), listOf(account()), trades).generate(userId, period).bodyJson,
+        )
+        val v = body["violations"].first { it["symbol"].asText() == "ZZZ" }
+        assertEquals("2026-06-05", v["firstBuyDate"].asText())
+        assertTrue(v["sinceListed"].asText().isNotEmpty())
+        val hist = body["violationHistory"]
+        assertTrue(hist.any { it["symbol"].asText() == "ZZZ" && it["event"].asText() == "편입" })
+    }
+
+    @Test
+    fun `거래가 없으면 위반이력은 비어있다`() {
+        val assets = listOf(asset("종목Z", "ZZZ", "1000000"))
+        val list = userList(active = true, owner = userId, "ZZZ")
+        val body = mapper.readTree(
+            generator(assets, FakeExclusionRepo(listOf(list))).generate(userId, period).bodyJson,
+        )
+        assertTrue(body.has("violationHistory"))
     }
 }

@@ -11,6 +11,7 @@ import { EsgSummary } from '@/components/esg-screening/EsgSummary'
 import { EsgScoreBars } from '@/components/esg-screening/EsgScoreBars'
 import { EsgBreakdownTable } from '@/components/esg-screening/EsgBreakdownTable'
 import { ViolationsTable } from '@/components/esg-screening/ViolationsTable'
+import { ViolationHistory } from '@/components/esg-screening/ViolationHistory'
 
 export default function EsgScreeningDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -73,6 +74,7 @@ export default function EsgScreeningDetailPage() {
       <EsgScoreBars esg={body.esg} />
       <EsgBreakdownTable rows={body.esgBreakdown} />
       <ViolationsTable rows={body.violations} />
+      {body.violationHistory && <ViolationHistory events={body.violationHistory} />}
     </div>
   )
 }
