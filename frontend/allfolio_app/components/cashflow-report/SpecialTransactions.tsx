@@ -21,6 +21,7 @@ export function SpecialTransactions({ data }: { data: CashflowSpecialTransaction
                     <tr key={`${m.date}-${m.type}-${i}`} className="border-b border-gray-800 last:border-b-0">
                       <td className="p-2 tabular-nums text-gray-400">{m.date}</td>
                       <td className="p-2 text-gray-300">{m.type}</td>
+                      <td className="p-2 text-gray-500">{m.account}</td>
                       <td className="p-2 text-gray-500">{m.description}</td>
                       <td className={`p-2 text-right tabular-nums ${pctColor(m.amountKrw)}`}>{fmtKrw(m.amountKrw)}</td>
                     </tr>
