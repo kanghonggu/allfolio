@@ -145,10 +145,18 @@ class HoldingsReportGeneratorTest {
         val labels = regions.map { it["region"].asText() }
         assertEquals(true, labels.contains("국내"))
         assertEquals(true, labels.contains("미국"))
-        val first = regions.first()
-        assertEquals(true, first.has("valueKrw"))
-        assertEquals(true, first.has("weight"))
-        assertEquals(true, first.has("holdingCount"))
+        // 정렬: valueKrw 내림차순 → 국내(11M) 먼저
+        assertEquals("국내", regions.first()["region"].asText())
+        // 국내 = 삼성전자(8M) + 원화예수금 CASH(3M) 병합, holdingCount 2
+        val domestic = regions.first { it["region"].asText() == "국내" }
+        assertEquals(11000000.0, domestic["valueKrw"].asDouble(), 0.01)
+        assertEquals(2, domestic["holdingCount"].asInt())
+        assertEquals(68.75, domestic["weight"].asDouble(), 0.01)   // 11M/16M
+        // 미국 = Apple(5M), holdingCount 1
+        val us = regions.first { it["region"].asText() == "미국" }
+        assertEquals(5000000.0, us["valueKrw"].asDouble(), 0.01)
+        assertEquals(1, us["holdingCount"].asInt())
+        assertEquals(31.25, us["weight"].asDouble(), 0.01)         // 5M/16M
     }
 
     @Test
