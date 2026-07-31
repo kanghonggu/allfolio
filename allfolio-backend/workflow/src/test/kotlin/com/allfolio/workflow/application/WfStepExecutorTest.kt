@@ -83,10 +83,16 @@ class WfStepExecutorTest {
             actionType = type, actionRef = ref,
         )
 
+    private class RecordingPublisher : WfEventPublisher {
+        val events = mutableListOf<WfStepEvent>()
+        override fun publish(event: WfStepEvent) { events += event }
+    }
+
     private fun executor(
         steps: List<WfStepEntity>, subs: List<WfSubStepEntity>, actions: List<WfAction>,
         logs: InMemoryLogRepo = InMemoryLogRepo(), lock: FakeLock = FakeLock(),
-    ) = WfStepExecutor(actions, FixedStepRepo(steps), FixedSubRepo(subs), logs, EmptyHolidayRepo(), lock)
+        publisher: RecordingPublisher = RecordingPublisher(),
+    ) = WfStepExecutor(actions, FixedStepRepo(steps), FixedSubRepo(subs), logs, EmptyHolidayRepo(), lock, publisher)
 
     @Test
     fun `선행단계 미완료면 게이트 SKIP - 로그를 만들지 않는다`() {
@@ -187,6 +193,22 @@ class WfStepExecutorTest {
         assertEquals(WfJobStatus.SUCCESS, latest.status)
         assertEquals(2, latest.execSeq)
         assertEquals("M", latest.autoManual)
+    }
+
+    @Test
+    fun `하위단계 완료·오류 시 이벤트가 발행된다`() {
+        val publisher = RecordingPublisher()
+        executor(
+            steps = listOf(step("S1", 10)),
+            subs = listOf(sub("S1", "S1-1", 1, ref = "S1-ACT"), sub("S1", "S1-2", 2, ref = "S1-ACT2")),
+            actions = listOf(FakeAction("S1-ACT"), FakeAction("S1-ACT2", fail = true)),
+            publisher = publisher,
+        ).runDaily(ymd)
+
+        assertEquals(2, publisher.events.size)
+        assertEquals(WfJobStatus.SUCCESS, publisher.events[0].status)
+        assertEquals(WfJobStatus.ERROR, publisher.events[1].status)
+        assertEquals("S1-2", publisher.events[1].subStepCd)
     }
 
     @Test
