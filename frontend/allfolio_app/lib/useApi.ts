@@ -9,6 +9,7 @@ import { createGoalApi } from './goal-api'
 import { createAiApi } from './ai-api'
 import { createCashFlowApi } from './cashflow-api'
 import { createBenchmarkApi } from './benchmark-api'
+import { createExclusionPresetAdminApi } from './exclusion-preset-admin-api'
 
 export function useUnifiedApi() {
   const { accessToken } = useAuth()
@@ -63,5 +64,13 @@ export function useReportArchiveApi(reportType: ReportType) {
   return useMemo(
     () => (accessToken ? createReportArchiveApi(accessToken, reportType) : null),
     [accessToken, reportType],
+  )
+}
+
+export function useExclusionPresetAdminApi() {
+  const { accessToken } = useAuth()
+  return useMemo(
+    () => (accessToken ? createExclusionPresetAdminApi(accessToken) : null),
+    [accessToken],
   )
 }

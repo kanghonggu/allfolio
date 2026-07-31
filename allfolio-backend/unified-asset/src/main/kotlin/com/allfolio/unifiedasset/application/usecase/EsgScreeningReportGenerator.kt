@@ -8,6 +8,7 @@ import com.allfolio.report.domain.archive.ReportType
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.ExclusionListRepository
+import com.allfolio.unifiedasset.application.port.ExclusionPresetRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.application.port.StockTradeRepository
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -30,6 +31,7 @@ class EsgScreeningReportGenerator(
     private val exclusionRepo: ExclusionListRepository,
     private val accountRepository: AccountRepository,
     private val stockTradeRepository: StockTradeRepository,
+    private val exclusionPresetRepository: ExclusionPresetRepository,
 ) : ReportBodyGenerator {
 
     override val type = ReportType.ESG_SCREENING
@@ -59,7 +61,7 @@ class EsgScreeningReportGenerator(
             val activeLists = exclusionRepo.findActiveByUser(userId)
             // 내장 프리셋 ∪ 유저 active 리스트 (같은 symbol이면 유저 리스트 우선)
             val lookup = LinkedHashMap<String, Pair<String, String>>() // symbol -> (listName, reason)
-            EsgExclusionPreset.entries.forEach { (sym, ex) -> lookup[sym] = ex.listName to ex.reason }
+            exclusionPresetRepository.findAll().forEach { lookup[it.symbol] = it.listName to it.reason }
             activeLists.forEach { list ->
                 list.items.forEach { it -> lookup[it.symbol] = list.name to list.category }
             }

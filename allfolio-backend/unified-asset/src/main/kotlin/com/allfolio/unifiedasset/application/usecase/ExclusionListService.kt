@@ -1,6 +1,7 @@
 package com.allfolio.unifiedasset.application.usecase
 
 import com.allfolio.unifiedasset.application.port.ExclusionListRepository
+import com.allfolio.unifiedasset.application.port.ExclusionPresetRepository
 import com.allfolio.unifiedasset.domain.exclusion.ExclusionItem
 import com.allfolio.unifiedasset.domain.exclusion.ExclusionList
 import org.springframework.http.HttpStatus
@@ -19,13 +20,14 @@ data class PresetSymbol(val symbol: String, val reason: String)
 @Service
 class ExclusionListService(
     private val repository: ExclusionListRepository,
+    private val exclusionPresetRepository: ExclusionPresetRepository,
 ) {
     fun list(userId: UUID): List<ExclusionList> = repository.findByUser(userId)
 
     fun presets(): List<PresetView> =
-        EsgExclusionPreset.entries.entries
-            .groupBy { it.value.listName }
-            .map { (listName, es) -> PresetView(listName, es.map { PresetSymbol(it.key, it.value.reason) }) }
+        exclusionPresetRepository.findAll()
+            .groupBy { it.listName }
+            .map { (listName, ps) -> PresetView(listName, ps.map { PresetSymbol(it.symbol, it.reason) }) }
 
     @Transactional
     fun create(userId: UUID, cmd: CreateListCommand): ExclusionList {

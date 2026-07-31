@@ -541,6 +541,23 @@ INSERT INTO tax_rates (id, country, income_type, rate, effective_start) VALUES
   (gen_random_uuid(), 'JP', 'DIVIDEND', 15.315, '2000-01-01')
 ON CONFLICT (country, income_type, effective_start) DO NOTHING;
 
+-- ── exclusion_presets : ADMIN 큐레이션 배제 프리셋 (버저닝 없음, symbol UNIQUE) ──
+CREATE TABLE IF NOT EXISTS exclusion_presets (
+    id          UUID         NOT NULL,
+    symbol      VARCHAR(40)  NOT NULL,
+    list_name   VARCHAR(100) NOT NULL,
+    reason      VARCHAR(200) NOT NULL,
+    updated_by  UUID,
+    created_at  TIMESTAMP    NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMP    NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_exclusion_presets PRIMARY KEY (id),
+    CONSTRAINT uk_exclusion_presets_symbol UNIQUE (symbol)
+);
+INSERT INTO exclusion_presets (id, symbol, list_name, reason) VALUES
+  (gen_random_uuid(), 'EXCL-COAL-01',   '예시 프리셋', '석탄'),
+  (gen_random_uuid(), 'EXCL-WEAPON-01', '예시 프리셋', '논란무기')
+ON CONFLICT (symbol) DO NOTHING;
+
 -- ── ua_ai_configs ─────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ua_ai_configs (
     user_id     UUID          NOT NULL,
