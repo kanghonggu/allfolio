@@ -58,6 +58,8 @@ object MonthlyChangeCalculator {
             }
             val qtyEnd = running
 
+            // long-only 가정: 3분류에 안 맞는 케이스(예: qtyBefore≤0 & qtyEnd≤0 & 기간 매수 없는 orphan 매도)는
+            // 정상 포트폴리오에선 발생하지 않아 의도적으로 미분류(드롭)한다.
             when {
                 qtyBefore.signum() <= 0 && qtyEnd.signum() > 0 && firstBuyInPeriod != null ->
                     newEntries += NewEntry(sym, name, firstBuyInPeriod.tradedAt, firstBuyInPeriod.price)

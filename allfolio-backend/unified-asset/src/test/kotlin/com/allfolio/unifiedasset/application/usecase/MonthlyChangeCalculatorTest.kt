@@ -82,6 +82,35 @@ class MonthlyChangeCalculatorTest {
     }
 
     @Test
+    fun `부분 매도는 수량 변동에 음수 증감으로 잡힌다`() {
+        val m = MonthlyChangeCalculator.build(
+            listOf(
+                t(StockTradeType.BUY, "PS", "10", "100", LocalDate.of(2026, 5, 1)),   // 이전월 보유 10
+                t(StockTradeType.SELL, "PS", "4", "150", LocalDate.of(2026, 6, 15)),   // 당월 부분매도 4
+            ),
+            period, emptyMap(), mapOf("PS" to "부분"),
+        )
+        assertThat(m.qtyChanges).hasSize(1)
+        assertThat(m.qtyChanges[0].netQty).isEqualByComparingTo("-4")
+        assertThat(m.qtyChanges[0].netBuyAmount).isEqualByComparingTo("-600") // 매수 0 − 매도 600
+        assertThat(m.soldOut).isEmpty()
+    }
+
+    @Test
+    fun `초과 매도는 전량 매도로 분류된다`() {
+        val m = MonthlyChangeCalculator.build(
+            listOf(
+                t(StockTradeType.BUY, "OS", "10", "100", LocalDate.of(2026, 5, 1)),
+                t(StockTradeType.SELL, "OS", "15", "150", LocalDate.of(2026, 6, 10)),  // 초과 매도 → qtyEnd<0
+            ),
+            period, mapOf("OS" to BigDecimal("500")), mapOf("OS" to "초과"),
+        )
+        assertThat(m.soldOut).hasSize(1)
+        assertThat(m.soldOut[0].soldOutDate).isEqualTo(LocalDate.of(2026, 6, 10))
+        assertThat(m.qtyChanges).isEmpty()
+    }
+
+    @Test
     fun `당월 거래 없으면 변동 없음이고 배당은 무시된다`() {
         val m = MonthlyChangeCalculator.build(
             listOf(
