@@ -6,11 +6,14 @@ import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.DividendLedgerSource
 import com.allfolio.unifiedasset.application.port.DividendRecord
 import com.allfolio.unifiedasset.application.port.FxConverter
+import com.allfolio.unifiedasset.application.port.TaxRateRepository
 import com.allfolio.unifiedasset.domain.asset.Asset
 import com.allfolio.unifiedasset.domain.asset.AssetCategory
 import com.allfolio.unifiedasset.domain.asset.AssetSourceType
 import com.allfolio.unifiedasset.domain.asset.AssetType
 import com.allfolio.unifiedasset.domain.asset.ValuationMethod
+import com.allfolio.unifiedasset.domain.tax.IncomeType
+import com.allfolio.unifiedasset.domain.tax.TaxRate
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -18,6 +21,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.util.UUID
 
 class DividendInterestReportGeneratorTest {
@@ -58,10 +62,22 @@ class DividendInterestReportGeneratorTest {
     private fun rec(day: Int, name: String, symbol: String?, gross: String, tax: String) =
         DividendRecord(LocalDate.of(2026, 6, day), name, symbol, "한투", "KIS", BigDecimal(gross), BigDecimal(tax))
 
+    private class FakeTaxRateRepo(private val krDividendRate: BigDecimal?) : TaxRateRepository {
+        override fun findAll(): List<TaxRate> = emptyList()
+        override fun findOpen(country: String, incomeType: IncomeType): TaxRate? = null
+        override fun findEffective(country: String, incomeType: IncomeType, date: LocalDate): TaxRate? =
+            if (country == "KR" && incomeType == IncomeType.DIVIDEND && krDividendRate != null)
+                TaxRate(UUID.randomUUID(), "KR", IncomeType.DIVIDEND, krDividendRate,
+                    LocalDate.of(2000,1,1), null, null, LocalDateTime.now(), LocalDateTime.now())
+            else null
+        override fun save(taxRate: TaxRate): TaxRate = taxRate
+    }
+
     private fun generator(
         records: List<DividendRecord>,
         assets: List<Asset> = listOf(asset("100000000")),
-    ) = DividendInterestReportGenerator(FakeLedger(records), FakeAssetRepo(assets), fx)
+        taxRate: BigDecimal? = BigDecimal("15.4"),
+    ) = DividendInterestReportGenerator(FakeLedger(records), FakeAssetRepo(assets), fx, FakeTaxRateRepo(taxRate))
 
     @Test
     fun `summary aggregates gross tax net and effective rate`() {
@@ -181,5 +197,25 @@ class DividendInterestReportGeneratorTest {
         listOf("cadence", "paidMonths", "payCount", "lastPayDate", "ttmNet").forEach {
             assertTrue(first.has(it))
         }
+    }
+
+    @Test
+    fun `byCountry 국내 행은 기대세율과 편차-플래그를 포함한다`() {
+        // 국내(numeric symbol) 배당: gross 10000, tax 2000 → 실효 20% vs 기대 15.4 → 편차 4.60 flag
+        val gen = generator(listOf(rec(3, "삼성전자", "005930", "10000", "2000")), taxRate = BigDecimal("15.4"))
+        val body = mapper.readTree(gen.generate(userId, period).bodyJson)
+        val domestic = body["byCountry"].first { it["country"].asText() == "국내" }
+        assertEquals(15.4, domestic["expectedTaxRate"].asDouble(), 0.001)
+        assertEquals(4.60, domestic["taxDeviationPp"].asDouble(), 0.001)
+        assertTrue(domestic["taxFlagged"].asBoolean())
+    }
+
+    @Test
+    fun `byCountry 해외 행은 기대세율이 null(대조 생략)`() {
+        val gen = generator(listOf(rec(20, "AAPL", "AAPL", "20000", "3000")))
+        val body = mapper.readTree(gen.generate(userId, period).bodyJson)
+        val foreign = body["byCountry"].first { it["country"].asText() == "해외" }
+        assertTrue(foreign["expectedTaxRate"].isNull)
+        assertEquals(false, foreign["taxFlagged"].asBoolean())
     }
 }

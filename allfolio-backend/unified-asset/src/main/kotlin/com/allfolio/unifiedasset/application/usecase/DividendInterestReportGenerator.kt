@@ -8,6 +8,8 @@ import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.DividendLedgerSource
 import com.allfolio.unifiedasset.application.port.DividendRecord
 import com.allfolio.unifiedasset.application.port.FxConverter
+import com.allfolio.unifiedasset.application.port.TaxRateRepository
+import com.allfolio.unifiedasset.domain.tax.IncomeType
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.springframework.stereotype.Component
 import java.math.BigDecimal
@@ -20,14 +22,16 @@ import java.util.UUID
  * R-03 배당·이자 보고서 생성 엔진 (R1 #38 BE).
  * ua_stock_trades DIVIDEND 행의 세전(total_amount)·원천징수(tax)·세후(차액)를 본문에 고정.
  * 금액은 KRW 취급(통화 컬럼 부재). 배당 0건은 예외가 아닌 유효한 0 보고서.
- * 배당 캘린더(지급 이력 패턴, 사실형) 포함. 후속: 외부 확정 지급일·기대세율 비교.
- * v1 제외: 세율 마스터·기대세율 비교, 이자.
+ * 배당 캘린더(지급 이력 패턴, 사실형) 포함. 후속: 외부 확정 지급일.
+ * 기대세율 비교(국내 KR, ±0.5%p ⚠) 포함. 후속: 해외 국가 매핑·이자 대조.
+ * v1 제외: 이자.
  */
 @Component
 class DividendInterestReportGenerator(
     private val ledger: DividendLedgerSource,
     private val assetRepository: AssetRepository,
     private val fx: FxConverter,
+    private val taxRates: TaxRateRepository,
 ) : ReportBodyGenerator {
 
     override val type = ReportType.DIVIDEND_INTEREST
@@ -73,9 +77,16 @@ class DividendInterestReportGenerator(
         val byCountry = records.groupBy { if (it.symbol?.matches(numericSymbol) == true) "국내" else "해외" }
             .map { (country, rs) ->
                 val g = rs.sum { it.gross }; val t = rs.sum { it.tax }
+                val effRate = pct(t, g)
+                val iso = ExpectedTaxComparison.isoOf(country)
+                val expected = iso?.let { taxRates.findEffective(it, IncomeType.DIVIDEND, period.end)?.rate }
+                val cmp = ExpectedTaxComparison.compare(effRate, expected)
                 mapOf(
                     "country" to country, "gross" to g, "tax" to t, "net" to (g - t),
-                    "effectiveTaxRate" to pct(t, g),
+                    "effectiveTaxRate" to effRate,
+                    "expectedTaxRate" to cmp.expectedRate,
+                    "taxDeviationPp" to cmp.deviationPp,
+                    "taxFlagged" to cmp.flagged,
                 )
             }.sortedByDescending { it["gross"] as BigDecimal }
 
