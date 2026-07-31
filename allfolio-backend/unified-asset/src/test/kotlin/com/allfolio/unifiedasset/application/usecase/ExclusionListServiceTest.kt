@@ -1,8 +1,10 @@
 package com.allfolio.unifiedasset.application.usecase
 
 import com.allfolio.unifiedasset.application.port.ExclusionListRepository
+import com.allfolio.unifiedasset.application.port.ExclusionPresetRepository
 import com.allfolio.unifiedasset.domain.exclusion.ExclusionItem
 import com.allfolio.unifiedasset.domain.exclusion.ExclusionList
+import com.allfolio.unifiedasset.domain.exclusion.ExclusionPreset
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -11,6 +13,22 @@ import java.time.LocalDateTime
 import java.util.UUID
 
 class ExclusionListServiceTest {
+
+    private class FakePresetRepo : ExclusionPresetRepository {
+        private val now = LocalDateTime.now()
+        val store = mutableListOf(
+            ExclusionPreset(UUID.randomUUID(), "EXCL-COAL-01", "예시 프리셋", "석탄", null, now, now),
+            ExclusionPreset(UUID.randomUUID(), "EXCL-WEAPON-01", "예시 프리셋", "논란무기", null, now, now),
+        )
+        override fun findAll() = store.toList()
+        override fun findBySymbol(symbol: String) = store.firstOrNull { it.symbol == symbol }
+        override fun save(preset: ExclusionPreset): ExclusionPreset {
+            store.removeIf { it.id == preset.id }
+            store.add(preset)
+            return preset
+        }
+        override fun delete(id: UUID) { store.removeIf { it.id == id } }
+    }
 
     private class FakeRepo : ExclusionListRepository {
         val lists = mutableListOf<ExclusionList>()
@@ -28,7 +46,8 @@ class ExclusionListServiceTest {
 
     private val user = UUID.randomUUID()
     private val other = UUID.randomUUID()
-    private fun svc(repo: ExclusionListRepository = FakeRepo()) = ExclusionListService(repo) to repo
+    private fun svc(repo: ExclusionListRepository = FakeRepo(), presetRepo: ExclusionPresetRepository = FakePresetRepo()) =
+        ExclusionListService(repo, presetRepo) to repo
 
     @Test
     fun `리스트를 생성하고 조회한다`() {

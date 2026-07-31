@@ -4,6 +4,7 @@ import com.allfolio.report.domain.archive.ReportPeriod
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.ExclusionListRepository
+import com.allfolio.unifiedasset.application.port.ExclusionPresetRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.application.port.StockTradeRepository
 import com.allfolio.unifiedasset.domain.account.Account
@@ -19,6 +20,7 @@ import com.allfolio.unifiedasset.domain.asset.AssetType
 import com.allfolio.unifiedasset.domain.asset.ValuationMethod
 import com.allfolio.unifiedasset.domain.exclusion.ExclusionItem
 import com.allfolio.unifiedasset.domain.exclusion.ExclusionList
+import com.allfolio.unifiedasset.domain.exclusion.ExclusionPreset
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -56,6 +58,21 @@ class EsgScreeningReportGeneratorTest {
             quantity = BigDecimal.ONE, purchasePrice = BigDecimal(current), currentValue = BigDecimal(current),
             currency = currency, valuationMethod = ValuationMethod.MARKET_PRICE,
         )
+
+    private class FakePresetRepo(private val presets: List<ExclusionPreset>) : ExclusionPresetRepository {
+        override fun findAll() = presets
+        override fun findBySymbol(symbol: String) = presets.firstOrNull { it.symbol == symbol }
+        override fun save(preset: ExclusionPreset) = preset
+        override fun delete(id: UUID) {}
+    }
+
+    private fun defaultPresets(): List<ExclusionPreset> {
+        val now = LocalDateTime.now()
+        return listOf(
+            ExclusionPreset(UUID.randomUUID(), "EXCL-COAL-01", "예시 프리셋", "석탄", null, now, now),
+            ExclusionPreset(UUID.randomUUID(), "EXCL-WEAPON-01", "예시 프리셋", "논란무기", null, now, now),
+        )
+    }
 
     private class FakeExclusionRepo(private val lists: List<ExclusionList>) : ExclusionListRepository {
         override fun findByUser(userId: UUID) = lists.filter { it.userId == userId }
@@ -106,7 +123,10 @@ class EsgScreeningReportGeneratorTest {
         exclusion: ExclusionListRepository = FakeExclusionRepo(emptyList()),
         accounts: List<Account> = emptyList(),
         trades: List<StockTrade> = emptyList(),
-    ) = EsgScreeningReportGenerator(FakeAssetRepo(assets), fx, exclusion, FakeAccountRepo(accounts), FakeStockTradeRepo(trades))
+        presets: List<ExclusionPreset> = defaultPresets(),
+    ) = EsgScreeningReportGenerator(
+        FakeAssetRepo(assets), fx, exclusion, FakeAccountRepo(accounts), FakeStockTradeRepo(trades), FakePresetRepo(presets),
+    )
 
     private fun standardAssets() = listOf(
         asset("삼성전자", "005930", "8000000"),
