@@ -14,6 +14,16 @@ export interface CashflowByTypeRow {
   direction: 'IN' | 'OUT'
 }
 
+export interface CashflowReconciliation {
+  openingBalance: number
+  changes: CashflowByTypeRow[]
+  closingCalculated: number
+  actualCash: number
+  difference: number
+  reconcilable: boolean
+  reconciled: boolean
+}
+
 export interface CashflowMonthly {
   month: string              // "YYYY-MM"
   inflow: number
@@ -34,4 +44,5 @@ export interface CashflowReportBody {
   byType: CashflowByTypeRow[]
   monthly: CashflowMonthly[]
   details: CashflowDetail[]
+  reconciliation?: CashflowReconciliation
 }

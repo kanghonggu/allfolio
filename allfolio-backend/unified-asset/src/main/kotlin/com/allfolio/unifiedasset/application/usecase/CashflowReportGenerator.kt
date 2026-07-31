@@ -5,9 +5,13 @@ import com.allfolio.report.application.ReportBodyGenerator
 import com.allfolio.report.domain.archive.ReportPeriod
 import com.allfolio.report.domain.archive.ReportType
 import com.allfolio.unifiedasset.application.port.AccountRepository
+import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.CashFlowRepository
 import com.allfolio.unifiedasset.application.port.CashflowTradeSource
+import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.application.port.TradeCashRecord
+import com.allfolio.unifiedasset.domain.asset.AssetType
+import com.allfolio.unifiedasset.domain.cashflow.CashFlow
 import com.allfolio.unifiedasset.domain.cashflow.FlowType
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.springframework.stereotype.Component
@@ -19,13 +23,16 @@ import java.util.UUID
  * R-06 현금흐름 보고서 생성 엔진 (R2 #41 BE).
  * cash_flow(입금/출금) + ua_stock_trades(매수/매도/배당/수수료)를 유형별 분류·집계.
  * 유입: 입금·매도대금·배당·이자 / 유출: 출금·매수대금·수수료·세금. 순흐름 = 유입 − 유출.
- * v1 제외: 기초/기말 조정·정합검증(월초 잔고 부재), 환전·계좌간이체, 특이거래. 0건은 예외 없는 유효 0 보고서.
+ * 기초/기말 현금 조정표·정합검증(전체 이력 재구성) 포함. v1 제외: 환전·계좌간이체, 특이거래.
+ * 0건은 예외 없는 유효 0 보고서.
  */
 @Component
 class CashflowReportGenerator(
     private val cashFlowRepository: CashFlowRepository,
     private val tradeSource: CashflowTradeSource,
     private val accountRepository: AccountRepository,
+    private val assetRepository: AssetRepository,
+    private val fx: FxConverter,
 ) : ReportBodyGenerator {
 
     override val type = ReportType.CASHFLOW
@@ -33,6 +40,17 @@ class CashflowReportGenerator(
 
     private val buyTypes = setOf("BUY", "CREDIT_BUY")
     private val sellTypes = setOf("SELL", "CREDIT_SELL")
+
+    /** flows·trades → 순현금이동(KRW): 입금−출금 + 매도−매수 + 배당 − 수수료·세금. */
+    private fun netCash(fs: List<CashFlow>, ts: List<TradeCashRecord>): BigDecimal {
+        val dep = fs.filter { it.type == FlowType.DEPOSIT }.fold(BigDecimal.ZERO) { a, f -> a + f.amountKrw }
+        val wd = fs.filter { it.type == FlowType.WITHDRAWAL }.fold(BigDecimal.ZERO) { a, f -> a + f.amountKrw }
+        val buy = ts.filter { it.tradeType in buyTypes }.fold(BigDecimal.ZERO) { a, t -> a + t.totalAmount }
+        val sell = ts.filter { it.tradeType in sellTypes }.fold(BigDecimal.ZERO) { a, t -> a + t.totalAmount }
+        val div = ts.filter { it.tradeType == "DIVIDEND" }.fold(BigDecimal.ZERO) { a, t -> a + t.totalAmount }
+        val fees = ts.fold(BigDecimal.ZERO) { a, t -> a + t.fee + t.tax }
+        return dep - wd + sell - buy + div - fees
+    }
 
     override fun generate(userId: UUID, period: ReportPeriod): GeneratedReport {
         val flows = cashFlowRepository.findByUserIdAndPeriod(userId, period.start, period.end)
@@ -52,7 +70,7 @@ class CashflowReportGenerator(
 
         val totalInflow = deposit + sell + dividend
         val totalOutflow = withdrawal + buy + feesTax
-        val netFlow = totalInflow - totalOutflow
+        val netFlow = netCash(flows, trades)   // 기초 재구성과 동일 공식(단일 소스). == totalInflow − totalOutflow
 
         val byType = buildList {
             fun row(type: String, amount: BigDecimal, dir: String) =
@@ -97,11 +115,35 @@ class CashflowReportGenerator(
             mapOf("month" to m, "inflow" to inflow, "outflow" to outflow, "net" to (inflow - outflow))
         }
 
+        val epoch = LocalDate.of(1970, 1, 1)
+        val far = LocalDate.of(9999, 12, 31)
+        val beforeFlows = cashFlowRepository.findByUserIdAndPeriod(userId, epoch, period.start.minusDays(1))
+        val beforeTrades = tradeSource.findTrades(userId, epoch, period.start.minusDays(1))
+        val openingBalance = netCash(beforeFlows, beforeTrades)
+        val closingCalculated = openingBalance + netFlow
+        val actualCash = assetRepository.findByUserId(userId)
+            .filter { it.type == AssetType.CASH }
+            .fold(BigDecimal.ZERO) { a, asset -> a + asset.currentValueInKrw(fx) }
+        val afterFlows = cashFlowRepository.findByUserIdAndPeriod(userId, period.end.plusDays(1), far)
+        val afterTrades = tradeSource.findTrades(userId, period.end.plusDays(1), far)
+        val reconcilable = afterFlows.isEmpty() && afterTrades.isEmpty()
+        val difference = actualCash - closingCalculated
+        val reconciled = reconcilable && difference.abs() < BigDecimal.ONE
+
         val body = mapOf(
             "summary" to mapOf("totalInflow" to totalInflow, "totalOutflow" to totalOutflow, "netFlow" to netFlow),
             "byType" to byType,
             "monthly" to monthly,
             "details" to details,
+            "reconciliation" to mapOf(
+                "openingBalance" to openingBalance,
+                "changes" to byType,
+                "closingCalculated" to closingCalculated,
+                "actualCash" to actualCash,
+                "difference" to difference,
+                "reconcilable" to reconcilable,
+                "reconciled" to reconciled,
+            ),
         )
         val lastDate = (flows.map { it.flowDate } + trades.map { it.tradeDate }).maxOrNull() ?: period.end
         return GeneratedReport(asOfDate = lastDate, bodyJson = mapper.writeValueAsString(body))
