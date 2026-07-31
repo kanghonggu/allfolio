@@ -13,6 +13,7 @@ import { CashflowReconciliation } from '@/components/cashflow-report/CashflowRec
 import { MonthlyCashflowChart } from '@/components/cashflow-report/MonthlyCashflowChart'
 import { CashflowDetails } from '@/components/cashflow-report/CashflowDetails'
 import { SpecialTransactions } from '@/components/cashflow-report/SpecialTransactions'
+import { InternalFlows } from '@/components/cashflow-report/InternalFlows'
 
 export default function CashflowReportDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -77,6 +78,7 @@ export default function CashflowReportDetailPage() {
       <MonthlyCashflowChart rows={body.monthly} />
       <CashflowDetails rows={body.details} />
       {body.specialTransactions && <SpecialTransactions data={body.specialTransactions} />}
+      {body.internalFlows && body.internalFlows.length > 0 && <InternalFlows rows={body.internalFlows} />}
     </div>
   )
 }
