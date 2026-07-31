@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext'
 
 export default function NavBar() {
-  const { initialized, authenticated, userName, userEmail, logout } = useAuth()
+  const { initialized, authenticated, userName, userEmail, logout, isAdmin } = useAuth()
 
   return (
     <nav className="border-b border-gray-800 bg-gray-900">
@@ -24,6 +24,11 @@ export default function NavBar() {
             <Link href="/unified/reports" className="text-sm text-gray-400 hover:text-white transition-colors">
               보고서
             </Link>
+            {isAdmin && (
+              <Link href="/unified/admin/tax-rates" className="text-sm text-amber-400 hover:text-amber-300 transition-colors">
+                세율 마스터
+              </Link>
+            )}
           </>
         )}
 
