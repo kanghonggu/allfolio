@@ -26,6 +26,12 @@ class GlobalExceptionHandler {
         ResponseEntity.status(HttpStatus.BAD_REQUEST)
             .body(mapOf("error" to (e.message ?: "Bad request")))
 
+    /** 대사↔동기화 상호 배제 충돌 (P2 #17) — 일시적 상태라 409로 재시도 유도 */
+    @ExceptionHandler(com.allfolio.reconciliation.application.SyncInProgressException::class)
+    fun handleSyncInProgress(e: com.allfolio.reconciliation.application.SyncInProgressException): ResponseEntity<Map<String, String>> =
+        ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(mapOf("error" to (e.message ?: "Conflict")))
+
     @ExceptionHandler(DataIntegrityViolationException::class)
     fun handleDataIntegrity(e: DataIntegrityViolationException): ResponseEntity<Map<String, String>> {
         log.error("Data integrity violation", e)

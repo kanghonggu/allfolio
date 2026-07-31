@@ -5,6 +5,7 @@ import com.allfolio.common.crypto.requiresSensitiveDataReconnection
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
+import com.allfolio.unifiedasset.application.port.ReconMutex
 import com.allfolio.unifiedasset.application.port.SyncAdapter
 import com.allfolio.unifiedasset.application.port.SyncLogRepository
 import com.allfolio.unifiedasset.domain.account.Account
@@ -34,6 +35,7 @@ class SyncAccountUseCase(
     private val snapshotService: PerformanceSnapshotService,
     private val fx: FxConverter,
     private val syncLogRepository: SyncLogRepository,
+    private val reconMutex: ReconMutex,
 ) : AccountSyncRunner {
     private val log = LoggerFactory.getLogger(javaClass)
     private val adapterMap: Map<AccountProvider, SyncAdapter> by lazy {
@@ -54,6 +56,11 @@ class SyncAccountUseCase(
 
         val adapter = adapterMap[account.provider]
             ?: return SyncResult(accountId, 0, AccountStatus.ERROR, "No adapter for ${account.provider}")
+                .also { record(account, trigger, it) }
+
+        // 대사↔동기화 상호 배제 (#17) — 대사 진행 중이면 계좌 상태는 건드리지 않고 건너뛴다
+        val lockToken = reconMutex.tryAcquire(account.userId)
+            ?: return SyncResult(accountId, 0, AccountStatus.ERROR, "대사가 진행 중이라 동기화를 건너뜁니다")
                 .also { record(account, trigger, it) }
 
         accountRepository.updateStatus(accountId, AccountStatus.SYNCING)
@@ -83,6 +90,8 @@ class SyncAccountUseCase(
             }
             SyncResult(accountId, 0, AccountStatus.ERROR, error)
                 .also { record(account, trigger, it) }
+        } finally {
+            reconMutex.release(account.userId, lockToken)
         }
     }
 

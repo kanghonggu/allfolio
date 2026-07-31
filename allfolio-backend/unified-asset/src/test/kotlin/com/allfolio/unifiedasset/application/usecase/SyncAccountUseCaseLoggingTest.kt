@@ -3,6 +3,7 @@ package com.allfolio.unifiedasset.application.usecase
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
+import com.allfolio.unifiedasset.application.port.ReconMutex
 import com.allfolio.unifiedasset.application.port.SyncAdapter
 import com.allfolio.unifiedasset.application.port.SyncLogRepository
 import com.allfolio.unifiedasset.domain.account.Account
@@ -72,16 +73,35 @@ class SyncAccountUseCaseLoggingTest {
         accountType = AccountType.EXCHANGE, accountName = "t",
     )
 
+    private class FakeMutex(private val acquirable: Boolean = true) : ReconMutex {
+        var released = false
+        override fun tryAcquire(userId: UUID): String? = if (acquirable) "token" else null
+        override fun release(userId: UUID, token: String) { released = true }
+    }
+
+    private class RecordingAccountRepository(private val account: Account?) : AccountRepository {
+        val statusUpdates = mutableListOf<AccountStatus>()
+        override fun save(account: Account): Account = account
+        override fun findById(id: UUID): Account? = account
+        override fun findByUserId(userId: UUID): List<Account> = listOfNotNull(account)
+        override fun findByProviders(providers: Collection<AccountProvider>): List<Account> = emptyList()
+        override fun delete(id: UUID) = Unit
+        override fun updateStatus(id: UUID, status: AccountStatus) { statusUpdates += status }
+    }
+
     private fun useCase(
         account: Account?, logs: InMemorySyncLogRepository,
         adapter: SyncAdapter? = account?.let { FixedSyncAdapter(it.provider) { emptyList() } },
+        mutex: ReconMutex = FakeMutex(),
+        accountRepository: AccountRepository = FixedAccountRepository(account),
     ) = SyncAccountUseCase(
-        accountRepository = FixedAccountRepository(account),
+        accountRepository = accountRepository,
         assetRepository = EmptyAssetRepository(),
         adapters = listOfNotNull(adapter),
         snapshotService = mock(PerformanceSnapshotService::class.java),
         fx = fx,
         syncLogRepository = logs,
+        reconMutex = mutex,
     )
 
     @Test
@@ -125,6 +145,33 @@ class SyncAccountUseCaseLoggingTest {
         val result = useCase(null, logs).execute(UUID.randomUUID())
         assertEquals(AccountStatus.ERROR, result.status)
         assertTrue(logs.saved.isEmpty())
+    }
+
+    @Test
+    fun `대사 진행 중이면 계좌 상태를 건드리지 않고 건너뛰되 로그는 남긴다`() {
+        val acct = account()
+        val logs = InMemorySyncLogRepository()
+        val repo = RecordingAccountRepository(acct)
+        val result = useCase(acct, logs, mutex = FakeMutex(acquirable = false), accountRepository = repo)
+            .execute(acct.id)
+
+        assertEquals(AccountStatus.ERROR, result.status)
+        assertTrue(result.error!!.contains("대사"))
+        assertTrue(repo.statusUpdates.isEmpty())
+        assertEquals(SyncLogStatus.ERROR, logs.saved.single().status)
+    }
+
+    @Test
+    fun `동기화 성공·실패 모두 락을 해제한다`() {
+        val acct = account()
+        val mutex = FakeMutex()
+        useCase(acct, InMemorySyncLogRepository(), mutex = mutex).execute(acct.id)
+        assertTrue(mutex.released)
+
+        val mutex2 = FakeMutex()
+        val throwing = FixedSyncAdapter(acct.provider) { throw IllegalStateException("boom") }
+        useCase(acct, InMemorySyncLogRepository(), adapter = throwing, mutex = mutex2).execute(acct.id)
+        assertTrue(mutex2.released)
     }
 
     @Test
