@@ -60,6 +60,18 @@ export interface CashflowSpecialTransactions {
   unclassified: CashflowUnclassified[]
 }
 
+export interface CashflowInternalFlow {
+  date: string
+  kind: string
+  fromAccount: string | null
+  toAccount: string | null
+  fromCurrency: string | null
+  toCurrency: string | null
+  fromAmount: number | null
+  toAmount: number | null
+  amountKrw: number
+}
+
 export interface CashflowReportBody {
   summary: CashflowSummary
   byType: CashflowByTypeRow[]
@@ -67,4 +79,5 @@ export interface CashflowReportBody {
   details: CashflowDetail[]
   reconciliation?: CashflowReconciliation
   specialTransactions?: CashflowSpecialTransactions
+  internalFlows?: CashflowInternalFlow[]
 }
