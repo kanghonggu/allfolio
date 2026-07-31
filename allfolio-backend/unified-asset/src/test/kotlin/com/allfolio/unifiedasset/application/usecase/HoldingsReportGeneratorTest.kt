@@ -139,6 +139,19 @@ class HoldingsReportGeneratorTest {
     }
 
     @Test
+    fun `byRegion은 통화 파생 지역으로 평가액을 집계한다`() {
+        val body = mapper.readTree(generator(standardAssets(), standardAccounts()).generate(userId, period).bodyJson)
+        val regions = body["byRegion"]
+        val labels = regions.map { it["region"].asText() }
+        assertEquals(true, labels.contains("국내"))
+        assertEquals(true, labels.contains("미국"))
+        val first = regions.first()
+        assertEquals(true, first.has("valueKrw"))
+        assertEquals(true, first.has("weight"))
+        assertEquals(true, first.has("holdingCount"))
+    }
+
+    @Test
     fun `usd holding keeps native currency values and converts valueKrw`() {
         val body = mapper.readTree(generator(standardAssets(), standardAccounts()).generate(userId, period).bodyJson)
         val apple = body["holdings"].first { it["name"].asText() == "Apple" }
