@@ -32,6 +32,12 @@ class GlobalExceptionHandler {
         ResponseEntity.status(HttpStatus.CONFLICT)
             .body(mapOf("error" to (e.message ?: "Conflict")))
 
+    /** 마감 워크플로우 실행 중복 (P3 #23) — 409 */
+    @ExceptionHandler(com.allfolio.workflow.application.ClosingInProgressException::class)
+    fun handleClosingInProgress(e: com.allfolio.workflow.application.ClosingInProgressException): ResponseEntity<Map<String, String>> =
+        ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(mapOf("error" to (e.message ?: "Conflict")))
+
     @ExceptionHandler(DataIntegrityViolationException::class)
     fun handleDataIntegrity(e: DataIntegrityViolationException): ResponseEntity<Map<String, String>> {
         log.error("Data integrity violation", e)
