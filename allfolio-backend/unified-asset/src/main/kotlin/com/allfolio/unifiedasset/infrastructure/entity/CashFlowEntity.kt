@@ -27,9 +27,11 @@ class CashFlowEntity(
     @Column(name = "amount_krw", nullable = false, precision = 30, scale = 10) val amountKrw: BigDecimal,
     @Column(name = "memo", length = 500) val memo: String?,
     @Column(name = "created_at", nullable = false) val createdAt: LocalDateTime,
+    @Column(name = "link_id") val linkId: UUID?,
 ) {
     fun toDomain(): CashFlow = CashFlow.reconstruct(
         id, userId, accountId, flowDate, flowType, amount, currency, amountKrw, memo, createdAt,
+        linkId = linkId,
     )
 
     companion object {
@@ -38,6 +40,7 @@ class CashFlowEntity(
             flowDate = domain.flowDate, flowType = domain.type, amount = domain.amount,
             currency = domain.currency, amountKrw = domain.amountKrw,
             memo = domain.memo, createdAt = domain.createdAt,
+            linkId = domain.linkId,
         )
     }
 }
