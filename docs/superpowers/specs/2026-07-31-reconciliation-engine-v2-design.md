@@ -130,7 +130,8 @@ interface ReconRule {
 
 ### 4. 직접 비교 대사 (#14·#15 통합)
 
-1. **정규화**: 양쪽 user×symbol 수량 집계 로드 — symbol 대문자·트림, quantity scale 10, 수량 0 행 제외(청산 vs 브로커 미표시 오탐 방지). 내부 측 symbol은 `position_daily ⋈ 자산 마스터`로 해석.
+1. **정규화**: 양쪽 user×symbol 수량 집계 로드 — symbol 대문자·트림, quantity scale 10, 수량 0 행 제외(청산 vs 브로커 미표시 오탐 방지).
+   - **내부 측 symbol 해석(착수 시점 정정)**: 자산 마스터 테이블은 존재하지 않는다. assetId는 브로커별 결정론 파생 — `KIS:{code}`·`toss-asset:{code}`·`samsung-asset:{isin}`·`binance-asset:{base}` 등을 `UUID.nameUUIDFromBytes`한 값(원본: KisTradeMapper 등). 따라서 **외부(ua_assets) 심볼 × 계좌 provider로 기대 assetId를 파생해 내부(position_daily) 행과 매칭**한다(역방향 해석 불가 — 단방향 해시). 파생 규칙은 reconciliation 모듈 `AssetIdDeriver`에 재구현(코드 의존 없이 데이터 계약으로 간주, KDoc에 원본 파일 명시). 어느 외부 심볼과도 매칭되지 않는 내부 asset_id는 UUID 그대로 `MISSING_EXTERNAL` detail에 기록(extras에 assetId).
 2. **비교(단일 패스)**: 심볼 합집합 순회 —
    - 양쪽 존재 & quantity 불일치 → `VALUE_MISMATCH` (internal, external, diff 기록)
    - 내부만 존재 → `MISSING_EXTERNAL`, 외부만 존재 → `MISSING_INTERNAL`

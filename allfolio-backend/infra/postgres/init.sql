@@ -296,6 +296,70 @@ ALTER TABLE IF EXISTS ua_accounts
     ALTER COLUMN api_key TYPE VARCHAR(2048),
     ALTER COLUMN api_secret TYPE VARCHAR(2048);
 
+-- ── recon_* : 대사·검증 엔진 (P2 #12) ─────────────────────────
+-- 룰은 코드(Spring 빈)라 룰 테이블 없음. rule_code 문자열로 식별.
+CREATE TABLE IF NOT EXISTS recon_run (
+    id              UUID         NOT NULL,
+    user_id         UUID         NOT NULL,
+    run_date        DATE         NOT NULL,
+    run_type        VARCHAR(20)  NOT NULL,  -- VALIDATION / RECONCILIATION / ALL
+    status          VARCHAR(20)  NOT NULL,  -- RUNNING / COMPLETED / FAILED
+    trigger_type    VARCHAR(20)  NOT NULL,  -- MANUAL / SCHEDULED
+    internal_as_of  DATE,
+    external_as_of  TIMESTAMP,
+    started_at      TIMESTAMP    NOT NULL DEFAULT NOW(),
+    finished_at     TIMESTAMP,
+    CONSTRAINT pk_recon_run PRIMARY KEY (id)
+);
+CREATE INDEX IF NOT EXISTS idx_recon_run_user ON recon_run (user_id, run_date DESC);
+
+CREATE TABLE IF NOT EXISTS recon_result_summary (
+    id              UUID         NOT NULL,
+    run_id          UUID         NOT NULL,
+    rule_code       VARCHAR(50)  NOT NULL,
+    status          VARCHAR(20)  NOT NULL,  -- PASSED / DIFF_FOUND / FAILED
+    checked_cnt     INT          NOT NULL DEFAULT 0,
+    diff_cnt        INT          NOT NULL DEFAULT 0,
+    kd_absorbed_cnt INT          NOT NULL DEFAULT 0,
+    error_msg       VARCHAR(500),
+    elapsed_ms      BIGINT       NOT NULL DEFAULT 0,
+    CONSTRAINT pk_recon_result_summary PRIMARY KEY (id)
+);
+CREATE INDEX IF NOT EXISTS idx_recon_summary_run ON recon_result_summary (run_id);
+
+CREATE TABLE IF NOT EXISTS recon_result_detail (
+    id             UUID           NOT NULL,
+    summary_id     UUID           NOT NULL,
+    symbol         VARCHAR(50),
+    field_name     VARCHAR(30),
+    diff_type      VARCHAR(30)    NOT NULL,  -- VALUE_MISMATCH / MISSING_INTERNAL / MISSING_EXTERNAL / RULE_VIOLATION
+    internal_value NUMERIC(30,10),
+    external_value NUMERIC(30,10),
+    diff_value     NUMERIC(30,10),
+    extras         TEXT,                     -- JSON 문자열
+    kd_id          UUID,                     -- 흡수한 KD (숨김 아님)
+    CONSTRAINT pk_recon_result_detail PRIMARY KEY (id)
+);
+CREATE INDEX IF NOT EXISTS idx_recon_detail_summary ON recon_result_detail (summary_id);
+
+-- Known Difference — USER-scoped, 수정=버저닝(기존 행 apld_end_dt 마감 + 신규 INSERT)
+CREATE TABLE IF NOT EXISTS recon_kd (
+    id            UUID           NOT NULL,
+    user_id       UUID           NOT NULL,
+    kd_code       VARCHAR(50)    NOT NULL,
+    target_symbol VARCHAR(50),              -- null = 와일드카드
+    target_field  VARCHAR(30),              -- null = 와일드카드
+    value_type    VARCHAR(10)    NOT NULL,  -- ABS / RATIO
+    allow_value   NUMERIC(30,10) NOT NULL,
+    reason        VARCHAR(300)   NOT NULL,
+    apld_strt_dt  DATE           NOT NULL,
+    apld_end_dt   DATE           NOT NULL DEFAULT '9999-12-31',
+    use_yn        BOOLEAN        NOT NULL DEFAULT TRUE,
+    created_at    TIMESTAMP      NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_recon_kd PRIMARY KEY (id)
+);
+CREATE INDEX IF NOT EXISTS idx_recon_kd_user ON recon_kd (user_id);
+
 -- ── ua_sync_logs ──────────────────────────────────────────────
 -- 계좌 동기화 실행 이력 (AF-9). trigger는 SQL 예약어라 trigger_type.
 CREATE TABLE IF NOT EXISTS ua_sync_logs (
