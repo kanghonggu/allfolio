@@ -21,7 +21,7 @@ import java.util.UUID
 
 /**
  * Outbox·DLQ 운영 모니터링 API (AF-7, MN-700).
- * `/api/admin/**` → hasRole(ADMIN) 게이트(SecurityConfig)로 보호.
+ * /api/admin 하위 전체 → hasRole(ADMIN) 게이트(SecurityConfig)로 보호.
  */
 @RestController
 @RequestMapping("/api/admin/ops")
