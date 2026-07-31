@@ -11,7 +11,8 @@ import java.util.UUID
 class ExclusionPresetRepositoryImpl(
     private val jpa: ExclusionPresetJpaRepository,
 ) : ExclusionPresetRepository {
-    override fun findAll(): List<ExclusionPreset> = jpa.findAll().map { it.toDomain() }
+    // symbol 정렬로 결정적 순서 보장(프리셋 뷰·스크리닝 lookup 시드 순서 안정).
+    override fun findAll(): List<ExclusionPreset> = jpa.findAll().map { it.toDomain() }.sortedBy { it.symbol }
 
     override fun findBySymbol(symbol: String): ExclusionPreset? = jpa.findBySymbol(symbol)?.toDomain()
 
