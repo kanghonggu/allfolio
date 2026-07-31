@@ -1,5 +1,6 @@
 package com.allfolio.reconciliation.application
 
+import com.allfolio.reconciliation.application.rules.KdMatcher
 import com.allfolio.reconciliation.domain.ReconTrigger
 import com.allfolio.reconciliation.domain.RunStatus
 import com.allfolio.reconciliation.domain.RunType
@@ -7,6 +8,7 @@ import com.allfolio.reconciliation.domain.SummaryStatus
 import com.allfolio.reconciliation.infrastructure.entity.ReconResultDetailEntity
 import com.allfolio.reconciliation.infrastructure.entity.ReconResultSummaryEntity
 import com.allfolio.reconciliation.infrastructure.entity.ReconRunEntity
+import com.allfolio.reconciliation.infrastructure.jpa.ReconKdJpaRepository
 import com.allfolio.reconciliation.infrastructure.jpa.ReconResultDetailJpaRepository
 import com.allfolio.reconciliation.infrastructure.jpa.ReconResultSummaryJpaRepository
 import com.allfolio.reconciliation.infrastructure.jpa.ReconRunJpaRepository
@@ -34,6 +36,7 @@ class ReconRunService(
     private val runRepository: ReconRunJpaRepository,
     private val summaryRepository: ReconResultSummaryJpaRepository,
     private val detailRepository: ReconResultDetailJpaRepository,
+    private val kdRepository: ReconKdJpaRepository,
     private val jdbc: JdbcTemplate,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -50,29 +53,34 @@ class ReconRunService(
         )
 
         val targets = rules.filter { runType == RunType.ALL || it.kind.matches(runType) }
+        val activeKds = kdRepository.findByUserIdAndUseYnTrue(userId)
         var failedCount = 0
 
         targets.forEach { rule ->
             val startedAt = System.currentTimeMillis()
             runCatching { rule.execute(ReconContext(userId, runDate)) }
                 .onSuccess { result ->
+                    // KD 흡수 판정 — diff 행은 남기고 kdId만 기록(숨김 아님), 집계는 분리
+                    val absorbed = result.diffs.map { d -> d to KdMatcher.match(activeKds, d, runDate)?.id }
                     val summary = summaryRepository.save(
                         ReconResultSummaryEntity(
                             runId = run.id, ruleCode = rule.code,
                             status = if (result.diffs.isEmpty()) SummaryStatus.PASSED else SummaryStatus.DIFF_FOUND,
                             checkedCnt = result.checkedCnt,
                             diffCnt = result.diffs.size,
+                            kdAbsorbedCnt = absorbed.count { it.second != null },
                             elapsedMs = System.currentTimeMillis() - startedAt,
                         )
                     )
-                    if (result.diffs.isNotEmpty()) {
+                    if (absorbed.isNotEmpty()) {
                         detailRepository.saveAll(
-                            result.diffs.take(MAX_DETAILS).map { d ->
+                            absorbed.take(MAX_DETAILS).map { (d, kdId) ->
                                 ReconResultDetailEntity(
                                     summaryId = summary.id, symbol = d.symbol, fieldName = d.fieldName,
                                     diffType = d.diffType, internalValue = d.internalValue,
                                     externalValue = d.externalValue, diffValue = d.diffValue,
                                     extras = d.extras.takeIf { it.isNotEmpty() }?.let { MAPPER.writeValueAsString(it) },
+                                    kdId = kdId,
                                 )
                             }
                         )

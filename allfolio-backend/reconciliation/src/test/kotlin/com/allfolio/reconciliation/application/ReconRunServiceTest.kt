@@ -5,9 +5,12 @@ import com.allfolio.reconciliation.domain.ReconTrigger
 import com.allfolio.reconciliation.domain.RunStatus
 import com.allfolio.reconciliation.domain.RunType
 import com.allfolio.reconciliation.domain.SummaryStatus
+import com.allfolio.reconciliation.domain.KdValueType
+import com.allfolio.reconciliation.infrastructure.entity.ReconKdEntity
 import com.allfolio.reconciliation.infrastructure.entity.ReconResultDetailEntity
 import com.allfolio.reconciliation.infrastructure.entity.ReconResultSummaryEntity
 import com.allfolio.reconciliation.infrastructure.entity.ReconRunEntity
+import com.allfolio.reconciliation.infrastructure.jpa.ReconKdJpaRepository
 import com.allfolio.reconciliation.infrastructure.jpa.ReconResultDetailJpaRepository
 import com.allfolio.reconciliation.infrastructure.jpa.ReconResultSummaryJpaRepository
 import com.allfolio.reconciliation.infrastructure.jpa.ReconRunJpaRepository
@@ -53,15 +56,21 @@ class ReconRunServiceTest {
         override fun execute(ctx: ReconContext): RuleResult = result()
     }
 
+    private class FakeKdRepo(private val kds: List<ReconKdEntity> = emptyList()) :
+        ReconKdJpaRepository by mock(ReconKdJpaRepository::class.java) {
+        override fun findByUserIdAndUseYnTrue(userId: UUID): List<ReconKdEntity> = kds
+    }
+
     private fun service(
         rules: List<ReconRule>,
         runRepo: RecordingRunRepo = RecordingRunRepo(),
         summaryRepo: RecordingSummaryRepo = RecordingSummaryRepo(),
         detailRepo: RecordingDetailRepo = RecordingDetailRepo(),
+        kds: List<ReconKdEntity> = emptyList(),
     ): Triple<ReconRunService, RecordingSummaryRepo, RecordingDetailRepo> {
         // 미스텁 mock: external_as_of 조회는 서비스가 runCatching으로 감싸 null 허용
         val jdbc = mock(JdbcTemplate::class.java)
-        return Triple(ReconRunService(rules, runRepo, summaryRepo, detailRepo, jdbc), summaryRepo, detailRepo)
+        return Triple(ReconRunService(rules, runRepo, summaryRepo, detailRepo, FakeKdRepo(kds), jdbc), summaryRepo, detailRepo)
     }
 
     @Test
@@ -122,6 +131,33 @@ class ReconRunServiceTest {
 
         assertEquals(listOf("V"), summaries.saved.map { it.ruleCode })
         assertTrue(!reconRan)
+    }
+
+    @Test
+    fun `KD 허용치 이내 diff는 kdId가 기록되고 흡수 건수가 분리 집계된다`() {
+        val kd = ReconKdEntity(
+            userId = userId, kdCode = "KD-QTY", targetSymbol = "AAPL", targetField = "quantity",
+            valueType = KdValueType.ABS, allowValue = BigDecimal("5"), reason = "수수료 단수차",
+            apldStrtDt = runDate.minusDays(1),
+        )
+        val small = RuleDiff(symbol = "AAPL", fieldName = "quantity", diffType = DiffType.VALUE_MISMATCH,
+            internalValue = BigDecimal("8"), externalValue = BigDecimal("10"), diffValue = BigDecimal("2"))
+        val big = RuleDiff(symbol = "AAPL", fieldName = "quantity", diffType = DiffType.VALUE_MISMATCH,
+            internalValue = BigDecimal("1"), externalValue = BigDecimal("10"), diffValue = BigDecimal("9"))
+        val (svc, summaries, details) = service(
+            rules = listOf(rule("R") { RuleResult(2, listOf(small, big)) }),
+            kds = listOf(kd),
+        )
+
+        svc.execute(userId, runDate, RunType.ALL, ReconTrigger.MANUAL)
+
+        val summary = summaries.saved.single()
+        assertEquals(SummaryStatus.DIFF_FOUND, summary.status)
+        assertEquals(2, summary.diffCnt)
+        assertEquals(1, summary.kdAbsorbedCnt)
+        assertEquals(2, details.saved.size)
+        assertEquals(kd.id, details.saved.first { it.diffValue == BigDecimal("2") }.kdId)
+        assertEquals(null, details.saved.first { it.diffValue == BigDecimal("9") }.kdId)
     }
 
     @Test
