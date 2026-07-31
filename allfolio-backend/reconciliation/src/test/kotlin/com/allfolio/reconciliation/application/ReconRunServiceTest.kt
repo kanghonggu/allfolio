@@ -61,16 +61,23 @@ class ReconRunServiceTest {
         override fun findByUserIdAndUseYnTrue(userId: UUID): List<ReconKdEntity> = kds
     }
 
+    private class FakeLock(private val acquirable: Boolean = true) : ReconLockPort {
+        var released = false
+        override fun tryAcquire(userId: UUID): String? = if (acquirable) "token" else null
+        override fun release(userId: UUID, token: String) { released = true }
+    }
+
     private fun service(
         rules: List<ReconRule>,
         runRepo: RecordingRunRepo = RecordingRunRepo(),
         summaryRepo: RecordingSummaryRepo = RecordingSummaryRepo(),
         detailRepo: RecordingDetailRepo = RecordingDetailRepo(),
         kds: List<ReconKdEntity> = emptyList(),
+        lock: FakeLock = FakeLock(),
     ): Triple<ReconRunService, RecordingSummaryRepo, RecordingDetailRepo> {
         // 미스텁 mock: external_as_of 조회는 서비스가 runCatching으로 감싸 null 허용
         val jdbc = mock(JdbcTemplate::class.java)
-        return Triple(ReconRunService(rules, runRepo, summaryRepo, detailRepo, FakeKdRepo(kds), jdbc), summaryRepo, detailRepo)
+        return Triple(ReconRunService(rules, runRepo, summaryRepo, detailRepo, FakeKdRepo(kds), lock, jdbc), summaryRepo, detailRepo)
     }
 
     @Test
@@ -158,6 +165,26 @@ class ReconRunServiceTest {
         assertEquals(2, details.saved.size)
         assertEquals(kd.id, details.saved.first { it.diffValue == BigDecimal("2") }.kdId)
         assertEquals(null, details.saved.first { it.diffValue == BigDecimal("9") }.kdId)
+    }
+
+    @Test
+    fun `락 획득 실패 시 SyncInProgressException — run을 만들지 않는다`() {
+        val runRepo = RecordingRunRepo()
+        val lock = FakeLock(acquirable = false)
+        val svc = service(listOf(rule("R") { RuleResult(1, emptyList()) }), runRepo = runRepo, lock = lock).first
+
+        org.junit.jupiter.api.Assertions.assertThrows(SyncInProgressException::class.java) {
+            svc.execute(userId, runDate, RunType.ALL, ReconTrigger.MANUAL)
+        }
+        assertTrue(runRepo.saved.isEmpty())
+    }
+
+    @Test
+    fun `룰이 예외를 던져도 락은 해제된다`() {
+        val lock = FakeLock()
+        val svc = service(listOf(rule("B") { throw RuntimeException("x") }), lock = lock).first
+        svc.execute(userId, runDate, RunType.ALL, ReconTrigger.MANUAL)
+        assertTrue(lock.released)
     }
 
     @Test

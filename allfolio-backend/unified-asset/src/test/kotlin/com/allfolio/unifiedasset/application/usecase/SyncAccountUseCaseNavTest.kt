@@ -55,6 +55,7 @@ class SyncAccountUseCaseNavTest {
             snapshotService = snapshot,
             fx = fx,
             syncLogRepository = NoopSyncLogRepository(),
+            reconMutex = NoopReconMutex(),
         )
 
         service.execute(account.id)
@@ -115,5 +116,10 @@ class SyncAccountUseCaseNavTest {
         override fun findByAccountId(accountId: UUID, limit: Int): List<SyncLog> = emptyList()
         override fun findLatestByUserId(userId: UUID): Map<UUID, SyncLog> = emptyMap()
         override fun deleteByAccountId(accountId: UUID) = Unit
+    }
+
+    private class NoopReconMutex : com.allfolio.unifiedasset.application.port.ReconMutex {
+        override fun tryAcquire(userId: UUID): String? = "token"
+        override fun release(userId: UUID, token: String) = Unit
     }
 }

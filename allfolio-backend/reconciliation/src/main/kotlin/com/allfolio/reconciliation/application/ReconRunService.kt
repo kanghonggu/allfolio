@@ -37,12 +37,24 @@ class ReconRunService(
     private val summaryRepository: ReconResultSummaryJpaRepository,
     private val detailRepository: ReconResultDetailJpaRepository,
     private val kdRepository: ReconKdJpaRepository,
+    private val lock: ReconLockPort,
     private val jdbc: JdbcTemplate,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
     @Transactional
     fun execute(userId: UUID, runDate: LocalDate, runType: RunType, trigger: ReconTrigger): ReconRunEntity {
+        // 동기화↔대사 상호 배제 — 획득 실패(동기화 진행 중·Redis 장애) 시 안전 우선 거부 (#17)
+        val lockToken = lock.tryAcquire(userId)
+            ?: throw SyncInProgressException("동기화가 진행 중이라 대사를 시작할 수 없습니다. 잠시 후 다시 시도해주세요.")
+        try {
+            return doExecute(userId, runDate, runType, trigger)
+        } finally {
+            lock.release(userId, lockToken)
+        }
+    }
+
+    private fun doExecute(userId: UUID, runDate: LocalDate, runType: RunType, trigger: ReconTrigger): ReconRunEntity {
         val run = runRepository.save(
             ReconRunEntity(
                 userId = userId, runDate = runDate, runType = runType,

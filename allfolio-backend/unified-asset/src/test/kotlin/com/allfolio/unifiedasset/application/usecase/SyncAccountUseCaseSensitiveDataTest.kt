@@ -34,6 +34,7 @@ class SyncAccountUseCaseSensitiveDataTest {
                 override fun toKrw(amount: java.math.BigDecimal, currency: String) = amount
             },
             syncLogRepository = NoopSyncLogRepository(),
+            reconMutex = NoopReconMutex(),
         )
 
         val result = service.execute(accountId)
@@ -69,6 +70,11 @@ class SyncAccountUseCaseSensitiveDataTest {
         override fun findByAccountId(accountId: UUID, limit: Int): List<SyncLog> = emptyList()
         override fun findLatestByUserId(userId: UUID): Map<UUID, SyncLog> = emptyMap()
         override fun deleteByAccountId(accountId: UUID) = Unit
+    }
+
+    private class NoopReconMutex : com.allfolio.unifiedasset.application.port.ReconMutex {
+        override fun tryAcquire(userId: UUID): String? = "token"
+        override fun release(userId: UUID, token: String) = Unit
     }
 
     private class NoopAssetRepository : AssetRepository {
