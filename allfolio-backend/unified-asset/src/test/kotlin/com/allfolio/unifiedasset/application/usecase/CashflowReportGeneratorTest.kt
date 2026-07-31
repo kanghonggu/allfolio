@@ -97,6 +97,9 @@ class CashflowReportGeneratorTest {
     )
     private fun tradeOn(date: LocalDate, type: String, total: String) =
         TradeCashRecord(date, type, "n", "한투", BigDecimal(total), BigDecimal.ZERO, BigDecimal.ZERO)
+    private fun transferLegs(day: Int, krw: String) =
+        CashFlow.transferPair(userId, UUID.randomUUID(), UUID.randomUUID(),
+            LocalDate.of(2026, 6, day), BigDecimal(krw), "KRW", BigDecimal(krw), null).toList()
 
     private fun generator(flows: List<CashFlow>, trades: List<TradeCashRecord>, cashAssets: List<Asset> = emptyList()) =
         CashflowReportGenerator(FakeCashFlowRepo(flows), FakeTradeSource(trades), FakeAccountRepo(listOf(account())), FakeAssetRepo(cashAssets), fx)
@@ -316,5 +319,18 @@ class CashflowReportGeneratorTest {
         // details에 내부유형 레그가 "출금"으로 잘못 들어가지 않음: 출금 행은 1건(withdrawal)만
         val outRows = body["details"].filter { it["type"].asText() == "출금" }
         assertEquals(1, outRows.size)
+    }
+
+    @Test
+    fun `body_internalFlows에 이체 페어가 표기되고 외부 집계는 불변`() {
+        val flows = listOf(deposit(3, "1000000"), withdrawal(5, "200000")) + transferLegs(10, "500000")
+        val body = mapper.readTree(generator(flows, emptyList()).generate(userId, period).bodyJson)
+        val internal = body["internalFlows"]
+        assertEquals(1, internal.size())
+        assertEquals("계좌간이체", internal[0]["kind"].asText())
+        assertEquals(500000.0, internal[0]["amountKrw"].asDouble(), 0.01)
+        // 외부 집계 불변
+        val types = body["byType"].associate { it["type"].asText() to it["amount"].asDouble() }
+        assertEquals(1000000.0, types["입금"] ?: 0.0, 0.01)
     }
 }

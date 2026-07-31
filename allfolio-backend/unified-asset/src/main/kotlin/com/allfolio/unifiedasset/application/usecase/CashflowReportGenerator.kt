@@ -23,7 +23,7 @@ import java.util.UUID
  * R-06 현금흐름 보고서 생성 엔진 (R2 #41 BE).
  * cash_flow(입금/출금) + ua_stock_trades(매수/매도/배당/수수료)를 유형별 분류·집계.
  * 유입: 입금·매도대금·배당·이자 / 유출: 출금·매수대금·수수료·세금. 순흐름 = 유입 − 유출.
- * 기초/기말 현금 조정표·정합검증(전체 이력 재구성) + 특이거래(대규모 이동·미분류) 포함. 후속: 미결제·환전·계좌간이체.
+ * 기초/기말 현금 조정표·정합검증(전체 이력 재구성) + 특이거래(대규모 이동·미분류) + 환전·계좌간이체 전용 섹션 포함(Phase 2). 후속: 워터폴·정합 차액 분해.
  * 0건은 예외 없는 유효 0 보고서.
  */
 @Component
@@ -132,6 +132,7 @@ class CashflowReportGenerator(
         val reconciled = reconcilable && difference.abs() < BigDecimal.ONE
 
         val special = SpecialTransactionCalculator.build(flows.filter { !it.type.isInternal() }, trades, acctNames, totalAssetsKrw)
+        val internalFlows = InternalFlowCalculator.build(flows, acctNames)
 
         val body = mapOf(
             "summary" to mapOf("totalInflow" to totalInflow, "totalOutflow" to totalOutflow, "netFlow" to netFlow),
@@ -157,6 +158,15 @@ class CashflowReportGenerator(
                     mapOf("date" to it.date.toString(), "account" to it.account, "tradeType" to it.tradeType, "amountKrw" to it.amountKrw)
                 },
             ),
+            "internalFlows" to internalFlows.map {
+                mapOf(
+                    "date" to it.date.toString(), "kind" to it.kind,
+                    "fromAccount" to it.fromAccount, "toAccount" to it.toAccount,
+                    "fromCurrency" to it.fromCurrency, "toCurrency" to it.toCurrency,
+                    "fromAmount" to it.fromAmount, "toAmount" to it.toAmount,
+                    "amountKrw" to it.amountKrw,
+                )
+            },
         )
         val lastDate = (flows.map { it.flowDate } + trades.map { it.tradeDate }).maxOrNull() ?: period.end
         return GeneratedReport(asOfDate = lastDate, bodyJson = mapper.writeValueAsString(body))
