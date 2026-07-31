@@ -39,10 +39,32 @@ export interface CashflowDetail {
   amount: number             // 부호
 }
 
+export interface CashflowLargeMovement {
+  date: string
+  account: string
+  type: string
+  description: string
+  amountKrw: number
+}
+
+export interface CashflowUnclassified {
+  date: string
+  account: string
+  tradeType: string
+  amountKrw: number
+}
+
+export interface CashflowSpecialTransactions {
+  thresholdRatio: number
+  largeMovements: CashflowLargeMovement[]
+  unclassified: CashflowUnclassified[]
+}
+
 export interface CashflowReportBody {
   summary: CashflowSummary
   byType: CashflowByTypeRow[]
   monthly: CashflowMonthly[]
   details: CashflowDetail[]
   reconciliation?: CashflowReconciliation
+  specialTransactions?: CashflowSpecialTransactions
 }
