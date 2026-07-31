@@ -37,8 +37,10 @@ class DailyAccountSyncerTest {
         private val errorOn: UUID? = null,
     ) : AccountSyncRunner {
         val calledIds = mutableListOf<UUID>()
-        override fun execute(accountId: UUID): SyncResult {
+        val triggers = mutableListOf<com.allfolio.unifiedasset.domain.sync.SyncTrigger>()
+        override fun execute(accountId: UUID, trigger: com.allfolio.unifiedasset.domain.sync.SyncTrigger): SyncResult {
             calledIds += accountId
+            triggers += trigger
             if (accountId == throwOn) throw RuntimeException("boom")
             return if (accountId == errorOn) SyncResult(accountId, 0, AccountStatus.ERROR, "sync error")
                    else SyncResult(accountId, 1, AccountStatus.ACTIVE)
@@ -66,6 +68,7 @@ class DailyAccountSyncerTest {
         val result = DailyAccountSyncer(repo, runner).syncAll()
 
         assertEquals(listOf(a1.id, a2.id, a3.id), runner.calledIds)
+        assertTrue(runner.triggers.all { it == com.allfolio.unifiedasset.domain.sync.SyncTrigger.SCHEDULED })
         assertEquals(3, result.total)
         assertEquals(2, result.synced)
         assertEquals(1, result.failed)

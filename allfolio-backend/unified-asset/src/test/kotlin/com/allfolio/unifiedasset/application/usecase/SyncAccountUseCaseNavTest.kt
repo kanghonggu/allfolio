@@ -13,6 +13,7 @@ import com.allfolio.unifiedasset.domain.asset.AssetCategory
 import com.allfolio.unifiedasset.domain.asset.AssetSourceType
 import com.allfolio.unifiedasset.domain.asset.AssetType
 import com.allfolio.unifiedasset.domain.asset.ValuationMethod
+import com.allfolio.unifiedasset.domain.sync.SyncLog
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
@@ -53,6 +54,7 @@ class SyncAccountUseCaseNavTest {
             adapters = listOf(EmptySyncAdapter(account.provider)),
             snapshotService = snapshot,
             fx = fx,
+            syncLogRepository = NoopSyncLogRepository(),
         )
 
         service.execute(account.id)
@@ -106,5 +108,12 @@ class SyncAccountUseCaseNavTest {
 
     private class EmptySyncAdapter(override val supportedProvider: AccountProvider) : SyncAdapter {
         override fun sync(account: Account): List<Asset> = emptyList()
+    }
+
+    private class NoopSyncLogRepository : com.allfolio.unifiedasset.application.port.SyncLogRepository {
+        override fun save(log: SyncLog): SyncLog = log
+        override fun findByAccountId(accountId: UUID, limit: Int): List<SyncLog> = emptyList()
+        override fun findLatestByUserId(userId: UUID): Map<UUID, SyncLog> = emptyMap()
+        override fun deleteByAccountId(accountId: UUID) = Unit
     }
 }

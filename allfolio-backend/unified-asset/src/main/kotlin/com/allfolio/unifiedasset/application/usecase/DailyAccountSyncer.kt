@@ -3,6 +3,7 @@ package com.allfolio.unifiedasset.application.usecase
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.domain.account.AccountProvider
 import com.allfolio.unifiedasset.domain.account.AccountStatus
+import com.allfolio.unifiedasset.domain.sync.SyncTrigger
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 
@@ -28,7 +29,7 @@ class DailyAccountSyncer(
         var synced = 0
         var failed = 0
         accounts.forEach { account ->
-            runCatching { syncRunner.execute(account.id) }
+            runCatching { syncRunner.execute(account.id, SyncTrigger.SCHEDULED) }
                 .onSuccess { result ->
                     if (result.status == AccountStatus.ACTIVE) {
                         synced++

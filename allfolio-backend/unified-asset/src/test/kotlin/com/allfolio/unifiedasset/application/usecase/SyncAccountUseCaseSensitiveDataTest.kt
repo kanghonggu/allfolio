@@ -10,6 +10,7 @@ import com.allfolio.unifiedasset.domain.account.Account
 import com.allfolio.unifiedasset.domain.account.AccountProvider
 import com.allfolio.unifiedasset.domain.account.AccountStatus
 import com.allfolio.unifiedasset.domain.asset.Asset
+import com.allfolio.unifiedasset.domain.sync.SyncLog
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
@@ -32,6 +33,7 @@ class SyncAccountUseCaseSensitiveDataTest {
             fx = object : FxConverter {
                 override fun toKrw(amount: java.math.BigDecimal, currency: String) = amount
             },
+            syncLogRepository = NoopSyncLogRepository(),
         )
 
         val result = service.execute(accountId)
@@ -60,6 +62,13 @@ class SyncAccountUseCaseSensitiveDataTest {
             called = true
             return emptyList()
         }
+    }
+
+    private class NoopSyncLogRepository : com.allfolio.unifiedasset.application.port.SyncLogRepository {
+        override fun save(log: SyncLog): SyncLog = log
+        override fun findByAccountId(accountId: UUID, limit: Int): List<SyncLog> = emptyList()
+        override fun findLatestByUserId(userId: UUID): Map<UUID, SyncLog> = emptyMap()
+        override fun deleteByAccountId(accountId: UUID) = Unit
     }
 
     private class NoopAssetRepository : AssetRepository {

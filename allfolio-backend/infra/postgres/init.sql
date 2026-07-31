@@ -296,6 +296,25 @@ ALTER TABLE IF EXISTS ua_accounts
     ALTER COLUMN api_key TYPE VARCHAR(2048),
     ALTER COLUMN api_secret TYPE VARCHAR(2048);
 
+-- ── ua_sync_logs ──────────────────────────────────────────────
+-- 계좌 동기화 실행 이력 (AF-9). trigger는 SQL 예약어라 trigger_type.
+CREATE TABLE IF NOT EXISTS ua_sync_logs (
+    id            UUID         NOT NULL,
+    account_id    UUID         NOT NULL,
+    user_id       UUID         NOT NULL,
+    trigger_type  VARCHAR(20)  NOT NULL,   -- SCHEDULED / MANUAL
+    status        VARCHAR(20)  NOT NULL,   -- SUCCESS / ERROR
+    synced_count  INT          NOT NULL DEFAULT 0,
+    error_message VARCHAR(500),
+    created_at    TIMESTAMP    NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_ua_sync_logs PRIMARY KEY (id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ua_sync_logs_account
+    ON ua_sync_logs (account_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ua_sync_logs_user
+    ON ua_sync_logs (user_id, created_at DESC);
+
 -- ── ua_assets ─────────────────────────────────────────────────
 -- 개별 자산: 반드시 ua_accounts 소속
 -- sourceType이 EXCHANGE_API/WALLET이면 sync 시 전체 교체됨 (full refresh)

@@ -6,8 +6,10 @@ import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.application.port.StockTradeRepository
+import com.allfolio.unifiedasset.application.port.SyncLogRepository
 import com.allfolio.unifiedasset.application.usecase.*
 import com.allfolio.unifiedasset.domain.account.*
+import com.allfolio.unifiedasset.domain.sync.SyncTrigger
 import com.allfolio.unifiedasset.domain.asset.Asset
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
@@ -109,6 +111,8 @@ class AccountController(
     private val accountRepository: AccountRepository,
     private val assetRepository: AssetRepository,
     private val stockTradeRepository: StockTradeRepository,
+    private val syncLogRepository: SyncLogRepository,
+    private val getSyncStatusUseCase: GetSyncStatusUseCase,
     private val snapshotService: PerformanceSnapshotService,
     private val authorizationService: AuthorizationService,
     private val fx: FxConverter,
@@ -159,7 +163,24 @@ class AccountController(
             ?: throw NoSuchElementException("Account not found: $id")
         require(account.userId == userId) { "Forbidden" }
         assetRepository.deleteByAccountId(id)
+        syncLogRepository.deleteByAccountId(id)
         accountRepository.delete(id)
+    }
+
+    /** 계좌별 최신 동기화 상태 요약 (AF-9). */
+    @GetMapping("/sync-status")
+    fun syncStatus(@RequestHeader("X-User-Id") userId: UUID): List<AccountSyncStatus> =
+        getSyncStatusUseCase.execute(userId)
+
+    /** 계좌 동기화 이력 (AF-9). */
+    @GetMapping("/{id}/sync-logs")
+    fun syncLogs(
+        @RequestHeader("X-User-Id") userId: UUID,
+        @PathVariable id: UUID,
+        @RequestParam(defaultValue = "20") limit: Int,
+    ): List<SyncLogView> {
+        authorizationService.requireOwnedAccount(userId, id)
+        return syncLogRepository.findByAccountId(id, limit.coerceIn(1, 100)).map { it.toView() }
     }
 
     @PostMapping("/{id}/sync")
@@ -176,7 +197,7 @@ class AccountController(
             throw e
         } ?: throw NoSuchElementException("Account not found: $id")
         require(account.userId == userId) { "Forbidden" }
-        return syncAccountUseCase.execute(id)
+        return syncAccountUseCase.execute(id, SyncTrigger.MANUAL)
     }
 
     @GetMapping("/{id}/assets")
