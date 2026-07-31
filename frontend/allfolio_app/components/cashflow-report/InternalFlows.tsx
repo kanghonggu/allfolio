@@ -14,6 +14,7 @@ export function InternalFlows({ rows }: { rows: CashflowInternalFlow[] }) {
             <tr className="border-b border-gray-800 text-left text-xs text-gray-500">
               <th className="p-3">날짜</th><th className="p-3">유형</th>
               <th className="p-3">내용</th><th className="p-3 text-right">금액(KRW)</th>
+              <th className="p-3 text-right">전환비용</th>
             </tr>
           </thead>
           <tbody>
@@ -27,6 +28,9 @@ export function InternalFlows({ rows }: { rows: CashflowInternalFlow[] }) {
                     : `${r.fromAccount} → ${r.toAccount}`}
                 </td>
                 <td className="p-3 text-right tabular-nums text-gray-100">{fmtKrw(r.amountKrw)}</td>
+                <td className="p-3 text-right tabular-nums text-gray-400">
+                  {r.kind === '환전' && r.spreadKrw != null && r.spreadKrw !== 0 ? fmtKrw(r.spreadKrw) : '–'}
+                </td>
               </tr>
             ))}
           </tbody>

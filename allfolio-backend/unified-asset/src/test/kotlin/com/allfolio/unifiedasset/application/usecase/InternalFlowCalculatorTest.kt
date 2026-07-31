@@ -37,6 +37,27 @@ class InternalFlowCalculatorTest {
         assertThat(r.fromAmount).isEqualByComparingTo("1300000")
         assertThat(r.toAmount).isEqualByComparingTo("1000")
         assertThat(r.amountKrw).isEqualByComparingTo("1300000")
+        assertThat(r.toAmountKrw).isEqualByComparingTo("1300000")
+        assertThat(r.spreadKrw).isEqualByComparingTo("0")   // 시세와 동일 → 전환비용 0
+    }
+
+    @Test
+    fun `환전 스프레드는 OUT KRW - IN KRW 로 전환비용을 드러낸다`() {
+        // 1,300,000원 지불하고 시세환산 1,287,000원어치만 받음 → 전환비용 13,000
+        val (out, inn) = CashFlow.fxPair(user, a1, d(11),
+            BigDecimal("1300000"), "KRW", BigDecimal("1300000"),
+            BigDecimal("990"), "USD", BigDecimal("1287000"), "환전")
+        val r = InternalFlowCalculator.build(listOf(out, inn), names).single()
+        assertThat(r.toAmountKrw).isEqualByComparingTo("1287000")
+        assertThat(r.spreadKrw).isEqualByComparingTo("13000")
+    }
+
+    @Test
+    fun `이체는 동일통화 동일금액이라 스프레드 0`() {
+        val (out, inn) = CashFlow.transferPair(user, a1, a2, d(10), BigDecimal("500"), "KRW", BigDecimal("500"), null)
+        val r = InternalFlowCalculator.build(listOf(out, inn), names).single()
+        assertThat(r.spreadKrw).isEqualByComparingTo("0")
+        assertThat(r.toAmountKrw).isEqualByComparingTo("500")
     }
 
     @Test

@@ -16,6 +16,8 @@ data class InternalFlowEntry(
     val fromAmount: BigDecimal?,      // 환전 원통화 금액
     val toAmount: BigDecimal?,        // 환전 대상통화 금액
     val amountKrw: BigDecimal,        // OUT 레그 KRW 환산
+    val toAmountKrw: BigDecimal,      // IN 레그 KRW 환산
+    val spreadKrw: BigDecimal,        // 전환 비용 = OUT KRW − IN KRW (이체는 0, 환전은 실제 전환율 vs 시세 차이)
 )
 
 /** R-06 Phase 2: period flows 중 내부이동(이체/환전)을 linkId로 페어 그룹핑해 리포트 전용 섹션으로 집계. */
@@ -27,13 +29,14 @@ object InternalFlowCalculator {
                 val out = legs.firstOrNull { it.type == FlowType.TRANSFER_OUT || it.type == FlowType.FX_OUT }
                 val inn = legs.firstOrNull { it.type == FlowType.TRANSFER_IN || it.type == FlowType.FX_IN }
                 if (out == null || inn == null) return@mapNotNull null   // 페어 미완성 스킵
+                val spread = out.amountKrw.subtract(inn.amountKrw)
                 if (out.type == FlowType.TRANSFER_OUT) {
                     InternalFlowEntry(
                         date = out.flowDate, kind = "계좌간이체",
                         fromAccount = out.accountId?.let { acctNames[it] } ?: "-",
                         toAccount = inn.accountId?.let { acctNames[it] } ?: "-",
                         fromCurrency = null, toCurrency = null, fromAmount = null, toAmount = null,
-                        amountKrw = out.amountKrw,
+                        amountKrw = out.amountKrw, toAmountKrw = inn.amountKrw, spreadKrw = spread,
                     )
                 } else {
                     InternalFlowEntry(
@@ -41,7 +44,7 @@ object InternalFlowCalculator {
                         fromAccount = null, toAccount = null,
                         fromCurrency = out.currency, toCurrency = inn.currency,
                         fromAmount = out.amount, toAmount = inn.amount,
-                        amountKrw = out.amountKrw,
+                        amountKrw = out.amountKrw, toAmountKrw = inn.amountKrw, spreadKrw = spread,
                     )
                 }
             }

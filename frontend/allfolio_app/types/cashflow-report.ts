@@ -70,6 +70,8 @@ export interface CashflowInternalFlow {
   fromAmount: number | null
   toAmount: number | null
   amountKrw: number
+  toAmountKrw?: number        // 구 아카이브 호환(옵셔널)
+  spreadKrw?: number          // 전환 비용(환전) — 구 아카이브 부재
 }
 
 export interface CashflowReportBody {

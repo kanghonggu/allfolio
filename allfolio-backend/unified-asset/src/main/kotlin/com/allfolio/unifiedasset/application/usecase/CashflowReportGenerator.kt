@@ -164,7 +164,7 @@ class CashflowReportGenerator(
                     "fromAccount" to it.fromAccount, "toAccount" to it.toAccount,
                     "fromCurrency" to it.fromCurrency, "toCurrency" to it.toCurrency,
                     "fromAmount" to it.fromAmount, "toAmount" to it.toAmount,
-                    "amountKrw" to it.amountKrw,
+                    "amountKrw" to it.amountKrw, "toAmountKrw" to it.toAmountKrw, "spreadKrw" to it.spreadKrw,
                 )
             },
         )
