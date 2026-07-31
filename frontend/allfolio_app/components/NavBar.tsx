@@ -35,6 +35,9 @@ export default function NavBar() {
                 <Link href="/unified/admin/exclusion-presets" className="text-sm text-amber-400 hover:text-amber-300 transition-colors">
                   배제 프리셋
                 </Link>
+                <Link href="/unified/admin/ops" className="text-sm text-amber-400 hover:text-amber-300 transition-colors">
+                  운영 모니터링
+                </Link>
               </>
             )}
           </>
