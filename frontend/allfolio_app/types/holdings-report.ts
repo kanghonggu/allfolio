@@ -54,6 +54,33 @@ export interface HoldingRealized {
   realizedPnl: number
 }
 
+export interface HoldingNewEntry {
+  symbol: string
+  name: string
+  firstBuyDate: string
+  buyPrice: number
+}
+
+export interface HoldingSoldOut {
+  symbol: string
+  name: string
+  soldOutDate: string
+  realizedPnl: number
+}
+
+export interface HoldingQtyChange {
+  symbol: string
+  name: string
+  netQty: number
+  netBuyAmount: number
+}
+
+export interface HoldingMonthlyChange {
+  newEntries: HoldingNewEntry[]
+  soldOut: HoldingSoldOut[]
+  qtyChanges: HoldingQtyChange[]
+}
+
 export interface HoldingsReportBody {
   summary: HoldingsSummary
   holdings: Holding[]
@@ -61,4 +88,5 @@ export interface HoldingsReportBody {
   byType: HoldingByType[]
   cash: HoldingCash[]
   realized: HoldingRealized[]
+  monthlyChange?: HoldingMonthlyChange
 }
