@@ -66,6 +66,19 @@ class CashFlowTest {
         assertThat(inn.currency).isEqualTo("USD")
         assertThat(out.linkId).isEqualTo(inn.linkId)
         assertThat(inn.amount).isEqualByComparingTo("1000")
+        // 기본(toAccountId 미지정)은 동일 계좌
+        assertThat(out.accountId).isEqualTo(a1)
+        assertThat(inn.accountId).isEqualTo(a1)
+    }
+
+    @Test
+    fun `fxPair 계좌간 환전은 FX_IN이 도착 계좌`() {
+        val (out, inn) = CashFlow.fxPair(user, a1, date,
+            BigDecimal("1300000"), "KRW", BigDecimal("1300000"),
+            BigDecimal("1000"), "USD", BigDecimal("1300000"), "계좌간 환전", toAccountId = a2)
+        assertThat(out.accountId).isEqualTo(a1)   // FX_OUT 출발 계좌
+        assertThat(inn.accountId).isEqualTo(a2)   // FX_IN 도착 계좌
+        assertThat(out.linkId).isEqualTo(inn.linkId)
     }
 
     @Test
