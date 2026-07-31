@@ -2,6 +2,7 @@ package com.allfolio.unifiedasset.api
 
 import com.allfolio.unifiedasset.application.port.CashFlowRepository
 import com.allfolio.unifiedasset.application.usecase.RecordCashFlowUseCase
+import com.allfolio.unifiedasset.application.usecase.RecordInternalFlowUseCase
 import com.allfolio.unifiedasset.domain.cashflow.CashFlow
 import com.allfolio.unifiedasset.domain.cashflow.FlowType
 import org.springframework.http.ResponseEntity
@@ -23,6 +24,7 @@ import java.util.UUID
 class CashFlowController(
     private val recordCashFlow: RecordCashFlowUseCase,
     private val repository: CashFlowRepository,
+    private val recordInternalFlow: RecordInternalFlowUseCase,
 ) {
 
     data class RecordRequest(
@@ -43,6 +45,17 @@ class CashFlowController(
         val currency: String,
         val amountKrw: BigDecimal,
         val memo: String?,
+        val linkId: UUID?,
+    )
+
+    data class TransferRequest(
+        val fromAccountId: UUID, val toAccountId: UUID, val flowDate: LocalDate,
+        val amount: BigDecimal, val currency: String, val memo: String?,
+    )
+    data class FxRequest(
+        val accountId: UUID?, val flowDate: LocalDate,
+        val fromAmount: BigDecimal, val fromCurrency: String,
+        val toAmount: BigDecimal, val toCurrency: String, val memo: String?,
     )
 
     @PostMapping
@@ -64,6 +77,16 @@ class CashFlowController(
         (if (from != null && to != null) repository.findByUserIdAndPeriod(userId, from, to)
          else repository.findByUserId(userId)).map { it.toResponse() }
 
+    @PostMapping("/transfer")
+    fun transfer(@RequestHeader("X-User-Id") userId: UUID, @RequestBody req: TransferRequest): List<CashFlowResponse> =
+        recordInternalFlow.recordTransfer(userId, req.fromAccountId, req.toAccountId, req.flowDate, req.amount, req.currency, req.memo)
+            .map { it.toResponse() }
+
+    @PostMapping("/fx")
+    fun fx(@RequestHeader("X-User-Id") userId: UUID, @RequestBody req: FxRequest): List<CashFlowResponse> =
+        recordInternalFlow.recordFx(userId, req.accountId, req.flowDate, req.fromAmount, req.fromCurrency, req.toAmount, req.toCurrency, req.memo)
+            .map { it.toResponse() }
+
     @DeleteMapping("/{id}")
     fun delete(
         @RequestHeader("X-User-Id") userId: UUID,
@@ -79,5 +102,6 @@ class CashFlowController(
     private fun CashFlow.toResponse() = CashFlowResponse(
         id = id, accountId = accountId, flowDate = flowDate, flowType = type,
         amount = amount, currency = currency, amountKrw = amountKrw, memo = memo,
+        linkId = linkId,
     )
 }

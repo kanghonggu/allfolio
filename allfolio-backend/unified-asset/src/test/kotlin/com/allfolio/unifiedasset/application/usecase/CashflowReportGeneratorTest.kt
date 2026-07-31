@@ -296,4 +296,25 @@ class CashflowReportGeneratorTest {
         val st = body["specialTransactions"]
         assertEquals(0, st["largeMovements"].size())
     }
+
+    @Test
+    fun `내부유형(이체·환전)은 외부흐름 집계·상세에서 제외된다`() {
+        val flows = listOf(
+            deposit(3, "1000000"),
+            withdrawal(5, "200000"),
+            flowOn(LocalDate.of(2026, 6, 10), FlowType.TRANSFER_OUT, "5000000"),
+            flowOn(LocalDate.of(2026, 6, 10), FlowType.TRANSFER_IN, "5000000"),
+            flowOn(LocalDate.of(2026, 6, 11), FlowType.FX_OUT, "1300000"),
+            flowOn(LocalDate.of(2026, 6, 11), FlowType.FX_IN, "1300000"),
+        )
+        val body = mapper.readTree(generator(flows, emptyList()).generate(userId, period).bodyJson)
+        // byType 유입/유출에 이체·환전 미포함 (입금 1,000,000 / 출금 200,000 만)
+        val types = body["byType"].associate { it["type"].asText() to it["amount"].asDouble() }
+        assertEquals(1000000.0, types["입금"] ?: 0.0, 0.01)
+        assertEquals(-200000.0, types["출금"] ?: 0.0, 0.01)
+        assertTrue(types.keys.none { it.contains("이체") || it.contains("환전") })
+        // details에 내부유형 레그가 "출금"으로 잘못 들어가지 않음: 출금 행은 1건(withdrawal)만
+        val outRows = body["details"].filter { it["type"].asText() == "출금" }
+        assertEquals(1, outRows.size)
+    }
 }

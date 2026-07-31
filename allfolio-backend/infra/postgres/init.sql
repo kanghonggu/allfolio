@@ -586,6 +586,7 @@ CREATE TABLE IF NOT EXISTS cash_flow (
     currency     VARCHAR(10)    NOT NULL,
     amount_krw   NUMERIC(30,10) NOT NULL,
     memo         VARCHAR(500),
+    link_id      UUID,
     created_at   TIMESTAMP      NOT NULL DEFAULT NOW()
 );
 
