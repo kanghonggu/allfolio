@@ -6,9 +6,14 @@ import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.application.port.SyncAdapter
+import com.allfolio.unifiedasset.application.port.SyncLogRepository
+import com.allfolio.unifiedasset.domain.account.Account
 import com.allfolio.unifiedasset.domain.account.AccountProvider
 import com.allfolio.unifiedasset.domain.account.AccountStatus
 import com.allfolio.unifiedasset.domain.asset.Asset
+import com.allfolio.unifiedasset.domain.sync.SyncLog
+import com.allfolio.unifiedasset.domain.sync.SyncLogStatus
+import com.allfolio.unifiedasset.domain.sync.SyncTrigger
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -28,6 +33,7 @@ class SyncAccountUseCase(
     private val adapters: List<SyncAdapter>,
     private val snapshotService: PerformanceSnapshotService,
     private val fx: FxConverter,
+    private val syncLogRepository: SyncLogRepository,
 ) : AccountSyncRunner {
     private val log = LoggerFactory.getLogger(javaClass)
     private val adapterMap: Map<AccountProvider, SyncAdapter> by lazy {
@@ -35,7 +41,7 @@ class SyncAccountUseCase(
     }
 
     @Transactional
-    override fun execute(accountId: UUID): SyncResult {
+    override fun execute(accountId: UUID, trigger: SyncTrigger): SyncResult {
         val account = try {
             accountRepository.findById(accountId)
         } catch (e: RuntimeException) {
@@ -48,6 +54,7 @@ class SyncAccountUseCase(
 
         val adapter = adapterMap[account.provider]
             ?: return SyncResult(accountId, 0, AccountStatus.ERROR, "No adapter for ${account.provider}")
+                .also { record(account, trigger, it) }
 
         accountRepository.updateStatus(accountId, AccountStatus.SYNCING)
 
@@ -65,6 +72,7 @@ class SyncAccountUseCase(
 
             log.info("Synced ${assets.size} assets for account $accountId (${account.provider})")
             SyncResult(accountId, assets.size, AccountStatus.ACTIVE)
+                .also { record(account, trigger, it) }
         } catch (e: Exception) {
             log.error("Sync failed for account $accountId: ${e.message}", e)
             accountRepository.updateStatus(accountId, AccountStatus.ERROR)
@@ -74,6 +82,23 @@ class SyncAccountUseCase(
                 e.message
             }
             SyncResult(accountId, 0, AccountStatus.ERROR, error)
+                .also { record(account, trigger, it) }
         }
+    }
+
+    /** 동기화 결과를 이력으로 남긴다. 이력 저장 실패가 동기화 결과에 영향을 주지 않게 격리. */
+    private fun record(account: Account, trigger: SyncTrigger, result: SyncResult) {
+        runCatching {
+            syncLogRepository.save(
+                SyncLog.create(
+                    accountId = account.id,
+                    userId = account.userId,
+                    trigger = trigger,
+                    status = if (result.status == AccountStatus.ACTIVE) SyncLogStatus.SUCCESS else SyncLogStatus.ERROR,
+                    syncedCount = result.synced,
+                    errorMessage = result.error,
+                )
+            )
+        }.onFailure { e -> log.warn("sync log save failed accountId={}", account.id, e) }
     }
 }

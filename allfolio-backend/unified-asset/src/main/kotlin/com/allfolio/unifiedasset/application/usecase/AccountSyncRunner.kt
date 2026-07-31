@@ -1,5 +1,6 @@
 package com.allfolio.unifiedasset.application.usecase
 
+import com.allfolio.unifiedasset.domain.sync.SyncTrigger
 import java.util.UUID
 
 /**
@@ -8,5 +9,5 @@ import java.util.UUID
  * 테스트에서 fake로 대체 가능하게 한다. 유일 구현체는 SyncAccountUseCase.
  */
 interface AccountSyncRunner {
-    fun execute(accountId: UUID): SyncResult
+    fun execute(accountId: UUID, trigger: SyncTrigger = SyncTrigger.MANUAL): SyncResult
 }
