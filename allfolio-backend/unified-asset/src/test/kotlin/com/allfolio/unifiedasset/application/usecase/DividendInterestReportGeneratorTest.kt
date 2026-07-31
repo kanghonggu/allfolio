@@ -13,6 +13,7 @@ import com.allfolio.unifiedasset.domain.asset.AssetType
 import com.allfolio.unifiedasset.domain.asset.ValuationMethod
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
@@ -167,5 +168,18 @@ class DividendInterestReportGeneratorTest {
             rec(20, "AAPL", "AAPL", "20000", "0"),
         ))
         assertEquals(LocalDate.of(2026, 6, 20), gen.generate(userId, period).asOfDate)
+    }
+
+    @Test
+    fun `body에 배당 캘린더(지급 이력 패턴)가 포함된다`() {
+        val gen = generator(listOf(rec(3, "삼성전자", "005930", "10000", "1540")))
+        val body = mapper.readTree(gen.generate(userId, period).bodyJson)
+        val cal = body.get("dividendCalendar")
+        assertNotNull(cal)
+        assertTrue(cal.size() > 0)
+        val first = cal.first()
+        listOf("cadence", "paidMonths", "payCount", "lastPayDate", "ttmNet").forEach {
+            assertTrue(first.has(it))
+        }
     }
 }

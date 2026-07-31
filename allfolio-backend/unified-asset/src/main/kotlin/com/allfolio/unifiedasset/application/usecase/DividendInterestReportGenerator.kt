@@ -20,7 +20,8 @@ import java.util.UUID
  * R-03 배당·이자 보고서 생성 엔진 (R1 #38 BE).
  * ua_stock_trades DIVIDEND 행의 세전(total_amount)·원천징수(tax)·세후(차액)를 본문에 고정.
  * 금액은 KRW 취급(통화 컬럼 부재). 배당 0건은 예외가 아닌 유효한 0 보고서.
- * v1 제외: 세율 마스터·기대세율 비교, 이자, 배당 캘린더·예상.
+ * 배당 캘린더(지급 이력 패턴, 사실형) 포함. 후속: 외부 확정 지급일·기대세율 비교.
+ * v1 제외: 세율 마스터·기대세율 비교, 이자.
  */
 @Component
 class DividendInterestReportGenerator(
@@ -78,6 +79,8 @@ class DividendInterestReportGenerator(
                 )
             }.sortedByDescending { it["gross"] as BigDecimal }
 
+        val calendar = DividendCalendarCalculator.build(ttm)
+
         val body = mapOf(
             "summary" to mapOf(
                 "grossTotal" to gross, "withholdingTax" to tax, "netTotal" to net,
@@ -88,6 +91,11 @@ class DividendInterestReportGenerator(
             "monthly" to monthly,
             "bySymbol" to bySymbol,
             "byCountry" to byCountry,
+            "dividendCalendar" to calendar.map {
+                mapOf("symbol" to it.symbol, "stockName" to it.stockName, "cadence" to it.cadence,
+                      "paidMonths" to it.paidMonths, "payCount" to it.payCount,
+                      "lastPayDate" to it.lastPayDate.toString(), "ttmNet" to it.ttmNet)
+            },
         )
         val asOf = records.maxOfOrNull { it.payDate } ?: period.end
         return GeneratedReport(asOfDate = asOf, bodyJson = mapper.writeValueAsString(body))
