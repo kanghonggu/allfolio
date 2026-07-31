@@ -8,6 +8,7 @@ import { useReportArchiveApi } from '@/lib/useApi'
 import { parseReportBody, COST } from '@/lib/report-archive-api'
 import type { CostReportBody } from '@/types/cost-report'
 import { CostSummary } from '@/components/cost-report/CostSummary'
+import { CostInsights } from '@/components/cost-report/CostInsights'
 import { ByTypeTable } from '@/components/cost-report/ByTypeTable'
 import { ByBrokerMatrix } from '@/components/cost-report/ByBrokerMatrix'
 import { MonthlyCostTrend } from '@/components/cost-report/MonthlyCostTrend'
@@ -71,6 +72,7 @@ export default function CostReportDetailPage() {
       )}
 
       <CostSummary summary={body.summary} />
+      {body.insights && body.insights.length > 0 && <CostInsights items={body.insights} />}
       <ByTypeTable rows={body.byType} />
       <ByBrokerMatrix rows={body.byBroker} />
       <MonthlyCostTrend rows={body.monthly} />

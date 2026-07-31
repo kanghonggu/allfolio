@@ -134,6 +134,18 @@ class CostReportGeneratorTest {
     }
 
     @Test
+    fun `body에 사실형 insights가 포함된다`() {
+        val body = mapper.readTree(
+            generator(listOf(cost(3, "KIS", "1000", "230"))).generate(userId, period).bodyJson
+        )
+        val insights = body["insights"]
+        assertTrue(insights != null && !insights.isNull)
+        val labels = insights.map { it["label"].asText() }
+        assertTrue(labels.contains("최대 비용 처"))
+        assertTrue(labels.contains("비용 구성"))
+    }
+
+    @Test
     fun `zero trades yields valid empty report without exception`() {
         val generated = generator(emptyList()).generate(userId, period)
         assertEquals(LocalDate.of(2026, 6, 30), generated.asOfDate)

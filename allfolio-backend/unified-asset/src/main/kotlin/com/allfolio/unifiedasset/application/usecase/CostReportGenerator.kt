@@ -19,7 +19,7 @@ import java.util.UUID
  * ua_stock_trades 비-DIVIDEND 거래의 fee(매매수수료)·tax(거래세)를 브로커/유형/월별 집계.
  * 비용률·TER·수익대비는 #33 수익률 엔진을 runCatching으로 감싸 null-safe.
  * DIVIDEND 제외(R-03 원천징수 이중집계 방지). 거래 0건은 예외 없는 유효 0 보고서.
- * v1 제외: 환전 비용, 파생 수수료, 인사이트.
+ * 사실형 인사이트 포함(조언 아님). 후속: 개인화 룰·bp 벤치마크.
  */
 @Component
 class CostReportGenerator(
@@ -71,6 +71,14 @@ class CostReportGenerator(
                 mapOf("month" to m, "brokerFee" to f, "tradingTax" to t, "total" to (f + t))
             }.sortedBy { it["month"] as String }
 
+        val topBroker = byBroker.firstOrNull()
+        val insights = CostInsightCalculator.build(
+            totalCost = totalCost, brokerFee = brokerFee, tradingTax = tradingTax,
+            costRatio = costRatio, annualizedTer = ter, costVsProfit = costVsProfit,
+            topBrokerName = topBroker?.get("broker") as String?,
+            topBrokerWeight = topBroker?.get("weight") as BigDecimal?,
+        )
+
         val details = records.map {
             mapOf(
                 "date" to it.tradeDate.toString(), "account" to it.accountName, "provider" to it.provider,
@@ -89,6 +97,7 @@ class CostReportGenerator(
             "byBroker" to byBroker,
             "monthly" to monthly,
             "details" to details,
+            "insights" to insights.map { mapOf("label" to it.label, "value" to it.value, "detail" to it.detail) },
         )
         val asOf = records.maxOfOrNull { it.tradeDate } ?: period.end
         return GeneratedReport(asOfDate = asOf, bodyJson = mapper.writeValueAsString(body))

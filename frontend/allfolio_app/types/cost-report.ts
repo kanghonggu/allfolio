@@ -44,10 +44,17 @@ export interface CostDetail {
   tax: number
 }
 
+export interface CostInsight {
+  label: string
+  value: string
+  detail: string | null
+}
+
 export interface CostReportBody {
   summary: CostSummary
   byType: CostByType[]
   byBroker: CostByBroker[]
   monthly: CostMonthly[]
   details: CostDetail[]
+  insights?: CostInsight[]
 }
