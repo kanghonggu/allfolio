@@ -42,6 +42,13 @@ export interface HoldingByType {
   holdingCount: number
 }
 
+export interface HoldingsByRegion {
+  region: string
+  valueKrw: number
+  weight: number             // 0~100 스케일
+  holdingCount: number
+}
+
 export interface HoldingCash {
   account: string
   currency: string
@@ -89,4 +96,5 @@ export interface HoldingsReportBody {
   cash: HoldingCash[]
   realized: HoldingRealized[]
   monthlyChange?: HoldingMonthlyChange
+  byRegion?: HoldingsByRegion[]
 }

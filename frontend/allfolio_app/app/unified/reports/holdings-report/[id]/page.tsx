@@ -12,6 +12,7 @@ import { HoldingsSummary } from '@/components/holdings-report/HoldingsSummary'
 import { HoldingsGrid } from '@/components/holdings-report/HoldingsGrid'
 import { ByAccountTable } from '@/components/holdings-report/ByAccountTable'
 import { ByTypeTable } from '@/components/holdings-report/ByTypeTable'
+import { RegionExposure } from '@/components/holdings-report/RegionExposure'
 import { CashTable } from '@/components/holdings-report/CashTable'
 import { MonthlyChange } from '@/components/holdings-report/MonthlyChange'
 
@@ -102,6 +103,7 @@ export default function HoldingsReportDetailPage() {
         <ByAccountTable rows={body.byAccount} />
         <ByTypeTable rows={body.byType} />
       </div>
+      {body.byRegion && body.byRegion.length > 0 && <RegionExposure rows={body.byRegion} />}
       <CashTable rows={body.cash} />
     </div>
   )
