@@ -12,6 +12,7 @@ import { ReceiptsTable } from '@/components/dividend-report/ReceiptsTable'
 import { MonthlyNetTrend } from '@/components/dividend-report/MonthlyNetTrend'
 import { BySymbolTable } from '@/components/dividend-report/BySymbolTable'
 import { ByCountryTable } from '@/components/dividend-report/ByCountryTable'
+import { DividendCalendar } from '@/components/dividend-report/DividendCalendar'
 
 export default function DividendReportDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -75,6 +76,7 @@ export default function DividendReportDetailPage() {
       <MonthlyNetTrend rows={body.monthly} />
       <BySymbolTable rows={body.bySymbol} />
       <ByCountryTable rows={body.byCountry} />
+      {body.dividendCalendar && body.dividendCalendar.length > 0 && <DividendCalendar rows={body.dividendCalendar} />}
     </div>
   )
 }
