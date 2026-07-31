@@ -27,6 +27,9 @@ export default function NavBar() {
             <Link href="/unified/cashflow" className="text-sm text-gray-400 hover:text-white transition-colors">
               현금흐름
             </Link>
+            <Link href="/unified/recon" className="text-sm text-gray-400 hover:text-white transition-colors">
+              대사·검증
+            </Link>
             {isAdmin && (
               <>
                 <Link href="/unified/admin/tax-rates" className="text-sm text-amber-400 hover:text-amber-300 transition-colors">
