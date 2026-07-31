@@ -211,4 +211,29 @@ class HoldingsReportGeneratorTest {
         assertEquals(0, body["realized"].size())
         assertEquals(0.0, body["holdings"][0]["realizedPnl"].asDouble(), 0.01)
     }
+
+    @Test
+    fun `월간 변동에 신규 편입과 전량 매도가 잡힌다`() {
+        val assets = listOf(asset(acctA, "삼성전자", AssetType.STOCK, "10", "100", "150"))
+        val trades = listOf(
+            stockTrade(acctA, StockTradeType.BUY, "삼성전자", "10", "100", LocalDate.of(2026, 6, 5)),
+            stockTrade(acctA, StockTradeType.BUY, "SOLD", "10", "100", LocalDate.of(2026, 5, 1)),
+            stockTrade(acctA, StockTradeType.SELL, "SOLD", "10", "150", LocalDate.of(2026, 6, 20)),
+        )
+        val body = mapper.readTree(generator(assets, standardAccounts(), trades).generate(userId, period).bodyJson)
+        val mc = body["monthlyChange"]
+        assertEquals(1, mc["newEntries"].size())
+        assertEquals("삼성전자", mc["newEntries"][0]["symbol"].asText())
+        assertEquals(1, mc["soldOut"].size())
+        assertEquals("SOLD", mc["soldOut"][0]["symbol"].asText())
+    }
+
+    @Test
+    fun `거래 없으면 월간 변동은 빈 구조다`() {
+        val body = mapper.readTree(generator(standardAssets(), standardAccounts()).generate(userId, period).bodyJson)
+        val mc = body["monthlyChange"]
+        assertEquals(0, mc["newEntries"].size())
+        assertEquals(0, mc["soldOut"].size())
+        assertEquals(0, mc["qtyChanges"].size())
+    }
 }

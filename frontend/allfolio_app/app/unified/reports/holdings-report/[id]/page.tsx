@@ -13,6 +13,7 @@ import { HoldingsGrid } from '@/components/holdings-report/HoldingsGrid'
 import { ByAccountTable } from '@/components/holdings-report/ByAccountTable'
 import { ByTypeTable } from '@/components/holdings-report/ByTypeTable'
 import { CashTable } from '@/components/holdings-report/CashTable'
+import { MonthlyChange } from '@/components/holdings-report/MonthlyChange'
 
 export default function HoldingsReportDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -96,6 +97,7 @@ export default function HoldingsReportDetailPage() {
           </table>
         </section>
       )}
+      {body.monthlyChange && <MonthlyChange data={body.monthlyChange} />}
       <div className="grid gap-4 lg:grid-cols-2">
         <ByAccountTable rows={body.byAccount} />
         <ByTypeTable rows={body.byType} />
