@@ -20,13 +20,14 @@ object DividendCalendarCalculator {
         return ttm.groupBy { it.stockName to it.symbol }
             .map { (key, rs) ->
                 val months = rs.map { it.payDate.monthValue }.distinct().sorted()
-                val count = rs.size
                 DividendCalendarEntry(
                     symbol = key.second,
                     stockName = key.first,
-                    cadence = cadenceOf(count),
+                    // 주기는 "지급된 distinct 월 수" 기준 — 다계좌 보유로 레코드가 중복돼도
+                    // 실제 지급 빈도(예: 분기=4개월)를 정확히 반영(paidMonths와 항상 일관).
+                    cadence = cadenceOf(months.size),
                     paidMonths = months,
-                    payCount = count,
+                    payCount = rs.size,
                     lastPayDate = rs.maxOf { it.payDate },
                     ttmNet = rs.fold(BigDecimal.ZERO) { a, r -> a + r.net },
                 )
@@ -34,11 +35,12 @@ object DividendCalendarCalculator {
             .sortedByDescending { it.ttmNet }
     }
 
-    private fun cadenceOf(count: Int): String = when {
-        count >= 10 -> "월배당"
-        count == 4  -> "분기배당"
-        count == 2  -> "반기배당"
-        count == 1  -> "연 1회/단발"
-        else        -> "비정기"
+    /** distinctMonths = TTM 동안 배당이 지급된 서로 다른 달의 수(1~12). */
+    private fun cadenceOf(distinctMonths: Int): String = when {
+        distinctMonths >= 10 -> "월배당"
+        distinctMonths == 4  -> "분기배당"
+        distinctMonths == 2  -> "반기배당"
+        distinctMonths == 1  -> "연 1회/단발"
+        else                 -> "비정기"
     }
 }

@@ -43,4 +43,21 @@ class DividendCalendarCalculatorTest {
         assertThat(samsung.lastPayDate).isEqualTo(LocalDate.of(2026, 9, 15))
         assertThat(samsung.paidMonths).containsExactly(3, 9)
     }
+
+    @Test
+    fun `다계좌 중복 지급이어도 cadence는 distinct 월 기준이라 정확하다`() {
+        // 분기배당 종목을 3계좌로 보유 → 레코드 12건이지만 지급 월은 3·6·9·12(4개) → 분기배당
+        val ttm = listOf("A", "B", "C").flatMap { acct ->
+            listOf(3, 6, 9, 12).map { rec(it, "분기주", "Q", "10", acct = acct) }
+        }
+        val e = DividendCalendarCalculator.build(ttm).first()
+        assertThat(e.cadence).isEqualTo("분기배당")   // 레코드 수(12)로 "월배당" 오분류되지 않음
+        assertThat(e.payCount).isEqualTo(12)
+        assertThat(e.paidMonths).containsExactly(3, 6, 9, 12)
+    }
+
+    @Test
+    fun `빈 이력은 빈 리스트`() {
+        assertThat(DividendCalendarCalculator.build(emptyList())).isEmpty()
+    }
 }
