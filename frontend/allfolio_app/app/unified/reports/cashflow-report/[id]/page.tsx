@@ -10,6 +10,7 @@ import type { CashflowReportBody } from '@/types/cashflow-report'
 import { CashflowSummary } from '@/components/cashflow-report/CashflowSummary'
 import { CashflowByType } from '@/components/cashflow-report/CashflowByType'
 import { CashflowReconciliation } from '@/components/cashflow-report/CashflowReconciliation'
+import { CashflowWaterfall } from '@/components/cashflow-report/CashflowWaterfall'
 import { MonthlyCashflowChart } from '@/components/cashflow-report/MonthlyCashflowChart'
 import { CashflowDetails } from '@/components/cashflow-report/CashflowDetails'
 import { SpecialTransactions } from '@/components/cashflow-report/SpecialTransactions'
@@ -74,6 +75,7 @@ export default function CashflowReportDetailPage() {
 
       <CashflowSummary summary={body.summary} />
       {body.reconciliation && <CashflowReconciliation data={body.reconciliation} />}
+      {body.reconciliation && <CashflowWaterfall data={body.reconciliation} />}
       <CashflowByType rows={body.byType} />
       <MonthlyCashflowChart rows={body.monthly} />
       <CashflowDetails rows={body.details} />
