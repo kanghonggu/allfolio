@@ -93,10 +93,48 @@ class DlqService(
     fun deadSize(brokerType: BrokerType): Long =
         runCatching { stringRedisTemplate.opsForList().size(deadKey(brokerType.name)) ?: 0L }.getOrDefault(0L)
 
+    // ── 어드민 모니터링 (AF-7) ──
+
+    /** dead 리스트 비파괴 조회 (어드민 화면용). 역직렬화 실패 항목은 건너뜀. */
+    fun peekDead(brokerType: BrokerType, limit: Long = 50): List<FailedTradeEvent> =
+        runCatching {
+            stringRedisTemplate.opsForList().range(deadKey(brokerType.name), 0, limit - 1)
+                .orEmpty()
+                .mapNotNull { json ->
+                    runCatching { objectMapper.readValue(json, FailedTradeEvent::class.java) }.getOrNull()
+                }
+        }.getOrElse { e ->
+            log.warn("[DLQ] peekDead failed broker={}", brokerType, e)
+            emptyList()
+        }
+
+    /**
+     * dead → main 재큐 (어드민 수동). retryCount 보존 — Worker가 실패 시 retryCount 증가로
+     * 즉시 dead 복귀하는 1회성 수동 기회. 이동 건수 반환.
+     */
+    fun requeueDead(brokerType: BrokerType): Int {
+        var moved = 0
+        while (moved < MAX_REQUEUE) {
+            val json = runCatching {
+                stringRedisTemplate.opsForList().leftPop(deadKey(brokerType.name))
+            }.getOrElse { e ->
+                log.error("[DLQ] requeueDead pop failed broker={}", brokerType, e)
+                null
+            } ?: break
+            stringRedisTemplate.opsForList().rightPush(dlqKey(brokerType.name), json)
+            moved++
+        }
+        if (moved > 0) log.info("[DLQ] requeued {} dead events broker={}", moved, brokerType)
+        return moved
+    }
+
     private fun dlqKey(brokerType: String)  = "dlq:trade:$brokerType"
     private fun deadKey(brokerType: String) = "dlq:dead:$brokerType"
 
     companion object {
         const val MAX_RETRIES = 5
+
+        /** 1회 requeue 상한 — 무한 루프·과부하 방어 */
+        const val MAX_REQUEUE = 500
     }
 }
