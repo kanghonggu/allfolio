@@ -42,6 +42,7 @@ class WfStepExecutor(
     private val jobLogRepo: WfJobLogJpaRepository,
     private val holidayRepo: WfHolidayJpaRepository,
     private val lock: WfLockPort,
+    private val eventPublisher: WfEventPublisher,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val actionMap: Map<String, WfAction> by lazy { actions.associateBy { it.ref } }
@@ -116,7 +117,7 @@ class WfStepExecutor(
         val sub = subStepRepo.findByIdStepCd(stepCd).find { it.id.subStepCd == subStepCd }
             ?: throw NoSuchElementException("하위단계 없음: $stepCd/$subStepCd")
         val now = LocalDateTime.now()
-        jobLogRepo.save(
+        val saved = jobLogRepo.save(
             WfJobLogEntity(
                 ymd = ymd, stepCd = stepCd, subStepCd = sub.id.subStepCd,
                 execSeq = nextExecSeq(ymd, sub),
@@ -125,6 +126,7 @@ class WfStepExecutor(
                 autoManual = "M", executor = executor, remark = remark.take(500),
             )
         )
+        notify(saved)
     }
 
     /** 당일 단계 롤업 — 마감판정 대상·당일 실행 대상 하위단계의 최신 차수 상태 기준. */
@@ -178,7 +180,20 @@ class WfStepExecutor(
         }
         jobLog.finishedAt = LocalDateTime.now()
         jobLogRepo.save(jobLog)
+        notify(jobLog)
         return jobLog.status
+    }
+
+    /** SSE 등 이벤트 발행 — 실패해도 실행 흐름에 영향 없음 (FR-DASH-001). */
+    private fun notify(jobLog: WfJobLogEntity) {
+        runCatching {
+            eventPublisher.publish(
+                WfStepEvent(
+                    ymd = jobLog.ymd, stepCd = jobLog.stepCd, subStepCd = jobLog.subStepCd,
+                    execSeq = jobLog.execSeq, status = jobLog.status, remark = jobLog.remark,
+                )
+            )
+        }.onFailure { e -> log.warn("[Closing] event publish failed", e) }
     }
 
     /** POLL: 시작 후 간격 폴링, 타임아웃 초과 시 오류 (FR-STEP-004, 기본 5분·10초). */
