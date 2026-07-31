@@ -1,6 +1,6 @@
 // Outbox·DLQ 운영 모니터링 (AF-7/8)
 
-export type OutboxStatus = 'PENDING' | 'PROCESSED' | 'FAILED' | 'DEAD'
+export type OutboxStatus = 'PENDING' | 'PROCESSED' | 'PROCESSED_KAFKA' | 'FAILED' | 'DEAD'
 
 export interface OpsSummary {
   outbox: Record<string, number>

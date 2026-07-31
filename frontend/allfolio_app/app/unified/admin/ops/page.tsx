@@ -9,12 +9,13 @@ import type { OutboxEventSummary, OutboxStatus, ReprocessResult } from '@/types/
 
 const REFETCH_MS = 30_000
 
-const STATUS_OPTIONS: OutboxStatus[] = ['DEAD', 'FAILED', 'PENDING', 'PROCESSED']
+const STATUS_OPTIONS: OutboxStatus[] = ['DEAD', 'FAILED', 'PENDING', 'PROCESSED', 'PROCESSED_KAFKA']
 const STATUS_STYLE: Record<string, string> = {
-  PENDING:   'bg-yellow-900/40 text-yellow-400 border-yellow-800',
-  PROCESSED: 'bg-emerald-900/40 text-emerald-400 border-emerald-800',
-  FAILED:    'bg-orange-900/40 text-orange-400 border-orange-800',
-  DEAD:      'bg-red-900/40 text-red-400 border-red-800',
+  PENDING:         'bg-yellow-900/40 text-yellow-400 border-yellow-800',
+  PROCESSED:       'bg-emerald-900/40 text-emerald-400 border-emerald-800',
+  PROCESSED_KAFKA: 'bg-emerald-900/40 text-emerald-400 border-emerald-800',
+  FAILED:          'bg-orange-900/40 text-orange-400 border-orange-800',
+  DEAD:            'bg-red-900/40 text-red-400 border-red-800',
 }
 
 function fmt(ts: string | null | undefined) {
