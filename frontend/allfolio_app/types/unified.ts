@@ -147,6 +147,27 @@ export interface SyncResult {
   error:     string | null
 }
 
+// ── 동기화 상태 (AF-9/10) ─────────────────────────────────────
+
+export interface SyncLogView {
+  id:           string
+  trigger:      'SCHEDULED' | 'MANUAL'
+  status:       'SUCCESS' | 'ERROR'
+  syncedCount:  number
+  errorMessage: string | null
+  createdAt:    string
+}
+
+export interface AccountSyncStatus {
+  accountId:    string
+  accountName:  string
+  provider:     string
+  status:       string
+  lastSyncedAt: string | null
+  syncable:     boolean
+  lastLog:      SyncLogView | null
+}
+
 // ── StockTrade ────────────────────────────────────────────────
 
 export type StockTradeType =

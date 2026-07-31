@@ -59,12 +59,20 @@ export default function AccountsPage() {
           <h1 className="text-2xl font-bold">계좌 관리</h1>
           <p className="mt-1 text-sm text-gray-400">자산 수집 계좌를 관리합니다</p>
         </div>
-        <Link
-          href="/unified/accounts/new"
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-500 transition-colors"
-        >
-          + 계좌 추가
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/unified/accounts/sync"
+            className="rounded-lg border border-gray-600 px-4 py-2 text-sm font-medium hover:border-blue-500 hover:text-blue-400 transition-colors"
+          >
+            동기화 상태
+          </Link>
+          <Link
+            href="/unified/accounts/new"
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-500 transition-colors"
+          >
+            + 계좌 추가
+          </Link>
+        </div>
       </div>
 
       {isLoading ? (

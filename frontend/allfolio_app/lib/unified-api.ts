@@ -3,6 +3,7 @@ import type {
   Account, AccountProvider, CreateAccountPayload,
   Asset, CreateManualAssetPayload,
   PortfolioResponse, SyncResult,
+  AccountSyncStatus, SyncLogView,
   CsvPreviewRow, CsvImportResult,
   StockTrade, CreateStockTradePayload,
   ConnectionTestResult,
@@ -37,6 +38,12 @@ export function createUnifiedApi(accessToken: string) {
       delete: async (id: string): Promise<void> => {
         await api.delete(`/accounts/${id}`)
       },
+
+      syncStatus: async (): Promise<AccountSyncStatus[]> =>
+        (await api.get<AccountSyncStatus[]>('/accounts/sync-status')).data,
+
+      syncLogs: async (id: string, limit = 20): Promise<SyncLogView[]> =>
+        (await api.get<SyncLogView[]>(`/accounts/${id}/sync-logs`, { params: { limit } })).data,
 
       sync: async (id: string): Promise<SyncResult> =>
         (await api.post<SyncResult>(`/accounts/${id}/sync`)).data,
