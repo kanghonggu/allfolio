@@ -39,11 +39,14 @@ class ClosingSseEventPublisher(
     }
 }
 
-/** 관제 화면 SSE 구독 (ADMIN — /api/admin 게이트). */
+/**
+ * 관제 화면 SSE 구독 (ADMIN).
+ * EventSource는 헤더를 못 보내므로 SseTokenFilter가 적용되는 /api/sse/ 경로 사용
+ * (?token= 쿼리 → JWT 주입, SecurityConfig에서 hasRole(ADMIN) 매칭).
+ */
 @RestController
-@RequestMapping("/api/admin/closing")
 class ClosingSseController(private val registry: SseEmitterRegistry) {
 
-    @GetMapping("/events")
+    @GetMapping("/api/sse/closing")
     fun events(): SseEmitter = registry.register(ClosingSseChannel.CHANNEL)
 }
