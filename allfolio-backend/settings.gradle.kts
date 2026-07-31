@@ -12,5 +12,6 @@ include(
     ":risk",
     ":esg",
     ":report",
-    ":unified-asset"
+    ":unified-asset",
+    ":reconciliation"
 )

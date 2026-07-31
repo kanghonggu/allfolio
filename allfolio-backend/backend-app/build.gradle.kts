@@ -42,6 +42,7 @@ dependencies {
     implementation(project(":esg"))
     implementation(project(":report"))
     implementation(project(":unified-asset"))
+    implementation(project(":reconciliation"))
     implementation("com.opencsv:opencsv:5.9")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
