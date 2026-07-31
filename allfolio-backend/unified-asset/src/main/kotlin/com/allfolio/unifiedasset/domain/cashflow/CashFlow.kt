@@ -69,11 +69,12 @@ class CashFlow private constructor(
             userId: UUID, accountId: UUID?, flowDate: LocalDate,
             fromAmount: BigDecimal, fromCurrency: String, fromAmountKrw: BigDecimal,
             toAmount: BigDecimal, toCurrency: String, toAmountKrw: BigDecimal, memo: String?,
+            toAccountId: UUID? = null,   // null이면 동일 계좌 내 환전, 지정 시 계좌간 환전(FX_IN 도착 계좌)
         ): Pair<CashFlow, CashFlow> {
             require(fromCurrency.uppercase() != toCurrency.uppercase()) { "환전 통화가 같을 수 없습니다" }
             val link = UUID.randomUUID()
             return create(userId, accountId, flowDate, FlowType.FX_OUT, fromAmount, fromCurrency, fromAmountKrw, memo, link) to
-                create(userId, accountId, flowDate, FlowType.FX_IN, toAmount, toCurrency, toAmountKrw, memo, link)
+                create(userId, toAccountId ?: accountId, flowDate, FlowType.FX_IN, toAmount, toCurrency, toAmountKrw, memo, link)
         }
     }
 }

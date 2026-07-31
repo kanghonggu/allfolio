@@ -30,12 +30,14 @@ class RecordInternalFlowUseCase(
         userId: UUID, accountId: UUID?, flowDate: LocalDate,
         fromAmount: BigDecimal, fromCurrency: String,
         toAmount: BigDecimal, toCurrency: String, memo: String?,
+        toAccountId: UUID? = null,   // null이면 동일 계좌, 지정 시 계좌간 환전
     ): List<CashFlow> {
         require(fromAmount > BigDecimal.ZERO && toAmount > BigDecimal.ZERO) { "환전 금액은 양수여야 합니다" }
         val (out, inn) = CashFlow.fxPair(
             userId, accountId, flowDate,
             fromAmount, fromCurrency, fx.toKrw(fromAmount, fromCurrency),
             toAmount, toCurrency, fx.toKrw(toAmount, toCurrency), memo,
+            toAccountId = toAccountId,
         )
         return listOf(repository.save(out), repository.save(inn))
     }

@@ -81,4 +81,5 @@ export interface FxRequest {
   toAmount: number
   toCurrency: string
   memo?: string | null
+  toAccountId?: string | null   // 지정 시 계좌간 환전(도착 계좌). null이면 동일 계좌
 }

@@ -56,6 +56,7 @@ class CashFlowController(
         val accountId: UUID?, val flowDate: LocalDate,
         val fromAmount: BigDecimal, val fromCurrency: String,
         val toAmount: BigDecimal, val toCurrency: String, val memo: String?,
+        val toAccountId: UUID? = null,   // 지정 시 계좌간 환전(FX_IN 도착 계좌). null이면 동일 계좌
     )
 
     @PostMapping
@@ -84,7 +85,7 @@ class CashFlowController(
 
     @PostMapping("/fx")
     fun fx(@RequestHeader("X-User-Id") userId: UUID, @RequestBody req: FxRequest): List<CashFlowResponse> =
-        recordInternalFlow.recordFx(userId, req.accountId, req.flowDate, req.fromAmount, req.fromCurrency, req.toAmount, req.toCurrency, req.memo)
+        recordInternalFlow.recordFx(userId, req.accountId, req.flowDate, req.fromAmount, req.fromCurrency, req.toAmount, req.toCurrency, req.memo, req.toAccountId)
             .map { it.toResponse() }
 
     @DeleteMapping("/{id}")

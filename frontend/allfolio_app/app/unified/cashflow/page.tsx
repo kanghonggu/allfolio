@@ -31,6 +31,7 @@ interface TransferFormState {
 
 interface FxFormState {
   accountId: string
+  toAccountId: string
   flowDate: string
   fromAmount: string
   fromCurrency: string
@@ -65,7 +66,7 @@ const emptyTransferForm: TransferFormState = {
 }
 
 const emptyFxForm: FxFormState = {
-  accountId: '', flowDate: today(), fromAmount: '', fromCurrency: '', toAmount: '', toCurrency: '', memo: '',
+  accountId: '', toAccountId: '', flowDate: today(), fromAmount: '', fromCurrency: '', toAmount: '', toCurrency: '', memo: '',
 }
 
 export default function CashflowPage() {
@@ -151,6 +152,7 @@ export default function CashflowPage() {
     if (err) return
     fxMutation.mutate({
       accountId: fxForm.accountId,
+      toAccountId: fxForm.toAccountId || null,
       flowDate: fxForm.flowDate,
       fromAmount: Number(fxForm.fromAmount),
       fromCurrency: fxForm.fromCurrency,
@@ -270,13 +272,26 @@ export default function CashflowPage() {
           <h2 className="mb-4 text-lg font-semibold">환전</h2>
           <form onSubmit={submitFx} className="space-y-3">
             <label className="block text-sm text-gray-400">
-              계좌
+              출발 계좌
               <select
                 className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
                 value={fxForm.accountId}
                 onChange={(e) => setFxForm((f) => ({ ...f, accountId: e.target.value }))}
               >
                 <option value="">선택하세요</option>
+                {accounts.map((a: Account) => (
+                  <option key={a.id} value={a.id}>{a.accountName} ({a.provider})</option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-sm text-gray-400">
+              도착 계좌 <span className="text-xs text-gray-500">(선택 — 미지정 시 동일 계좌, 지정 시 계좌간 환전)</span>
+              <select
+                className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
+                value={fxForm.toAccountId}
+                onChange={(e) => setFxForm((f) => ({ ...f, toAccountId: e.target.value }))}
+              >
+                <option value="">동일 계좌</option>
                 {accounts.map((a: Account) => (
                   <option key={a.id} value={a.id}>{a.accountName} ({a.provider})</option>
                 ))}
