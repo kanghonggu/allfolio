@@ -90,6 +90,8 @@ class HoldingsReportGenerator(
 
         val unrealizedTotal = assets.fold(BigDecimal.ZERO) { acc, a -> acc + a.unrealizedPnlInKrw(fx) }
 
+        val monthlyChange = MonthlyChangeCalculator.build(trades, period, realizedBySymbol, nameBySymbol)
+
         val body = mapOf(
             "summary" to mapOf(
                 "totalValueKrw" to totalKrw, "holdingCount" to assets.size,
@@ -104,6 +106,17 @@ class HoldingsReportGenerator(
             "realized" to realizedBySymbol.filterValues { it.signum() != 0 }
                 .map { (sym, pnl) -> mapOf("symbol" to sym, "name" to (nameBySymbol[sym] ?: sym), "realizedPnl" to pnl) }
                 .sortedByDescending { it["realizedPnl"] as BigDecimal },
+            "monthlyChange" to mapOf(
+                "newEntries" to monthlyChange.newEntries.map {
+                    mapOf("symbol" to it.symbol, "name" to it.name, "firstBuyDate" to it.firstBuyDate.toString(), "buyPrice" to it.buyPrice)
+                },
+                "soldOut" to monthlyChange.soldOut.map {
+                    mapOf("symbol" to it.symbol, "name" to it.name, "soldOutDate" to it.soldOutDate.toString(), "realizedPnl" to it.realizedPnl)
+                },
+                "qtyChanges" to monthlyChange.qtyChanges.map {
+                    mapOf("symbol" to it.symbol, "name" to it.name, "netQty" to it.netQty, "netBuyAmount" to it.netBuyAmount)
+                },
+            ),
             "note" to "보유·평가액은 보고서 생성 시점 기준 · 당월 실현손익은 수동 입력 거래(ua_stock_trades) 기준",
         )
         return GeneratedReport(asOfDate = period.end, bodyJson = mapper.writeValueAsString(body))
