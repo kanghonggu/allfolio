@@ -14,6 +14,9 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.UUID
 
+/** DEAD 수동 재처리 결과 (AF-7). */
+data class OutboxReprocessResult(val processed: Int, val failed: Int, val skipped: Int)
+
 /**
  * Outbox 이벤트 폴링 프로세서 (안전망 — Safety Net)
  *
@@ -51,6 +54,54 @@ class OutboxEventProcessor(
 
         log.info("[Outbox-Polling] {} retryable events", events.size)
 
+        handleGroups(events) { groupEvents, e ->
+            groupEvents.forEach { event ->
+                val newRetryCount = event.retryCount + 1
+                if (newRetryCount >= MAX_RETRIES) {
+                    event.status       = OutboxStatus.DEAD
+                    event.errorMessage = "MAX_RETRIES exceeded: ${e.message?.take(400)}"
+                    metrics.outboxDead()
+                    log.warn("[Outbox-Polling] DEAD outboxEventId={} retries={}", event.id, newRetryCount)
+                } else {
+                    event.status       = OutboxStatus.FAILED
+                    event.errorMessage = e.message?.take(500)
+                    event.retryCount   = newRetryCount
+                    metrics.outboxFailed()
+                }
+            }
+        }
+    }
+
+    /**
+     * DEAD 이벤트 수동 재처리 (어드민, AF-7) — 기존 폴러 경로(같은 트리거·같은 멱등성) 재사용.
+     * 1회성 시도: 성공 → PROCESSED, 실패 → DEAD 유지 + errorMessage 갱신. retryCount는 보존.
+     * skipped = 요청 id 중 DEAD 아님/미존재/타 인스턴스 락.
+     */
+    @Transactional
+    fun reprocessDead(ids: List<UUID>): OutboxReprocessResult {
+        val events = outboxRepository.findDeadByIdsForUpdate(ids)
+        val skipped = ids.size - events.size
+        if (events.isEmpty()) return OutboxReprocessResult(0, 0, skipped)
+
+        log.info("[Outbox-Reprocess] {} dead events (requested {})", events.size, ids.size)
+
+        var failed = 0
+        handleGroups(events) { groupEvents, e ->
+            failed += groupEvents.size
+            groupEvents.forEach { event ->
+                event.errorMessage = "manual reprocess failed: ${e.message?.take(450)}"
+                // status DEAD·retryCount 보존 — 1회성 수동 시도
+            }
+        }
+        val processed = events.count { it.status == OutboxStatus.PROCESSED }
+        return OutboxReprocessResult(processed, failed, skipped)
+    }
+
+    /** (tenant, portfolio, date) 그룹별 스냅샷 트리거 — 실패 시 상태 전이는 onGroupFailure 정책에 위임. */
+    private fun handleGroups(
+        events: List<OutboxEventEntity>,
+        onGroupFailure: (List<OutboxEventEntity>, Exception) -> Unit,
+    ) {
         val groups: Map<Triple<UUID, UUID, LocalDate>, List<OutboxEventEntity>> = events
             .groupBy { event ->
                 val payload = OutboxEventPublisher.MAPPER.readValue(
@@ -80,20 +131,7 @@ class OutboxEventProcessor(
                     tenantId, portfolioId, tradeDate, groupEvents.size)
             } catch (e: Exception) {
                 log.error("[Outbox-Polling] FAILED tenant={} portfolio={} date={}", tenantId, portfolioId, tradeDate, e)
-                groupEvents.forEach { event ->
-                    val newRetryCount = event.retryCount + 1
-                    if (newRetryCount >= MAX_RETRIES) {
-                        event.status       = OutboxStatus.DEAD
-                        event.errorMessage = "MAX_RETRIES exceeded: ${e.message?.take(400)}"
-                        metrics.outboxDead()
-                        log.warn("[Outbox-Polling] DEAD outboxEventId={} retries={}", event.id, newRetryCount)
-                    } else {
-                        event.status       = OutboxStatus.FAILED
-                        event.errorMessage = e.message?.take(500)
-                        event.retryCount   = newRetryCount
-                        metrics.outboxFailed()
-                    }
-                }
+                onGroupFailure(groupEvents, e)
             }
             outboxRepository.saveAll(groupEvents)
         }
