@@ -84,7 +84,7 @@ class CashflowReportGenerator(
         }
 
         data class Row(val date: LocalDate, val account: String, val type: String, val desc: String, val amount: BigDecimal)
-        val flowRows = flows.map {
+        val flowRows = flows.filter { !it.type.isInternal() }.map {
             val acct = it.accountId?.let { id -> acctNames[id] } ?: "-"
             if (it.type == FlowType.DEPOSIT) Row(it.flowDate, acct, "입금", it.memo ?: "입금", it.amountKrw)
             else Row(it.flowDate, acct, "출금", it.memo ?: "출금", it.amountKrw.negate())
@@ -130,7 +130,7 @@ class CashflowReportGenerator(
         val difference = actualCash - closingCalculated
         val reconciled = reconcilable && difference.abs() < BigDecimal.ONE
 
-        val special = SpecialTransactionCalculator.build(flows, trades, acctNames, totalAssetsKrw)
+        val special = SpecialTransactionCalculator.build(flows.filter { !it.type.isInternal() }, trades, acctNames, totalAssetsKrw)
 
         val body = mapOf(
             "summary" to mapOf("totalInflow" to totalInflow, "totalOutflow" to totalOutflow, "netFlow" to netFlow),
