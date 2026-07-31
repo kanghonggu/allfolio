@@ -21,7 +21,7 @@ import java.util.UUID
  * ua_assets 보유 자산의 종목별 명세(수량·평단·평가액·평가손익)와 계좌/자산군 소계를 본문에 고정.
  * 월말 스냅샷 히스토리 부재 → 생성 시점 보유 기준(asOf=period.end). 자산 0건은 예외 없는 유효 0 보고서.
  * 당월 실현손익(FIFO)은 ua_stock_trades 기반으로 계산해 realized 섹션에 반영한다.
- * v1 제외: 월간 변동 diff, 지역별 그룹핑.
+ * v1 제외 해소: 지역 노출(통화 파생) 포함. 후속: 국가/거래소 필드 기반 정밀 분류.
  */
 @Component
 class HoldingsReportGenerator(
@@ -81,6 +81,12 @@ class HoldingsReportGenerator(
             mapOf("type" to t.name, "valueKrw" to sum, "weight" to pct(sum, totalKrw), "holdingCount" to g.size)
         }.sortedByDescending { it["valueKrw"] as BigDecimal }
 
+        val byRegion = valued.groupBy { CurrencyRegionMapper.regionOf(it.first.currency) }
+            .map { (region, g) ->
+                val sum = g.fold(BigDecimal.ZERO) { acc, (_, v) -> acc + v }
+                mapOf("region" to region, "valueKrw" to sum, "weight" to pct(sum, totalKrw), "holdingCount" to g.size)
+            }.sortedByDescending { it["valueKrw"] as BigDecimal }
+
         val cashValued = valued.filter { it.first.type == AssetType.CASH }
         val cashKrw = cashValued.fold(BigDecimal.ZERO) { acc, (_, v) -> acc + v }
         val cash = cashValued.map { (a, valueKrw) ->
@@ -102,6 +108,7 @@ class HoldingsReportGenerator(
             "holdings" to holdings,
             "byAccount" to byAccount,
             "byType" to byType,
+            "byRegion" to byRegion,
             "cash" to cash,
             "realized" to realizedBySymbol.filterValues { it.signum() != 0 }
                 .map { (sym, pnl) -> mapOf("symbol" to sym, "name" to (nameBySymbol[sym] ?: sym), "realizedPnl" to pnl) }
