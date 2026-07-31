@@ -18,7 +18,7 @@ Spec: `docs/superpowers/specs/2026-07-31-dividend-calendar-design.md`
 - Create: `allfolio-backend/unified-asset/src/main/kotlin/com/allfolio/unifiedasset/application/usecase/DividendCalendarCalculator.kt`
 - Test: `allfolio-backend/unified-asset/src/test/kotlin/com/allfolio/unifiedasset/application/usecase/DividendCalendarCalculatorTest.kt`
 
-- [ ] **Step 1: 실패 테스트 작성** — `DividendCalendarCalculatorTest.kt`. `DividendRecord`의 정확한 생성자 시그니처는 `application/port` 아래 정의를 먼저 확인할 것(필드: payDate, stockName, symbol, accountName, gross, tax, net — 순서/타입 확인). 테스트 골격:
+- [ ] **Step 1: 실패 테스트 작성** — `DividendCalendarCalculatorTest.kt`. **확인된 시그니처**: `DividendRecord(payDate: LocalDate, stockName: String, symbol: String?, accountName: String, provider: String, gross: BigDecimal, tax: BigDecimal)` 이고 `net`은 `gross - tax` 파생 프로퍼티(생성자 인자 아님). 따라서 헬퍼는 gross/tax만 받고 net은 계산됨. 테스트 골격:
 
 ```kotlin
 package com.allfolio.unifiedasset.application.usecase
@@ -30,9 +30,9 @@ import java.math.BigDecimal
 import java.time.LocalDate
 
 class DividendCalendarCalculatorTest {
-    // DividendRecord 실제 시그니처에 맞춰 조정할 것
-    private fun rec(month: Int, name: String, sym: String?, net: String, gross: String = net, tax: String = "0", acct: String = "계좌") =
-        DividendRecord(LocalDate.of(2026, month, 15), name, sym, acct, BigDecimal(gross), BigDecimal(tax), BigDecimal(net))
+    // tax=0 이므로 net == gross. ttmNet 기대값은 gross 합.
+    private fun rec(month: Int, name: String, sym: String?, gross: String, tax: String = "0", acct: String = "계좌", provider: String = "KIS") =
+        DividendRecord(LocalDate.of(2026, month, 15), name, sym, acct, provider, BigDecimal(gross), BigDecimal(tax))
 
     @Test
     fun `월배당은 12회 지급-월1~12로 분류된다`() {
