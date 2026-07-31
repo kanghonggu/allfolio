@@ -41,7 +41,7 @@ export interface ReturnsAnalysis {
   benchmark: BenchmarkComparison | null
 }
 
-export type FlowType = 'DEPOSIT' | 'WITHDRAWAL'
+export type FlowType = 'DEPOSIT' | 'WITHDRAWAL' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'FX_IN' | 'FX_OUT'
 
 export interface CashFlowItem {
   id: string
@@ -52,6 +52,7 @@ export interface CashFlowItem {
   currency: string
   amountKrw: number
   memo: string | null
+  linkId?: string | null
 }
 
 export interface RecordCashFlowRequest {
@@ -60,5 +61,24 @@ export interface RecordCashFlowRequest {
   flowType: FlowType
   amount: number
   currency: string
+  memo?: string | null
+}
+
+export interface TransferRequest {
+  fromAccountId: string
+  toAccountId: string
+  flowDate: string
+  amount: number
+  currency: string
+  memo?: string | null
+}
+
+export interface FxRequest {
+  accountId?: string | null
+  flowDate: string
+  fromAmount: number
+  fromCurrency: string
+  toAmount: number
+  toCurrency: string
   memo?: string | null
 }

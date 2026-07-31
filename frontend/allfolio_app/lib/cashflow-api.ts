@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { CashFlowItem, RecordCashFlowRequest } from '@/types/returns'
+import type { CashFlowItem, RecordCashFlowRequest, TransferRequest, FxRequest } from '@/types/returns'
 
 const BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8090'}/api/cashflows`
 
@@ -20,5 +20,11 @@ export function createCashFlowApi(accessToken: string) {
     remove: async (id: string): Promise<void> => {
       await api.delete(`/${id}`)
     },
+
+    transfer: async (req: TransferRequest): Promise<CashFlowItem[]> =>
+      (await api.post<CashFlowItem[]>('/transfer', req)).data,
+
+    fx: async (req: FxRequest): Promise<CashFlowItem[]> =>
+      (await api.post<CashFlowItem[]>('/fx', req)).data,
   }
 }
