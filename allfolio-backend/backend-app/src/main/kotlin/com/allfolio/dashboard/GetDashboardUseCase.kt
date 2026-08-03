@@ -1,6 +1,10 @@
 package com.allfolio.dashboard
 
 import com.allfolio.unifiedasset.application.port.AssetRepository
+import com.allfolio.unifiedasset.application.port.FxConverter
+import com.allfolio.unifiedasset.application.usecase.currentValueInKrw
+import com.allfolio.unifiedasset.application.usecase.loanAmountInKrw
+import com.allfolio.unifiedasset.application.usecase.navInKrw
 import com.allfolio.unifiedasset.domain.asset.AssetLiquidityType
 import com.allfolio.snapshot.infrastructure.repository.PerformanceDailyJpaRepository
 import com.allfolio.snapshot.infrastructure.repository.RiskDailyJpaRepository
@@ -20,15 +24,19 @@ class GetDashboardUseCase(
     private val performanceRepo: PerformanceDailyJpaRepository,
     private val riskRepo: RiskDailyJpaRepository,
     private val benchmarkRepo: BenchmarkDailyJpaRepository,
+    private val fx: FxConverter,
 ) {
     fun execute(userId: UUID): DashboardResponse {
         val assets = assetRepository.findByUserId(userId)
         val liquidAssets   = assets.filter { it.liquidityType == AssetLiquidityType.LIQUID }
         val illiquidAssets = assets.filter { it.liquidityType == AssetLiquidityType.ILLIQUID }
 
-        val liquidValue   = liquidAssets.sumOf { it.currentValue }
-        val illiquidValue = illiquidAssets.sumOf { it.currentValue }
-        val debtValue     = assets.sumOf { it.loanAmount ?: BigDecimal.ZERO }
+        // QA P1 #9/#11: 통화 혼재 자산은 navInKrw 규약대로 KRW 환산 후 합산,
+        // KRW 집계는 소수점 없이(scale 0) — performance_daily.nav(KRW)와 비교 가능해진다.
+        val liquidValue   = liquidAssets.navInKrw(fx).setScale(0, RoundingMode.HALF_UP)
+        val illiquidValue = illiquidAssets.navInKrw(fx).setScale(0, RoundingMode.HALF_UP)
+        val debtValue     = assets.fold(BigDecimal.ZERO) { acc, a -> acc + a.loanAmountInKrw(fx) }
+            .setScale(0, RoundingMode.HALF_UP)
         val totalNow      = liquidValue.add(illiquidValue).subtract(debtValue)
 
         // 30일 전 NAV
@@ -37,7 +45,9 @@ class GetDashboardUseCase(
         val perf30d = performanceRepo
             .findTopByIdPortfolioIdAndIdDateBeforeOrderByIdDateDesc(userId, date30d.plusDays(1))
         val nav30d        = perf30d?.nav ?: BigDecimal.ZERO
-        val change30d     = if (nav30d > BigDecimal.ZERO) totalNow.subtract(nav30d) else BigDecimal.ZERO
+        val change30d     = if (nav30d > BigDecimal.ZERO)
+            totalNow.subtract(nav30d).setScale(0, RoundingMode.HALF_UP)
+        else BigDecimal.ZERO
         val changeRate30d = if (nav30d > BigDecimal.ZERO)
             change30d.divide(nav30d, 4, RoundingMode.HALF_UP).multiply(BigDecimal(100))
         else BigDecimal.ZERO
@@ -159,7 +169,7 @@ class GetDashboardUseCase(
         val allocation  = liquidAssets
             .groupBy { it.type.name }
             .map { (type, list) ->
-                val typeValue = list.sumOf { it.currentValue }
+                val typeValue = list.navInKrw(fx).setScale(0, RoundingMode.HALF_UP)
                 val ratio     = MetricsCalculator.weightOf(typeValue, totalLiquid)
                 AllocationDto(
                     type  = type,
@@ -170,9 +180,9 @@ class GetDashboardUseCase(
             }
             .sortedByDescending { it.value }
 
-        // 포지션 (LIQUID만)
+        // 포지션 (LIQUID만) — 표시는 원통화 유지, 정렬·비중은 KRW 환산 기준
         val positions = liquidAssets
-            .sortedByDescending { it.currentValue }
+            .sortedByDescending { it.currentValueInKrw(fx) }
             .map { a ->
                 PositionDto(
                     id           = a.id,
@@ -181,15 +191,15 @@ class GetDashboardUseCase(
                     type         = a.type.name,
                     currentValue = a.currentValue,
                     returnRate   = a.returnRate().setScale(2, RoundingMode.HALF_UP),
-                    weight       = MetricsCalculator.weightOf(a.currentValue, totalLiquid)
+                    weight       = MetricsCalculator.weightOf(a.currentValueInKrw(fx), totalLiquid)
                         .setScale(4, RoundingMode.HALF_UP),
                     currency     = a.currency,
                 )
             }
 
-        // 실물자산 (ILLIQUID만)
+        // 실물자산 (ILLIQUID만) — 정렬은 KRW 환산 기준
         val realAssets = illiquidAssets
-            .sortedByDescending { it.currentValue }
+            .sortedByDescending { it.currentValueInKrw(fx) }
             .map { a ->
                 RealAssetDto(
                     id                = a.id,
