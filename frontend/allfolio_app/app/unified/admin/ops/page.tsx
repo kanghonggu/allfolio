@@ -22,12 +22,14 @@ function fmt(ts: string | null | undefined) {
   return ts ? new Date(ts).toLocaleString('ko-KR') : '-'
 }
 
-function StatCard({ label, value, danger }: { label: string; value: number; danger?: boolean }) {
+// 0도 명시적으로 '0' 표시, 로딩·실패는 별도 문자로 구분 (QA P2)
+function StatCard({ label, value, danger }: { label: string; value: number | string; danger?: boolean }) {
+  const numeric = typeof value === 'number'
   return (
-    <div className={`rounded-xl border p-4 ${danger && value > 0 ? 'border-red-800 bg-red-900/20' : 'border-gray-700 bg-gray-900'}`}>
+    <div className={`rounded-xl border p-4 ${danger && numeric && value > 0 ? 'border-red-800 bg-red-900/20' : 'border-gray-700 bg-gray-900'}`}>
       <div className="text-xs text-gray-500">{label}</div>
-      <div className={`mt-1 text-2xl font-bold ${danger && value > 0 ? 'text-red-400' : ''}`}>
-        {value.toLocaleString()}
+      <div className={`mt-1 text-2xl font-bold tabular-nums ${danger && numeric && value > 0 ? 'text-red-400' : 'text-gray-100'}`}>
+        {numeric ? value.toLocaleString() : value}
       </div>
     </div>
   )
@@ -63,7 +65,7 @@ export default function OpsMonitorPage() {
   const [reprocessing, setReprocessing] = useState(false)
   const [requeueMsg, setRequeueMsg] = useState<string | null>(null)
 
-  const { data: summary } = useQuery({
+  const { data: summary, isLoading: summaryLoading, isError: summaryError } = useQuery({
     queryKey: ['ops', 'summary'],
     queryFn:  () => api!.summary(),
     enabled:  !!api && ready,
@@ -137,13 +139,19 @@ export default function OpsMonitorPage() {
         </p>
       </div>
 
+      {summaryError && (
+        <div className="rounded-xl border border-red-800 bg-red-950/40 p-4 text-sm text-red-400">
+          현황 조회에 실패했습니다. 30초 후 자동 재시도합니다.
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard label="Outbox PENDING" value={outbox.PENDING ?? 0} />
-        <StatCard label="Outbox FAILED" value={outbox.FAILED ?? 0} danger />
-        <StatCard label="Outbox DEAD" value={outbox.DEAD ?? 0} danger />
-        <StatCard label="Outbox PROCESSED" value={outbox.PROCESSED ?? 0} />
-        <StatCard label="DLQ 대기" value={dlqWaiting} />
-        <StatCard label="DLQ 데드" value={dlqDead} danger />
+        {/* 로딩 '…' / 실패 '—' / 0은 명시적 0 (QA P2) */}
+        <StatCard label="Outbox PENDING" value={summaryLoading ? '…' : summaryError ? '—' : outbox.PENDING ?? 0} />
+        <StatCard label="Outbox FAILED" value={summaryLoading ? '…' : summaryError ? '—' : outbox.FAILED ?? 0} danger />
+        <StatCard label="Outbox DEAD" value={summaryLoading ? '…' : summaryError ? '—' : outbox.DEAD ?? 0} danger />
+        <StatCard label="Outbox PROCESSED" value={summaryLoading ? '…' : summaryError ? '—' : outbox.PROCESSED ?? 0} />
+        <StatCard label="DLQ 대기" value={summaryLoading ? '…' : summaryError ? '—' : dlqWaiting} />
+        <StatCard label="DLQ 데드" value={summaryLoading ? '…' : summaryError ? '—' : dlqDead} danger />
       </div>
 
       {/* Outbox 그리드 */}

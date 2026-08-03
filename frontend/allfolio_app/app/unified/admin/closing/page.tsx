@@ -78,7 +78,7 @@ function DayDetail({ ymd, api }: { ymd: string; api: ClosingAdminApi }) {
   const [manualTarget, setManualTarget] = useState<{ stepCd: string; subStepCd: string } | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
 
-  const { data } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['closing', 'day', ymd],
     queryFn:  () => api.dayDetail(ymd),
   })
@@ -113,7 +113,23 @@ function DayDetail({ ymd, api }: { ymd: string; api: ClosingAdminApi }) {
     },
   })
 
-  if (!data) return <div className="py-6 text-sm text-gray-500">불러오는 중…</div>
+  // 무한 '불러오는 중' 금지 — 로딩·실패·데이터 없음 구분 (QA P2)
+  if (isLoading) return <div className="py-6 text-sm text-gray-500">불러오는 중…</div>
+  if (isError) {
+    const status = (error as { response?: { status?: number } })?.response?.status
+    return (
+      <div className="space-y-2 rounded-xl border border-red-800 bg-red-950/30 p-4 text-sm">
+        <p className="text-red-400">
+          {status === 404 ? `${ymd} 마감 데이터가 없습니다. 마감이 아직 실행되지 않았을 수 있습니다.`
+            : '마감 현황 조회에 실패했습니다.'}
+        </p>
+        <button onClick={() => refetch()} className="rounded border border-gray-600 px-3 py-1 text-xs text-gray-300 hover:border-gray-400">
+          다시 시도
+        </button>
+      </div>
+    )
+  }
+  if (!data) return <div className="py-6 text-sm text-gray-500">해당 일자 마감 데이터가 없습니다.</div>
 
   return (
     <div className="space-y-3">
@@ -363,13 +379,17 @@ export default function ClosingDashboardPage() {
   const [month, setMonth] = useState(thisMonth())
   const [selected, setSelected] = useState(todayStr())
   const [liveEvents, setLiveEvents] = useState<ClosingStepEvent[]>([])
+  const [sseState, setSseState] = useState<'connecting' | 'open' | 'error'>('connecting')
   const esRef = useRef<EventSource | null>(null)
 
   // SSE 구독 — closing.step 수신 시 라이브 피드 + 쿼리 갱신 (#31)
+  // 연결 상태를 노출해 '실시간'이라는 안내와 실제 상태가 어긋나지 않게 한다 (QA P2)
   useEffect(() => {
     if (!ready || !accessToken) return
     const es = new EventSource(closingSseUrl(accessToken))
     esRef.current = es
+    es.onopen = () => setSseState('open')
+    es.onerror = () => setSseState('error')   // EventSource가 자동 재연결 시도
     es.addEventListener('closing.step', e => {
       try {
         const ev = JSON.parse((e as MessageEvent).data) as ClosingStepEvent
@@ -388,7 +408,10 @@ export default function ClosingDashboardPage() {
         <div>
           <h1 className="text-2xl font-bold">마감 대시보드</h1>
           <p className="mt-1 text-sm text-gray-400">
-            일일마감 워크플로우 현황·수동 개입 (실시간 SSE 갱신)
+            일일마감 워크플로우 현황·수동 개입{' '}
+            {sseState === 'open' && <span className="text-emerald-500">● 실시간 연결됨</span>}
+            {sseState === 'connecting' && <span className="text-gray-500">● 실시간 연결 중…</span>}
+            {sseState === 'error' && <span className="text-amber-500">● 실시간 연결 끊김 — 자동 재연결 시도 중 (수동 새로고침 가능)</span>}
           </p>
         </div>
         <a href="/unified/admin/closing/define"
