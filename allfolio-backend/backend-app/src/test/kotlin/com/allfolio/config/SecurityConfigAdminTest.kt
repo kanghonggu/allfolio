@@ -116,6 +116,8 @@ class SecurityConfigAdminTest {
             override fun getUsdtToKrw(): BigDecimal = BigDecimal("1350")
 
             override fun setUsdtToKrw(rate: BigDecimal) = Unit
+            override fun getCryptoToKrw(symbol: String): BigDecimal = BigDecimal("90000000")
+            override fun setCryptoToKrw(symbol: String, rate: BigDecimal) = Unit
         }
     }
 }

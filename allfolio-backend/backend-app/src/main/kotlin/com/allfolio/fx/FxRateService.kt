@@ -14,4 +14,10 @@ interface FxRateService {
 
     /** USDT → KRW 환율 설정 (어드민 전용) */
     fun setUsdtToKrw(rate: BigDecimal)
+
+    /** 코인 1개당 KRW 가격 (symbol: BTC | ETH). Redis 미스 시 설정 폴백 (QA P3) */
+    fun getCryptoToKrw(symbol: String): BigDecimal
+
+    /** 코인 KRW 가격 설정 (어드민 전용) */
+    fun setCryptoToKrw(symbol: String, rate: BigDecimal)
 }
