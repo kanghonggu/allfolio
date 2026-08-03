@@ -308,6 +308,28 @@ class ReportServiceTest {
         accountName = "내 계좌",
     )
 
+    // ── performance (QA P1 #7) ────────────────────────────────
+
+    @Test
+    fun `performance twr는 기간 카드와 같은 percent 스케일이다`() {
+        // cumulative_return은 ratio(0~1) 저장 — twr 응답은 percent로 환산돼야
+        // FE(fmtPct, x100 없음)에서 100배 축소 표시가 나지 않는다.
+        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
+        val row = DailyPerf(
+            date = java.time.LocalDate.now(), nav = bd("38000000"),
+            dailyReturn = bd("0.001"), cumulativeReturn = bd("0.2060"),
+            benchmarkReturn = null, alpha = null,
+        )
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenReturn(listOf(row))
+
+        val result = svc().performance(userId, "1M")
+
+        assertEquals(0, bd("20.60").compareTo(result.twr)) {
+            "twr expected percent 20.60 but was ${result.twr}"
+        }
+    }
+
     private fun bd(s: String) = BigDecimal(s)
 
     // Mockito any() 헬퍼 (Kotlin null safety 우회)
