@@ -106,6 +106,7 @@ export interface PositionRow {
   avgCost:           number
   purchaseCost:      number
   currentValue:      number
+  currentValueKrw:   number   // 표시 통화(KRW) 환산 평가액
   unrealizedPnl:     number
   unrealizedPnlPct:  number
   currency:          string
