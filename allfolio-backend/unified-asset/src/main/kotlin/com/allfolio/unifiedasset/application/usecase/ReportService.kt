@@ -137,12 +137,13 @@ data class BenchmarkItem(
     val alpha: BigDecimal,
 )
 
+/** percent 스케일. 지수 값이 null이면 해당 날짜에 실데이터 없음 (합성값으로 채우지 않는다 — QA P1 #10) */
 data class BenchmarkSeries(
     val date: LocalDate,
     val portfolio: BigDecimal,
-    val sp500: BigDecimal,
-    val btc: BigDecimal,
-    val kospi: BigDecimal,
+    val sp500: BigDecimal?,
+    val btc: BigDecimal?,
+    val kospi: BigDecimal?,
 )
 
 // ── NetWorth ───────────────────────────────────────────────────
@@ -199,6 +200,7 @@ class ReportService(
     private val accountRepository: AccountRepository,
     private val jdbc: JdbcTemplate,
     private val fx: FxConverter,
+    private val benchmarkStore: com.allfolio.unifiedasset.application.port.BenchmarkDailyStore,
 ) {
     @Transactional(readOnly = true)
     fun summary(userId: UUID): SummaryReport {
@@ -359,23 +361,24 @@ class ReportService(
                 .multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
         else BigDecimal.ZERO
 
-        // Synthetic benchmark returns (2024 approximate YTD)
-        val benchmarkReturns = mapOf(
-            "S&P 500" to BigDecimal("23.31"),
-            "BTC" to BigDecimal("120.45"),
-            "KOSPI" to BigDecimal("-8.21"),
-        )
+        // 실제 지수 시계열(benchmark_daily, 일일 sync) 기반 — 데이터 없으면 목록에서 제외 (QA P1 #10)
+        val today = LocalDate.now()
+        val since = today.minusDays(periodDays(period).toLong())
+        val indexSeries = com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.entries.associateWith { type ->
+            // 휴장일 대비 앵커 여유 2주 — 기간 시작 이전 마지막 종가를 기저로 쓴다
+            benchmarkStore.series(type, since.minusDays(14), today)
+        }
 
-        val benchmarks = benchmarkReturns.map { (name, benchReturn) ->
+        val benchmarks = indexSeries.mapNotNull { (type, rows) ->
+            val ret = indexPeriodReturn(rows, since) ?: return@mapNotNull null
             BenchmarkItem(
-                name = name,
-                benchmarkReturn = benchReturn,
-                alpha = portfolioReturn.subtract(benchReturn).setScale(2, RoundingMode.HALF_UP),
+                name = type.label,
+                benchmarkReturn = ret,
+                alpha = portfolioReturn.subtract(ret).setScale(2, RoundingMode.HALF_UP),
             )
         }
 
-        // Build series: use performance_daily if available, else synthetic
-        val series = buildBenchmarkSeries(dailySeries, period)
+        val series = buildBenchmarkSeries(dailySeries, indexSeries, since)
 
         return BenchmarkReport(
             userId = userId,
@@ -650,58 +653,52 @@ class ReportService(
         return null // need annual return
     }
 
-    private fun buildBenchmarkSeries(perfSeries: List<DailyPerf>, period: String): List<BenchmarkSeries> {
-        if (perfSeries.isEmpty()) return generateSyntheticSeries(period)
-
-        // SP500, BTC, KOSPI — synthetic daily drift based on known period returns
-        val sp500DailyDrift = BigDecimal("0.0009")   // ~23% annualized
-        val btcDailyDrift   = BigDecimal("0.003")    // ~120% ish
-        val kospiDailyDrift = BigDecimal("-0.00033") // ~-8%
-
-        var sp = BigDecimal(100)
-        var btc = BigDecimal(100)
-        var kospi = BigDecimal(100)
-
-        return perfSeries.mapIndexed { i, perf ->
-            sp    = sp.multiply(BigDecimal.ONE.add(sp500DailyDrift)).setScale(4, RoundingMode.HALF_UP)
-            btc   = btc.multiply(BigDecimal.ONE.add(btcDailyDrift)).setScale(4, RoundingMode.HALF_UP)
-            kospi = kospi.multiply(BigDecimal.ONE.add(kospiDailyDrift)).setScale(4, RoundingMode.HALF_UP)
-
-            BenchmarkSeries(
-                date      = perf.date,
-                portfolio = perf.cumulativeReturn,
-                sp500     = sp.subtract(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP),
-                btc       = btc.subtract(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP),
-                kospi     = kospi.subtract(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP),
-            )
-        }
+    private fun periodDays(period: String): Int = when (period) {
+        "1W"  -> 7; "1M" -> 30; "3M" -> 90
+        "YTD" -> LocalDate.now().dayOfYear
+        "1Y"  -> 365; "ALL" -> 3650
+        else  -> 30
     }
 
-    private fun generateSyntheticSeries(period: String): List<BenchmarkSeries> {
-        val days = when (period) {
-            "1W"  -> 7; "1M" -> 30; "3M" -> 90
-            "YTD" -> LocalDate.now().dayOfYear
-            "1Y"  -> 365; else -> 30
-        }
-        val start = LocalDate.now().minusDays(days.toLong())
-        val series = mutableListOf<BenchmarkSeries>()
-        var sp = BigDecimal.ZERO
-        var btc = BigDecimal.ZERO
-        var kospi = BigDecimal.ZERO
-        var portfolio = BigDecimal.ZERO
+    /** 기간 시작 이전 마지막 종가 대비 최종 종가 수익률(percent). 데이터 2건 미만이면 null */
+    private fun indexPeriodReturn(rows: List<Pair<LocalDate, BigDecimal>>, since: LocalDate): BigDecimal? {
+        if (rows.size < 2) return null
+        val base = (rows.lastOrNull { it.first <= since } ?: rows.first()).second
+        val last = rows.last().second
+        if (base <= BigDecimal.ZERO) return null
+        return last.subtract(base).divide(base, 4, RoundingMode.HALF_UP)
+            .multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
+    }
 
-        for (i in 0 until days) {
-            val date = start.plusDays(i.toLong())
-            sp        = sp.add(BigDecimal("0.09"))
-            btc       = btc.add(BigDecimal("0.30"))
-            kospi     = kospi.subtract(BigDecimal("0.03"))
-            portfolio = portfolio.add(BigDecimal("0.05"))
+    /**
+     * 포트폴리오 percent(cumulative_return ratio × 100)와 지수 정규화 percent를 날짜별로 결합.
+     * 지수 실데이터가 없는 날은 null — 합성값으로 채우지 않는다 (QA P1 #10).
+     */
+    private fun buildBenchmarkSeries(
+        perfSeries: List<DailyPerf>,
+        indexSeries: Map<com.allfolio.unifiedasset.domain.benchmark.BenchmarkType, List<Pair<LocalDate, BigDecimal>>>,
+        since: LocalDate,
+    ): List<BenchmarkSeries> {
+        if (perfSeries.isEmpty()) return emptyList()
 
-            series.add(BenchmarkSeries(date, portfolio.setScale(2, RoundingMode.HALF_UP),
-                sp.setScale(2, RoundingMode.HALF_UP),
-                btc.setScale(2, RoundingMode.HALF_UP),
-                kospi.setScale(2, RoundingMode.HALF_UP)))
+        fun indexPctAt(type: com.allfolio.unifiedasset.domain.benchmark.BenchmarkType, date: LocalDate): BigDecimal? {
+            val rows = indexSeries[type].orEmpty()
+            if (rows.size < 2) return null
+            val base = (rows.lastOrNull { it.first <= since } ?: rows.first()).second
+            if (base <= BigDecimal.ZERO) return null
+            val close = rows.lastOrNull { it.first <= date }?.second ?: return null
+            return close.subtract(base).divide(base, 4, RoundingMode.HALF_UP)
+                .multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
         }
-        return series
+
+        return perfSeries.map { perf ->
+            BenchmarkSeries(
+                date      = perf.date,
+                portfolio = perf.cumulativeReturn.multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP),
+                sp500     = indexPctAt(com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.SPX, perf.date),
+                btc       = indexPctAt(com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.BTC, perf.date),
+                kospi     = indexPctAt(com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.KOSPI, perf.date),
+            )
+        }
     }
 }
