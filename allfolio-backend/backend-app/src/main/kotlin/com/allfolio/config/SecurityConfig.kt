@@ -56,7 +56,8 @@ class SecurityConfig(
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()  // CORS preflight
                     .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                     .requestMatchers("/actuator/**").authenticated()
-                    .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/refresh").permitAll()
+                    // logout은 HttpOnly 쿠키의 refresh token만으로 revoke하므로 액세스 토큰 불요 (QA P0 #5)
+                    .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout").permitAll()
                     .requestMatchers("/api/broker/*/callback").permitAll()
                     .requestMatchers("/api/sse/prices").permitAll()
                     .requestMatchers("/api/sse/pnl/**").authenticated()

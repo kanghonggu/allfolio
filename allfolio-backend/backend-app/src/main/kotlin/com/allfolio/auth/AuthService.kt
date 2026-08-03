@@ -53,8 +53,8 @@ class AuthService(
     }
 
     @Transactional
-    fun refresh(request: RefreshRequest): AuthResponse {
-        val existing = refreshTokenRepository.findByTokenHash(hashToken(request.refreshToken))
+    fun refresh(refreshToken: String): AuthResponse {
+        val existing = refreshTokenRepository.findByTokenHash(hashToken(refreshToken))
             ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "refresh token이 유효하지 않습니다.")
         if (!existing.isActive()) {
             throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "refresh token이 만료되었습니다.")
@@ -67,8 +67,8 @@ class AuthService(
     }
 
     @Transactional
-    fun logout(request: LogoutRequest) {
-        refreshTokenRepository.findByTokenHash(hashToken(request.refreshToken))?.revoke()
+    fun logout(refreshToken: String) {
+        refreshTokenRepository.findByTokenHash(hashToken(refreshToken))?.revoke()
     }
 
     @Transactional(readOnly = true)
