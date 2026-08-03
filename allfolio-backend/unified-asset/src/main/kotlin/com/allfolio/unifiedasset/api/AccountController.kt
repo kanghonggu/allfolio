@@ -34,7 +34,7 @@ data class CreateAccountRequest(
     @field:NotBlank val accountName: String,
     val provider: AccountProvider,
     val accountType: AccountType,
-    val currency: String = "USD",
+    val currency: String = "KRW",   // QA P2: 기본 통화 KRW
     val apiKey: String? = null,
     val apiSecret: String? = null,
     val walletAddress: String? = null,

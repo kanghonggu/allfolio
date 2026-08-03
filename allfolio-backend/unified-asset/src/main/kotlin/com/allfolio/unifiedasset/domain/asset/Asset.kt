@@ -67,7 +67,9 @@ class Asset private constructor(
             maturityDate: LocalDate? = null,
             areaPyeong: BigDecimal? = null,
         ): Asset {
-            require(name.isNotBlank()) { "자산명은 필수입니다" }
+            // QA P2: 자산명 서버 사이드 산티타이징 + 통화 화이트리스트 검증
+            val safeName = com.allfolio.unifiedasset.domain.common.sanitizeUserText(name)
+            require(safeName.isNotBlank()) { "자산명은 필수입니다" }
             require(quantity >= BigDecimal.ZERO) { "수량은 0 이상이어야 합니다" }
             require(currentValue >= BigDecimal.ZERO) { "현재 가치는 0 이상이어야 합니다" }
 
@@ -84,13 +86,13 @@ class Asset private constructor(
                 category        = category,
                 type            = type,
                 sourceType      = sourceType,
-                name            = name.trim(),
+                name            = safeName,
                 symbol          = symbol?.trim()
                     ?.let { if (type == AssetType.CRYPTO || type == AssetType.STOCK) it.uppercase() else it },
                 quantity        = quantity,
                 purchasePrice   = purchasePrice,
                 currentValue    = currentValue,
-                currency        = currency.uppercase(),
+                currency        = com.allfolio.unifiedasset.domain.common.Currencies.normalize(currency),
                 valuationMethod = valuationMethod,
                 confidenceLevel = confidence,
                 lastUpdatedAt   = now,
