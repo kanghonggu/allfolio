@@ -7,12 +7,15 @@ const api = axios.create({
   timeout: 10_000,
 })
 
+// QA P0 #5: 토큰은 localStorage가 아니라 메모리에만 — AuthContext가 갱신 시 주입
+let accessToken: string | null = null
+
+export function setApiAccessToken(token: string | null) {
+  accessToken = token
+}
+
 api.interceptors.request.use(async (config) => {
-  if (typeof window !== 'undefined') {
-    const raw = localStorage.getItem('allfolio_auth')
-    const token = raw ? JSON.parse(raw)?.accessToken : null
-    if (token) config.headers.Authorization = `Bearer ${token}`
-  }
+  if (accessToken) config.headers.Authorization = `Bearer ${accessToken}`
   return config
 })
 

@@ -4,10 +4,10 @@ import {
   createContext, useContext, useEffect, useState, useCallback,
   type ReactNode,
 } from 'react'
+import { setApiAccessToken } from '@/lib/api'
 
 interface AuthState {
   accessToken:  string | null
-  refreshToken: string | null
   expiresAt:    number | null   // ms timestamp
   userName:     string | null
   userEmail:    string | null
@@ -24,22 +24,27 @@ interface AuthContextValue extends AuthState {
   logout: () => void
 }
 
-const STORAGE_KEY = 'allfolio_auth'
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8090'
-const LOGIN_URL    = `${API_BASE_URL}/api/auth/login`
-const REGISTER_URL = `${API_BASE_URL}/api/auth/register`
-const REFRESH_URL  = `${API_BASE_URL}/api/auth/refresh`
+// QA P0 #5: refreshToken은 HttpOnly 쿠키(allfolio_rt)로만 오가고,
+// accessToken은 메모리에만 유지한다 — localStorage 토큰 저장 제거(XSS 탈취 방지).
+// 인증 경로는 Next rewrite 프록시(/api/auth/*)를 거쳐 same-origin으로 쿠키가 흐른다.
+const LOGIN_URL    = '/api/auth/login'
+const REGISTER_URL = '/api/auth/register'
+const REFRESH_URL  = '/api/auth/refresh'
+const LOGOUT_URL   = '/api/auth/logout'
+
+const EMPTY_STATE: AuthState = {
+  accessToken: null, expiresAt: null,
+  userName: null, userEmail: null, userId: null, role: null,
+}
 
 const AuthContext = createContext<AuthContextValue>({
-  accessToken: null, refreshToken: null, expiresAt: null,
-  userName: null, userEmail: null, userId: null, role: null,
+  ...EMPTY_STATE,
   initialized: false, authenticated: false, isAdmin: false,
   login: async () => {}, register: async () => {}, logout: () => {},
 })
 
 interface AuthApiResponse {
   accessToken: string
-  refreshToken: string
   expiresIn: number
   user: {
     id: string
@@ -52,7 +57,6 @@ interface AuthApiResponse {
 function toAuthState(data: AuthApiResponse): AuthState {
   return {
     accessToken:  data.accessToken,
-    refreshToken: data.refreshToken,
     expiresAt:    Date.now() + data.expiresIn * 1000,
     userName:     data.user.displayName ?? data.user.email,
     userEmail:    data.user.email,
@@ -61,11 +65,13 @@ function toAuthState(data: AuthApiResponse): AuthState {
   }
 }
 
-async function requestToken(url: string, body: Record<string, string>): Promise<AuthState> {
+async function requestToken(url: string, body?: Record<string, string>): Promise<AuthState> {
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    ...(body ? {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    } : {}),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
@@ -75,65 +81,50 @@ async function requestToken(url: string, body: Record<string, string>): Promise<
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state,       setState]       = useState<AuthState>({
-    accessToken: null, refreshToken: null, expiresAt: null,
-    userName: null, userEmail: null, userId: null, role: null,
-  })
+  const [state,       setState]       = useState<AuthState>(EMPTY_STATE)
   const [initialized, setInitialized] = useState(false)
 
-  // 앱 시작 시 localStorage에서 복구 + silent refresh
+  // 구버전 API 클라이언트(lib/api.ts)에 메모리 토큰 전파
   useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) { setInitialized(true); return }
+    setApiAccessToken(state.accessToken)
+  }, [state.accessToken])
 
-    const saved: AuthState = JSON.parse(raw)
-    if (!saved.refreshToken) { setInitialized(true); return }
-
-    // refresh token으로 새 access token 발급
-    requestToken(REFRESH_URL, { refreshToken: saved.refreshToken })
-      .then(next => {
-        setState(next)
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-      })
-      .catch(() => localStorage.removeItem(STORAGE_KEY))
+  // 앱 시작 시 HttpOnly 쿠키 기반 silent refresh로 세션 복구
+  useEffect(() => {
+    requestToken(REFRESH_URL)
+      .then(setState)
+      .catch(() => setState(EMPTY_STATE))
       .finally(() => setInitialized(true))
   }, [])
 
-  // 만료 1분 전 자동 갱신
+  // 만료 1분 전 자동 갱신 (쿠키가 refresh token을 실어 보낸다)
   useEffect(() => {
-    if (!state.refreshToken || !state.expiresAt) return
+    if (!state.accessToken || !state.expiresAt) return
     const delay = state.expiresAt - Date.now() - 60_000
     if (delay <= 0) return
     const t = setTimeout(() => {
-      requestToken(REFRESH_URL, { refreshToken: state.refreshToken! })
-        .then(next => {
-          setState(next)
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-        })
+      requestToken(REFRESH_URL)
+        .then(setState)
         .catch(logout)
     }, delay)
     return () => clearTimeout(t)
-  }, [state.refreshToken, state.expiresAt])
+  }, [state.accessToken, state.expiresAt])
 
   const login = useCallback(async (email: string, password: string) => {
-    const next = await requestToken(LOGIN_URL, { email, password })
-    setState(next)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+    setState(await requestToken(LOGIN_URL, { email, password }))
   }, [])
 
   const register = useCallback(async (email: string, password: string, displayName?: string) => {
     const body: Record<string, string> = { email, password }
     const trimmedName = displayName?.trim()
     if (trimmedName) body.displayName = trimmedName
-
-    const next = await requestToken(REGISTER_URL, body)
-    setState(next)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+    setState(await requestToken(REGISTER_URL, body))
   }, [])
 
   const logout = useCallback(() => {
-    setState({ accessToken: null, refreshToken: null, expiresAt: null, userName: null, userEmail: null, userId: null, role: null })
-    localStorage.removeItem(STORAGE_KEY)
+    // 서버에서 refresh token revoke + 쿠키 삭제 (실패해도 로컬 상태는 비운다)
+    fetch(LOGOUT_URL, { method: 'POST' }).catch(() => {})
+    setState(EMPTY_STATE)
   }, [])
 
   return (
