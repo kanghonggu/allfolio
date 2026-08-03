@@ -26,6 +26,7 @@ import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
+import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import java.math.BigDecimal
@@ -114,6 +115,22 @@ class AccountControllerSecurityTest {
         }.andExpect {
             status { isNotFound() }
             jsonPath("$.error") { value("Account not found: $accountId") }
+        }
+
+        verify(accountRepository).findById(accountId)
+        verifyNoInteractions(assetRepository)
+    }
+
+    @Test
+    fun `남의 계좌 삭제는 404로 숨긴다 (P3 소유권 응답코드 통일)`() {
+        val userId = UUID.randomUUID()
+        val accountId = UUID.randomUUID()
+        `when`(accountRepository.findById(accountId)).thenReturn(account(UUID.randomUUID()))
+
+        mockMvc.delete("/api/unified/accounts/$accountId") {
+            header("X-User-Id", userId.toString())
+        }.andExpect {
+            status { isNotFound() }
         }
 
         verify(accountRepository).findById(accountId)

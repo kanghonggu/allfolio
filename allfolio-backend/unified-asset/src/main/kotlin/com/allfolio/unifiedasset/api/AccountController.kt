@@ -164,7 +164,7 @@ class AccountController(
     ) {
         val account = accountRepository.findById(id)
             ?: throw NoSuchElementException("Account not found: $id")
-        require(account.userId == userId) { "Forbidden" }
+        if (account.userId != userId) throw NoSuchElementException("Account not found: $id")
         assetRepository.deleteByAccountId(id)
         syncLogRepository.deleteByAccountId(id)
         accountRepository.delete(id)
@@ -199,7 +199,7 @@ class AccountController(
             }
             throw e
         } ?: throw NoSuchElementException("Account not found: $id")
-        require(account.userId == userId) { "Forbidden" }
+        if (account.userId != userId) throw NoSuchElementException("Account not found: $id")
         return syncAccountUseCase.execute(id, SyncTrigger.MANUAL)
     }
 
@@ -221,7 +221,7 @@ class AccountController(
     ): AssetResponse {
         val account = accountRepository.findById(id)
             ?: throw NoSuchElementException("Account not found: $id")
-        require(account.userId == userId) { "Forbidden" }
+        if (account.userId != userId) throw NoSuchElementException("Account not found: $id")
         require(account.provider == AccountProvider.MANUAL) { "수동 계좌에만 자산을 추가할 수 있습니다" }
 
         val category = if (req.type in listOf(
@@ -269,7 +269,7 @@ class AccountController(
     ): CsvImportResult {
         val account = accountRepository.findById(id)
             ?: throw NoSuchElementException("Account not found: $id")
-        require(account.userId == userId) { "Forbidden" }
+        if (account.userId != userId) throw NoSuchElementException("Account not found: $id")
         val content = file.inputStream.bufferedReader().readText()
         val result = importCsvUseCase.execute(userId, id, content)
         val nav = assetRepository.findByUserId(userId).navInKrw(fx)
@@ -285,7 +285,7 @@ class AccountController(
     ): List<CsvPreviewRow> {
         val account = accountRepository.findById(id)
             ?: throw NoSuchElementException("Account not found: $id")
-        require(account.userId == userId) { "Forbidden" }
+        if (account.userId != userId) throw NoSuchElementException("Account not found: $id")
         val content = file.inputStream.bufferedReader().readText()
         return importCsvUseCase.preview(content)
     }
@@ -299,7 +299,7 @@ class AccountController(
     ): List<StockTradeResponse> {
         val account = accountRepository.findById(id)
             ?: throw NoSuchElementException("Account not found: $id")
-        require(account.userId == userId) { "Forbidden" }
+        if (account.userId != userId) throw NoSuchElementException("Account not found: $id")
         return stockTradeRepository.findByAccountId(id).map { it.toResponse() }
     }
 
@@ -312,7 +312,7 @@ class AccountController(
     ): StockTradeResponse {
         val account = accountRepository.findById(id)
             ?: throw NoSuchElementException("Account not found: $id")
-        require(account.userId == userId) { "Forbidden" }
+        if (account.userId != userId) throw NoSuchElementException("Account not found: $id")
         require(account.provider == AccountProvider.STOCK) { "증권 계좌에만 거래내역을 추가할 수 있습니다" }
 
         val trade = StockTrade.create(
@@ -341,7 +341,7 @@ class AccountController(
     ) {
         val account = accountRepository.findById(id)
             ?: throw NoSuchElementException("Account not found: $id")
-        require(account.userId == userId) { "Forbidden" }
+        if (account.userId != userId) throw NoSuchElementException("Account not found: $id")
         val trade = stockTradeRepository.findById(tradeId)
             ?: throw NoSuchElementException("Trade not found: $tradeId")
         require(trade.accountId == id) { "Trade does not belong to this account" }

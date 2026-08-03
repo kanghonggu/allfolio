@@ -60,8 +60,9 @@ class GoalService(
 
     @Transactional
     fun update(userId: UUID, id: UUID, req: GoalRequest): GoalResponse {
-        val existing = goalRepository.findById(id) ?: error("Goal not found")
-        require(existing.userId == userId) { "Forbidden" }
+        val existing = goalRepository.findById(id)
+            ?: throw NoSuchElementException("Goal not found: $id")
+        if (existing.userId != userId) throw NoSuchElementException("Goal not found: $id")
         val updated = existing.copy(
             name = req.name,
             description = req.description,
@@ -77,8 +78,9 @@ class GoalService(
 
     @Transactional
     fun delete(userId: UUID, id: UUID) {
-        val existing = goalRepository.findById(id) ?: error("Goal not found")
-        require(existing.userId == userId) { "Forbidden" }
+        val existing = goalRepository.findById(id)
+            ?: throw NoSuchElementException("Goal not found: $id")
+        if (existing.userId != userId) throw NoSuchElementException("Goal not found: $id")
         goalRepository.delete(id)
     }
 
