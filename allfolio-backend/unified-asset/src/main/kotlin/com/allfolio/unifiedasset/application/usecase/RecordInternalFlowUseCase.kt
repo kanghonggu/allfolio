@@ -21,8 +21,9 @@ class RecordInternalFlowUseCase(
     ): List<CashFlow> {
         require(amount > BigDecimal.ZERO) { "이체 금액은 양수여야 합니다" }
         requireNotFuture(flowDate)
-        val krw = fx.toKrw(amount, currency)
-        val (out, inn) = CashFlow.transferPair(userId, fromAccountId, toAccountId, flowDate, amount, currency, krw, memo)
+        val cur = com.allfolio.unifiedasset.domain.common.Currencies.normalize(currency)
+        val krw = fx.toKrw(amount, cur)
+        val (out, inn) = CashFlow.transferPair(userId, fromAccountId, toAccountId, flowDate, amount, cur, krw, memo)
         return listOf(repository.save(out), repository.save(inn))
     }
 
@@ -35,10 +36,12 @@ class RecordInternalFlowUseCase(
     ): List<CashFlow> {
         require(fromAmount > BigDecimal.ZERO && toAmount > BigDecimal.ZERO) { "환전 금액은 양수여야 합니다" }
         requireNotFuture(flowDate)
+        val fromCur = com.allfolio.unifiedasset.domain.common.Currencies.normalize(fromCurrency)
+        val toCur = com.allfolio.unifiedasset.domain.common.Currencies.normalize(toCurrency)
         val (out, inn) = CashFlow.fxPair(
             userId, accountId, flowDate,
-            fromAmount, fromCurrency, fx.toKrw(fromAmount, fromCurrency),
-            toAmount, toCurrency, fx.toKrw(toAmount, toCurrency), memo,
+            fromAmount, fromCur, fx.toKrw(fromAmount, fromCur),
+            toAmount, toCur, fx.toKrw(toAmount, toCur), memo,
             toAccountId = toAccountId,
         )
         return listOf(repository.save(out), repository.save(inn))

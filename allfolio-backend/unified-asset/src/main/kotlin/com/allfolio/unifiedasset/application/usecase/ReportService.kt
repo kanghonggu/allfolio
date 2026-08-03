@@ -117,6 +117,8 @@ data class PositionRow(
     val avgCost: BigDecimal,
     val purchaseCost: BigDecimal,
     val currentValue: BigDecimal,
+    /** 표시 통화 통일용 KRW 환산 평가액 (QA P2) — 원통화 값은 currentValue+currency */
+    val currentValueKrw: BigDecimal,
     val unrealizedPnl: BigDecimal,
     val unrealizedPnlPct: BigDecimal,
     val currency: String,
@@ -334,6 +336,7 @@ class ReportService(
                     avgCost = asset.purchasePrice,
                     purchaseCost = cost,
                     currentValue = asset.currentValue,
+                    currentValueKrw = asset.currentValueInKrw(fx).setScale(0, RoundingMode.HALF_UP),
                     unrealizedPnl = pnl,
                     unrealizedPnlPct = pnlPct,
                     currency = asset.currency,

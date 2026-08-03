@@ -14,7 +14,8 @@ export interface Account {
   status:       AccountStatus
   lastSyncedAt: string | null
   createdAt:    string
-  brokerage:    string | null   // externalId (증권사명)
+  brokerage:    string | null   // 기관명 (계좌번호형 externalId는 accountNumber로 분리)
+  accountNumber: string | null  // 마스킹된 계좌번호 (예: 4485****_01)
 }
 
 export interface CreateAccountPayload {

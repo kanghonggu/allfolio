@@ -19,7 +19,8 @@ const STATUS_KO: Record<string, string> = {
 const PROVIDER_KO: Record<string, string> = {
   BINANCE: '바이낸스', UPBIT: '업비트', BITHUMB: '빗썸', COINONE: '코인원',
   BYBIT: '바이빗', OKX: 'OKX',
-  STOCK: '증권', WALLET: '지갑', MANUAL: '수동',
+  KIS: '한국투자증권', KIWOOM: '키움증권',
+  STOCK: '증권', WALLET: '지갑', MANUAL: '수동', CSV: 'CSV',
 }
 
 export default function AccountsPage() {
@@ -112,7 +113,10 @@ export default function AccountsPage() {
                       </span>
                     </div>
                     <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
-                      <span>{PROVIDER_KO[account.provider]} · {account.currency}</span>
+                      <span>
+                        {PROVIDER_KO[account.provider] ?? account.provider} · {account.currency}
+                        {account.accountNumber && ` · ${account.accountNumber}`}
+                      </span>
                       <span>
                         마지막 동기화:{' '}
                         {account.lastSyncedAt

@@ -392,6 +392,24 @@ class ReportServiceTest {
         assertNull(result.periodReturns["1Y"])
     }
 
+    @Test
+    fun `positions - USD 자산은 KRW 환산값을 함께 내려준다`() {
+        val fx1300 = object : FxConverter {
+            override fun toKrw(amount: BigDecimal, currency: String) =
+                if (currency.uppercase() == "KRW") amount else amount.multiply(bd("1300"))
+        }
+        `when`(assetRepository.findByUserId(userId)).thenReturn(listOf(usdStock(currentValue = bd("200"))))
+        `when`(accountRepository.findByUserId(userId)).thenReturn(emptyList())
+
+        val result = svc(fx = fx1300).positions(userId)
+
+        val row = result.positions[0]
+        assertEquals(0, bd("260000").compareTo(row.currentValueKrw)) {
+            "expected 200 USD x 1300 = 260,000 but was ${row.currentValueKrw}"
+        }
+        assertEquals("USD", row.currency)
+    }
+
     // ── benchmark (QA P1 #10) ─────────────────────────────────
 
     private fun benchStore(
