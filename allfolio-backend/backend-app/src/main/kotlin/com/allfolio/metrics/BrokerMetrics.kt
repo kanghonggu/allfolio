@@ -126,11 +126,12 @@ class BrokerMetrics(
     fun outboxDead() =
         meterRegistry.counter("outbox.event.count", "result", "dead").increment()
 
-    fun <T> recordOutboxLatency(block: () -> T): T =
+    /** block이 null을 반환할 수 있음 (예: SnapshotTriggerService.trigger의 skip 케이스) — !! 금지 */
+    fun <T> recordOutboxLatency(block: () -> T): T? =
         Timer.builder("outbox.process.latency")
             .description("Outbox event processing latency (snapshot + status update)")
             .register(meterRegistry)
-            .recordCallable { block() }!!
+            .recordCallable { block() }
 
     // ── Kafka Outbox Publisher ────────────────────────────────────
 
