@@ -32,6 +32,11 @@ class CurrencyConverter(
                 val rate = fxRateService.getUsdtToKrw()
                 (amount * rate).setScale(0, RoundingMode.HALF_UP)
             }
+            // QA P3: BTC/ETH도 코인당 KRW 시세로 환산 — 1:1 폴백은 0.5 BTC를 0.5원으로 축소하던 버그
+            "BTC", "ETH" -> {
+                val price = fxRateService.getCryptoToKrw(currency.uppercase())
+                (amount * price).setScale(0, RoundingMode.HALF_UP)
+            }
             else   -> {
                 log.warn("[CurrencyConverter] unsupported currency={} — returning as-is", currency)
                 amount

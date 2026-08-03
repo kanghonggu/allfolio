@@ -22,6 +22,10 @@ class RedisFxRateService(
     private val redisTemplate: StringRedisTemplate,
     @Value("\${fx.usdt-krw.fallback-rate:1350}")
     private val fallbackRate: BigDecimal,
+    @Value("\${fx.btc-krw.fallback-rate:90000000}")
+    private val btcFallback: BigDecimal,
+    @Value("\${fx.eth-krw.fallback-rate:4500000}")
+    private val ethFallback: BigDecimal,
 ) : FxRateService {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -29,6 +33,30 @@ class RedisFxRateService(
     companion object {
         private const val KEY = "fx:usdtkrw"
         private val TTL = Duration.ofSeconds(60)
+    }
+
+    private fun cryptoKey(symbol: String) = "fx:${symbol.lowercase()}krw"
+    private fun cryptoFallback(symbol: String): BigDecimal = when (symbol.uppercase()) {
+        "BTC" -> btcFallback
+        "ETH" -> ethFallback
+        else  -> throw IllegalArgumentException("지원하지 않는 코인: $symbol")
+    }
+
+    override fun getCryptoToKrw(symbol: String): BigDecimal {
+        val fallback = cryptoFallback(symbol)   // 미지원 심볼이면 여기서 예외
+        return runCatching {
+            redisTemplate.opsForValue().get(cryptoKey(symbol))?.let { BigDecimal(it) } ?: run {
+                log.warn("[FxRate] Redis miss {}krw — fallback={}", symbol, fallback); fallback
+            }
+        }.getOrElse { e ->
+            log.warn("[FxRate] Redis error {}krw — fallback={}: {}", symbol, fallback, e.message); fallback
+        }
+    }
+
+    override fun setCryptoToKrw(symbol: String, rate: BigDecimal) {
+        cryptoFallback(symbol)   // 심볼 검증
+        runCatching { redisTemplate.opsForValue().set(cryptoKey(symbol), rate.toPlainString(), TTL) }
+            .onFailure { e -> log.error("[FxRate] Redis SET {}krw failed: {}", symbol, e.message) }
     }
 
     override fun getUsdtToKrw(): BigDecimal =

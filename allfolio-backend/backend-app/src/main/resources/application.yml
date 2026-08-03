@@ -223,6 +223,11 @@ fx:
     delay-ms: 60000                          # 갱신 주기 (ms)
   usdt-krw:
     fallback-rate: ${FX_USDT_KRW_FALLBACK:1350}  # Redis miss 시 사용할 fallback 환율
+  # 코인 KRW 시세 폴백 (QA P3) — 라이브 피드 없을 때 어드민 PUT /api/admin/fx/crypto/{symbol}로 갱신
+  btc-krw:
+    fallback-rate: ${FX_BTC_KRW_FALLBACK:90000000}
+  eth-krw:
+    fallback-rate: ${FX_ETH_KRW_FALLBACK:4500000}
 
 logging:
   level:
