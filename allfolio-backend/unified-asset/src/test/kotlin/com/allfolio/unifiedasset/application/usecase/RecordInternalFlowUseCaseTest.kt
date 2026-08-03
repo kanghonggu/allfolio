@@ -50,6 +50,15 @@ class RecordInternalFlowUseCaseTest {
     }
 
     @Test
+    fun `미래 날짜 이체·환전은 예외`() {
+        val tomorrow = LocalDate.now(java.time.ZoneId.of("Asia/Seoul")).plusDays(1)
+        assertThatThrownBy { uc.recordTransfer(user, a1, a2, tomorrow, BigDecimal("500"), "KRW", null) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+        assertThatThrownBy { uc.recordFx(user, a1, tomorrow, BigDecimal("1300"), "KRW", BigDecimal("1"), "USD", null) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
     fun `음수-같은계좌-같은통화는 예외`() {
         assertThatThrownBy { uc.recordTransfer(user, a1, a2, date, BigDecimal("-1"), "KRW", null) }
             .isInstanceOf(IllegalArgumentException::class.java)

@@ -20,6 +20,7 @@ class RecordInternalFlowUseCase(
         amount: BigDecimal, currency: String, memo: String?,
     ): List<CashFlow> {
         require(amount > BigDecimal.ZERO) { "이체 금액은 양수여야 합니다" }
+        requireNotFuture(flowDate)
         val krw = fx.toKrw(amount, currency)
         val (out, inn) = CashFlow.transferPair(userId, fromAccountId, toAccountId, flowDate, amount, currency, krw, memo)
         return listOf(repository.save(out), repository.save(inn))
@@ -33,6 +34,7 @@ class RecordInternalFlowUseCase(
         toAccountId: UUID? = null,   // null이면 동일 계좌, 지정 시 계좌간 환전
     ): List<CashFlow> {
         require(fromAmount > BigDecimal.ZERO && toAmount > BigDecimal.ZERO) { "환전 금액은 양수여야 합니다" }
+        requireNotFuture(flowDate)
         val (out, inn) = CashFlow.fxPair(
             userId, accountId, flowDate,
             fromAmount, fromCurrency, fx.toKrw(fromAmount, fromCurrency),
@@ -41,4 +43,7 @@ class RecordInternalFlowUseCase(
         )
         return listOf(repository.save(out), repository.save(inn))
     }
+
+    private fun requireNotFuture(flowDate: LocalDate) =
+        require(!flowDate.isAfter(LocalDate.now(java.time.ZoneId.of("Asia/Seoul")))) { "미래 날짜는 등록할 수 없습니다" }
 }

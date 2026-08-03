@@ -19,6 +19,7 @@ class RecordCashFlowUseCase(
         amount: BigDecimal, currency: String, memo: String?,
     ): CashFlow {
         require(amount > BigDecimal.ZERO) { "입출금 금액은 양수여야 합니다" }
+        require(!flowDate.isAfter(LocalDate.now(java.time.ZoneId.of("Asia/Seoul")))) { "미래 날짜는 등록할 수 없습니다" }
         // 내부이동(환전·이체)은 반드시 페어 레그로만 기록 → /transfer, /fx 유스케이스 사용
         require(!type.isInternal()) { "환전·이체는 /transfer, /fx 로 기록해야 합니다(페어 레그)" }
         val amountKrw = fxConverter.toKrw(amount, currency)
