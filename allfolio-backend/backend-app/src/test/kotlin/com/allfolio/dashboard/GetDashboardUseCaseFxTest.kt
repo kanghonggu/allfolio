@@ -32,7 +32,10 @@ class GetDashboardUseCaseFxTest {
             if (currency.uppercase() == "KRW") amount else amount * BigDecimal("1400")
     }
 
-    private val useCase = GetDashboardUseCase(assetRepository, performanceRepo, riskRepo, benchmarkRepo, fx)
+    private val useCase = GetDashboardUseCase(
+        assetRepository, performanceRepo, riskRepo, benchmarkRepo, fx,
+        mock(com.allfolio.unifiedasset.application.port.CashFlowRepository::class.java),
+    )
 
     private fun asset(name: String, currentValue: String, currency: String) = Asset.create(
         userId = userId, accountId = accountId,

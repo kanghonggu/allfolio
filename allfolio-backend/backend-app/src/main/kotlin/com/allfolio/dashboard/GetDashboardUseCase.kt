@@ -1,6 +1,10 @@
 package com.allfolio.dashboard
 
+import com.allfolio.report.domain.returns.Flow
+import com.allfolio.report.domain.returns.NavPoint
+import com.allfolio.report.domain.returns.ReturnsCalculator
 import com.allfolio.unifiedasset.application.port.AssetRepository
+import com.allfolio.unifiedasset.application.port.CashFlowRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.application.usecase.currentValueInKrw
 import com.allfolio.unifiedasset.application.usecase.loanAmountInKrw
@@ -25,6 +29,7 @@ class GetDashboardUseCase(
     private val riskRepo: RiskDailyJpaRepository,
     private val benchmarkRepo: BenchmarkDailyJpaRepository,
     private val fx: FxConverter,
+    private val cashFlowRepository: CashFlowRepository,
 ) {
     fun execute(userId: UUID): DashboardResponse {
         val assets = assetRepository.findByUserId(userId)
@@ -52,34 +57,29 @@ class GetDashboardUseCase(
             change30d.divide(nav30d, 4, RoundingMode.HALF_UP).multiply(BigDecimal(100))
         else BigDecimal.ZERO
 
-        // 수익률 히스토리 (YTD)
-        val ytdStart    = LocalDate.of(today.year, 1, 1)
-        val perfHistory = performanceRepo.findByIdPortfolioIdAndIdDateBetween(userId, ytdStart, today)
-        val dataDays    = perfHistory.size
-        val latestPerf  = perfHistory.maxByOrNull { it.id.date }
-        val ytdStartPerf = perfHistory.minByOrNull { it.id.date }
+        // 수익률 (QA P1 #6/#7) — 단순 NAV 비율 대신 입출금을 차감한 flow-aware TWR로 통일.
+        // 계좌 연동 초기 편입(자동 DEPOSIT flow, P1 #8)이 수익으로 오인되지 않는다.
+        // 반환 스케일은 percent(0~100) — ReturnsCalculator(ratio)에 ×100은 여기 한 곳뿐.
+        val ytdStart   = LocalDate.of(today.year, 1, 1)
+        val navSeries  = performanceRepo
+            .findByIdPortfolioIdAndIdDateBetween(userId, EARLIEST, today)
+            .map { NavPoint(it.id.date, it.nav) }
+            .sortedBy { it.date }
+        val flows = cashFlowRepository.findByUserId(userId)
+            .map { Flow(it.flowDate, it.signedKrw()) }
+        val dataDays = navSeries.count { it.date >= ytdStart }
 
-        val returnYtd = if (ytdStartPerf != null && ytdStartPerf.nav > BigDecimal.ZERO && latestPerf != null)
-            latestPerf.nav.subtract(ytdStartPerf.nav)
-                .divide(ytdStartPerf.nav, 4, RoundingMode.HALF_UP)
-                .multiply(BigDecimal(100))
-        else null
+        // 윈도우 시작 이전의 마지막 관측을 기저로 사용 — 윈도우 중간에 시계열이 시작해
+        // 부분 스냅샷이 기저가 되는 왜곡(+2060%)을 막는다.
+        fun periodTwrPercent(from: LocalDate): BigDecimal? {
+            val anchorDate = navSeries.lastOrNull { it.date <= from }?.date ?: from
+            return ReturnsCalculator.calculate(navSeries, flows, anchorDate, today).twr
+                ?.multiply(BigDecimal(100))
+        }
 
-        val perf1mRef = performanceRepo
-            .findTopByIdPortfolioIdAndIdDateBeforeOrderByIdDateDesc(userId, today.minusDays(29))
-        val return1m = if (perf1mRef != null && perf1mRef.nav > BigDecimal.ZERO && latestPerf != null)
-            latestPerf.nav.subtract(perf1mRef.nav)
-                .divide(perf1mRef.nav, 4, RoundingMode.HALF_UP)
-                .multiply(BigDecimal(100))
-        else null
-
-        val perf3mRef = performanceRepo
-            .findTopByIdPortfolioIdAndIdDateBeforeOrderByIdDateDesc(userId, today.minusDays(89))
-        val return3m = if (perf3mRef != null && perf3mRef.nav > BigDecimal.ZERO && latestPerf != null)
-            latestPerf.nav.subtract(perf3mRef.nav)
-                .divide(perf3mRef.nav, 4, RoundingMode.HALF_UP)
-                .multiply(BigDecimal(100))
-        else null
+        val returnYtd = periodTwrPercent(ytdStart)
+        val return1m  = periodTwrPercent(today.minusDays(29))
+        val return3m  = periodTwrPercent(today.minusDays(89))
 
         // MDD
         val latestRisk = riskRepo.findTopByIdPortfolioIdOrderByIdDateDesc(userId)
@@ -232,5 +232,10 @@ class GetDashboardUseCase(
             ),
             realAssets = realAssets,
         )
+    }
+
+    companion object {
+        /** 전체 시계열 로드 시작일 — ReturnsReportGenerator와 동일 관례 */
+        private val EARLIEST: LocalDate = LocalDate.of(2000, 1, 1)
     }
 }

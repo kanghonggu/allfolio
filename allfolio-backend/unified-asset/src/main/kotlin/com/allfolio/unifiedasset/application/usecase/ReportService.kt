@@ -271,7 +271,10 @@ class ReportService(
             totalReturn = totalReturn,
             periodReturns = periodReturns,
             dailySeries = dailySeries,
-            twr = if (dailySeries.isNotEmpty()) dailySeries.last().cumulativeReturn else totalReturn,
+            // cumulative_return은 ratio(0~1) 저장 — 응답은 기간 카드(totalReturn 등)와 동일한 percent (QA P1 #7)
+            twr = if (dailySeries.isNotEmpty())
+                dailySeries.last().cumulativeReturn.multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
+            else totalReturn,
             benchmarkAlpha = latestAlpha,
         )
     }
