@@ -67,6 +67,29 @@ class RecordCashFlowUseCaseTest {
     }
 
     @Test
+    fun `future flow date is rejected`() {
+        val useCase = RecordCashFlowUseCase(InMemoryRepo(), fx)
+        val tomorrow = LocalDate.now(java.time.ZoneId.of("Asia/Seoul")).plusDays(1)
+        assertThrows(IllegalArgumentException::class.java) {
+            useCase.record(
+                userId = userId, accountId = null, flowDate = tomorrow,
+                type = FlowType.DEPOSIT, amount = BigDecimal("100"), currency = "KRW", memo = null,
+            )
+        }
+    }
+
+    @Test
+    fun `today flow date is accepted`() {
+        val useCase = RecordCashFlowUseCase(InMemoryRepo(), fx)
+        val today = LocalDate.now(java.time.ZoneId.of("Asia/Seoul"))
+        val flow = useCase.record(
+            userId = userId, accountId = null, flowDate = today,
+            type = FlowType.DEPOSIT, amount = BigDecimal("100"), currency = "KRW", memo = null,
+        )
+        assertEquals(today, flow.flowDate)
+    }
+
+    @Test
     fun `internal flow types are rejected on generic record path`() {
         val useCase = RecordCashFlowUseCase(InMemoryRepo(), fx)
         // 내부이동(환전·이체)은 페어 레그로만 기록되어야 하므로 /record 우회 차단
