@@ -7,9 +7,18 @@ import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.web.HttpRequestMethodNotSupportedException
+import org.springframework.web.bind.MethodArgumentNotValidException
+import org.springframework.web.bind.MissingRequestHeaderException
+import org.springframework.web.bind.MissingServletRequestParameterException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 import org.springframework.web.server.ResponseStatusException
+import org.springframework.web.servlet.NoHandlerFoundException
+import org.springframework.web.servlet.resource.NoResourceFoundException
+import java.time.format.DateTimeParseException
 
 @RestControllerAdvice
 class GlobalExceptionHandler {
@@ -25,6 +34,39 @@ class GlobalExceptionHandler {
     fun handleBadRequest(e: IllegalArgumentException): ResponseEntity<Map<String, String>> =
         ResponseEntity.status(HttpStatus.BAD_REQUEST)
             .body(mapOf("error" to (e.message ?: "Bad request")))
+
+    /** 존재하지 않는 경로/정적 리소스 (QA P0 #3) — 500이 아니라 404 */
+    @ExceptionHandler(NoResourceFoundException::class, NoHandlerFoundException::class)
+    fun handleNoResource(e: Exception): ResponseEntity<Map<String, String>> =
+        ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body(mapOf("error" to "요청한 경로를 찾을 수 없습니다."))
+
+    /** 바인딩·파싱 실패(깨진 JSON, 잘못된 날짜/타입, 필수 파라미터·헤더 누락) — 400 */
+    @ExceptionHandler(
+        HttpMessageNotReadableException::class,
+        MethodArgumentTypeMismatchException::class,
+        MissingServletRequestParameterException::class,
+        MissingRequestHeaderException::class,
+        DateTimeParseException::class,
+    )
+    fun handleUnparseable(e: Exception): ResponseEntity<Map<String, String>> =
+        ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            .body(mapOf("error" to "요청 형식이 올바르지 않습니다. 입력값을 확인해주세요."))
+
+    /** @Valid 검증 실패 — 422 + 필드별 사유 */
+    @ExceptionHandler(MethodArgumentNotValidException::class)
+    fun handleValidation(e: MethodArgumentNotValidException): ResponseEntity<Map<String, String>> {
+        val detail = e.bindingResult.fieldErrors
+            .joinToString(", ") { "${it.field}: ${it.defaultMessage}" }
+            .ifBlank { "입력값이 올바르지 않습니다." }
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+            .body(mapOf("error" to detail))
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException::class)
+    fun handleMethodNotSupported(e: HttpRequestMethodNotSupportedException): ResponseEntity<Map<String, String>> =
+        ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+            .body(mapOf("error" to "지원하지 않는 HTTP 메서드입니다."))
 
     /** 대사↔동기화 상호 배제 충돌 (P2 #17) — 일시적 상태라 409로 재시도 유도 */
     @ExceptionHandler(com.allfolio.reconciliation.application.SyncInProgressException::class)
