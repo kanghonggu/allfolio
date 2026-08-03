@@ -36,8 +36,22 @@ class ReportServiceTest {
         override fun toKrw(amount: BigDecimal, currency: String) = amount
     }
 
-    private fun svc(fx: FxConverter = identityFx) =
-        ReportService(assetRepository, accountRepository, jdbc, fx)
+    private val emptyBenchmarkStore = object : com.allfolio.unifiedasset.application.port.BenchmarkDailyStore {
+        override fun latestDate(type: com.allfolio.unifiedasset.domain.benchmark.BenchmarkType) = null
+        override fun upsert(
+            type: com.allfolio.unifiedasset.domain.benchmark.BenchmarkType,
+            rows: List<Pair<java.time.LocalDate, BigDecimal>>,
+        ) = Unit
+        override fun series(
+            type: com.allfolio.unifiedasset.domain.benchmark.BenchmarkType,
+            from: java.time.LocalDate, to: java.time.LocalDate,
+        ): List<Pair<java.time.LocalDate, BigDecimal>> = emptyList()
+    }
+
+    private fun svc(
+        fx: FxConverter = identityFx,
+        benchmarkStore: com.allfolio.unifiedasset.application.port.BenchmarkDailyStore = emptyBenchmarkStore,
+    ) = ReportService(assetRepository, accountRepository, jdbc, fx, benchmarkStore)
 
     // ── summary ───────────────────────────────────────────────
 
@@ -307,6 +321,86 @@ class ReportServiceTest {
         accountType = AccountType.MANUAL,
         accountName = "내 계좌",
     )
+
+    // ── benchmark (QA P1 #10) ─────────────────────────────────
+
+    private fun benchStore(
+        vararg data: Pair<com.allfolio.unifiedasset.domain.benchmark.BenchmarkType, List<Pair<java.time.LocalDate, BigDecimal>>>,
+    ) = object : com.allfolio.unifiedasset.application.port.BenchmarkDailyStore {
+        private val map = data.toMap()
+        override fun latestDate(type: com.allfolio.unifiedasset.domain.benchmark.BenchmarkType) = null
+        override fun upsert(
+            type: com.allfolio.unifiedasset.domain.benchmark.BenchmarkType,
+            rows: List<Pair<java.time.LocalDate, BigDecimal>>,
+        ) = Unit
+        override fun series(
+            type: com.allfolio.unifiedasset.domain.benchmark.BenchmarkType,
+            from: java.time.LocalDate, to: java.time.LocalDate,
+        ) = map[type].orEmpty().filter { it.first in from..to }
+    }
+
+    @Test
+    fun `벤치마크는 실제 지수 시계열로 기간 수익률을 계산한다`() {
+        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenReturn(emptyList())
+        val today = java.time.LocalDate.now()
+        val store = benchStore(
+            com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.SPX to listOf(
+                today.minusDays(30) to bd("100"),
+                today to bd("110"),
+            ),
+        )
+
+        val result = svc(benchmarkStore = store).benchmark(userId, "1M")
+
+        val spx = result.benchmarks.single()
+        assertEquals("S&P 500", spx.name)
+        assertEquals(0, bd("10.00").compareTo(spx.benchmarkReturn)) {
+            "expected +10.00% but was ${spx.benchmarkReturn}"
+        }
+    }
+
+    @Test
+    fun `지수 데이터가 없으면 하드코딩 폴백 없이 빈 목록을 반환한다`() {
+        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenReturn(emptyList())
+
+        val result = svc().benchmark(userId, "1M")
+
+        assertTrue(result.benchmarks.isEmpty()) { "합성 벤치마크가 남아 있음: ${result.benchmarks}" }
+        assertTrue(result.series.isEmpty()) { "합성 시계열이 남아 있음 (${result.series.size} rows)" }
+    }
+
+    @Test
+    fun `시계열은 포트폴리오 percent와 지수 정규화 percent를 결합한다`() {
+        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
+        val today = java.time.LocalDate.now()
+        val perfRows = listOf(
+            DailyPerf(today.minusDays(2), bd("1000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today, bd("1050000"), bd("0"), bd("0.05"), null, null),
+        )
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenReturn(perfRows)
+        val store = benchStore(
+            com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.KOSPI to listOf(
+                today.minusDays(30) to bd("2500"),
+                today to bd("2600"),
+            ),
+        )
+
+        val result = svc(benchmarkStore = store).benchmark(userId, "1M")
+
+        val last = result.series.last()
+        // 포트폴리오 cumulative_return(ratio 0.05) → percent 5.00
+        assertEquals(0, bd("5.00").compareTo(last.portfolio))
+        // KOSPI 2500 → 2600 = +4.00%
+        assertEquals(0, bd("4.00").compareTo(last.kospi))
+        // 데이터 없는 지수는 null (합성값 금지)
+        assertNull(last.sp500)
+        assertNull(last.btc)
+    }
 
     private fun bd(s: String) = BigDecimal(s)
 

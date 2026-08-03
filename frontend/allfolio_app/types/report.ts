@@ -133,9 +133,10 @@ export interface BenchmarkItem {
 export interface BenchmarkSeries {
   date:      string
   portfolio: number
-  sp500:     number
-  btc:       number
-  kospi:     number
+  // null = 해당 날짜 실데이터 없음 (합성값으로 채우지 않음)
+  sp500:     number | null
+  btc:       number | null
+  kospi:     number | null
 }
 
 export interface BenchmarkReport {
