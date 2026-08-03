@@ -41,21 +41,23 @@ class Account private constructor(
             accountType: AccountType,
             accountName: String,
             externalId: String? = null,
-            currency: String = "USD",
+            currency: String = "KRW",
             apiKey: String? = null,
             apiSecret: String? = null,
             walletAddress: String? = null,
             chain: String? = null,
         ): Account {
-            require(accountName.isNotBlank()) { "계좌명은 필수입니다" }
+            // QA P2: 계좌명 서버 사이드 산티타이징 + 통화 화이트리스트 검증
+            val safeName = com.allfolio.unifiedasset.domain.common.sanitizeUserText(accountName)
+            require(safeName.isNotBlank()) { "계좌명은 필수입니다" }
             return Account(
                 id            = UUID.randomUUID(),
                 userId        = userId,
                 provider      = provider,
                 accountType   = accountType,
-                accountName   = accountName.trim(),
+                accountName   = safeName,
                 externalId    = externalId?.trim(),
-                currency      = currency.uppercase(),
+                currency      = com.allfolio.unifiedasset.domain.common.Currencies.normalize(currency),
                 status        = AccountStatus.ACTIVE,
                 lastSyncedAt  = null,
                 createdAt     = LocalDateTime.now(),
