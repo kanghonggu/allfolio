@@ -1,7 +1,16 @@
 'use client'
 
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
+import { useAuth } from '@/contexts/AuthContext'
+
+// QA P3: 세율 마스터(tax_rates) 현행 세율 조회 — 하드코딩 15.4% 대신 실연동
+interface EffectiveTaxRates {
+  country: string
+  asOf: string
+  rates: Partial<Record<'DIVIDEND' | 'INTEREST' | 'DISTRIBUTION', number>>
+}
 
 function fmt(n: number) {
   return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 }).format(n)
@@ -55,6 +64,23 @@ function TaxCard({ label, base, tax, rate, desc, color = 'border-gray-700' }: {
 }
 
 export default function TaxPage() {
+  const { accessToken } = useAuth()
+  // 세율 마스터 현행 배당·이자 원천징수율 (QA P3) — 조회 실패 시 15.4% 폴백
+  const { data: taxRates } = useQuery({
+    queryKey: ['tax-rates', 'effective', 'KR'],
+    queryFn: async (): Promise<EffectiveTaxRates> => {
+      const res = await fetch('/api/tax-rates/effective?country=KR', {
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+      })
+      if (!res.ok) throw new Error('세율 조회 실패')
+      return res.json()
+    },
+    enabled: !!accessToken,
+    staleTime: 60 * 60 * 1000,
+  })
+  const dividendRate = (taxRates?.rates?.DIVIDEND ?? 15.4) / 100
+  const interestRate = (taxRates?.rates?.INTEREST ?? 15.4) / 100
+
   // 해외주식
   const [overseasGain, setOverseasGain] = useState(0)
   // 국내주식 — 금융투자소득세는 2024년 말 폐지(미시행). 현행: 소액주주 장내 양도차익
@@ -82,14 +108,13 @@ export default function TaxPage() {
     Math.max(0, domesticBase - DOMESTIC_BRACKET) * 0.275,
   )
 
-  // 배당소득세: 15.4% (소득세 14% + 지방소득세 1.4%)
-  // 금융소득 2,000만 초과 시 종합과세 (기본 계산은 분리과세 기준)
-  const dividendTax = Math.round(dividend * 0.154)
+  // 배당소득세 — 세율 마스터 연동(현행 15.4%). 금융소득 2,000만 초과 시 종합과세 안내
+  const dividendTax = Math.round(dividend * dividendRate)
   const combinedFinancial = dividend + interest
   const isComprehensive = combinedFinancial > 20_000_000
 
-  // 이자소득세: 15.4%
-  const interestTax = Math.round(interest * 0.154)
+  // 이자소득세 — 세율 마스터 연동
+  const interestTax = Math.round(interest * interestRate)
 
   const totalTax = overseasTax + domesticTax + dividendTax + interestTax
 
@@ -170,7 +195,7 @@ export default function TaxPage() {
             label="배당소득세"
             base={dividend}
             tax={dividendTax}
-            rate="15.4% (소득세 14% + 지방세 1.4%)"
+            rate={`${(dividendRate * 100).toFixed(1)}% (세율 마스터 기준)`}
             desc="분리과세 기준"
             color={dividendTax > 0 ? 'border-red-900' : 'border-gray-700'}
           />
@@ -178,7 +203,7 @@ export default function TaxPage() {
             label="이자소득세"
             base={interest}
             tax={interestTax}
-            rate="15.4% (소득세 14% + 지방세 1.4%)"
+            rate={`${(interestRate * 100).toFixed(1)}% (세율 마스터 기준)`}
             desc="분리과세 기준"
             color={interestTax > 0 ? 'border-red-900' : 'border-gray-700'}
           />
