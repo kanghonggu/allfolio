@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useCashFlowApi, useUnifiedApi } from '@/lib/useApi'
+import CurrencySelect from '@/components/CurrencySelect'
 import { fmtKrw } from '@/lib/report-format'
 import type { Account } from '@/types/unified'
 import type { CashFlowItem, FxRequest, TransferRequest } from '@/types/returns'
@@ -230,11 +231,10 @@ export default function CashflowPage() {
               </label>
               <label className="w-28 text-sm text-gray-400">
                 통화
-                <input
-                  type="text"
-                  className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 uppercase text-gray-200"
+                <CurrencySelect
+                  allowEmpty
                   value={transferForm.currency}
-                  onChange={(e) => setTransferForm((f) => ({ ...f, currency: e.target.value }))}
+                  onChange={(currency) => setTransferForm((f) => ({ ...f, currency }))}
                 />
               </label>
             </div>
@@ -321,11 +321,10 @@ export default function CashflowPage() {
               </label>
               <label className="w-28 text-sm text-gray-400">
                 From 통화
-                <input
-                  type="text"
-                  className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 uppercase text-gray-200"
+                <CurrencySelect
+                  allowEmpty
                   value={fxForm.fromCurrency}
-                  onChange={(e) => setFxForm((f) => ({ ...f, fromCurrency: e.target.value }))}
+                  onChange={(fromCurrency) => setFxForm((f) => ({ ...f, fromCurrency }))}
                 />
               </label>
             </div>
@@ -343,11 +342,10 @@ export default function CashflowPage() {
               </label>
               <label className="w-28 text-sm text-gray-400">
                 To 통화
-                <input
-                  type="text"
-                  className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 uppercase text-gray-200"
+                <CurrencySelect
+                  allowEmpty
                   value={fxForm.toCurrency}
-                  onChange={(e) => setFxForm((f) => ({ ...f, toCurrency: e.target.value }))}
+                  onChange={(toCurrency) => setFxForm((f) => ({ ...f, toCurrency }))}
                 />
               </label>
             </div>

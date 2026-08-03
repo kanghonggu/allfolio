@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import axios from 'axios'
 import { useBenchmarkApi, useCashFlowApi, useReportApi } from '@/lib/useApi'
+import { SUPPORTED_CURRENCIES } from '@/lib/currencies'
 import type { BenchmarkType, CashFlowItem, FlowType, RecordCashFlowRequest } from '@/types/returns'
 import {
   Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ReferenceDot,
@@ -407,7 +408,11 @@ export default function ReturnsReportPage() {
                   <td className="py-2 text-gray-500">{f.memo ?? ''}</td>
                   <td className="py-2 text-right">
                     <button
-                      onClick={() => removeFlow.mutate(f.id)}
+                      onClick={() => {
+                        // QA P2: 금융 데이터 삭제는 확인 후 실행
+                        if (confirm(`${f.flowDate} ${fmtKrw(f.amountKrw)} 기록을 삭제하시겠습니까?`))
+                          removeFlow.mutate(f.id)
+                      }}
                       className="text-xs text-gray-600 hover:text-red-400"
                     >
                       삭제
@@ -500,8 +505,9 @@ function RecordFlowModal({
             <input type="number" placeholder="금액" value={amount} onChange={(e) => setAmount(e.target.value)}
               className="flex-1 rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200" />
             <select value={currency} onChange={(e) => setCurrency(e.target.value)}
+              aria-label="통화"
               className="rounded-md border border-gray-700 bg-gray-950 px-2 py-2 text-gray-200">
-              {['KRW', 'USD', 'USDT', 'BTC', 'ETH'].map((c) => <option key={c}>{c}</option>)}
+              {SUPPORTED_CURRENCIES.map((c) => <option key={c}>{c}</option>)}
             </select>
           </div>
           <input placeholder="메모 (선택)" value={memo} onChange={(e) => setMemo(e.target.value)}

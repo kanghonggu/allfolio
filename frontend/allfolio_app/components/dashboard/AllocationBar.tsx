@@ -40,13 +40,14 @@ export default function AllocationBar({ allocation }: AllocationBarProps) {
         )}
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-3" role="list" aria-label="자산 배분">
         {allocation.map((item) => {
           const color = TYPE_COLORS[item.type] ?? '#9ca3af'
           const pct = (item.ratio * 100).toFixed(1)
           return (
-            <div key={item.type} className="flex items-center gap-3">
-              <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: color }} />
+            // QA P2: 접근성 트리에서 유형 라벨이 확실히 잡히도록 row에 aria-label 부여
+            <div key={item.type} role="listitem" aria-label={`${TYPE_KO[item.type] ?? item.type} ${pct}%`} className="flex items-center gap-3">
+              <span className="h-3 w-3 shrink-0 rounded-full" aria-hidden="true" style={{ background: color }} />
               <span className="w-16 text-sm text-gray-300">{TYPE_KO[item.type] ?? item.type}</span>
               <div className="flex-1 h-2 rounded-full bg-gray-800 overflow-hidden">
                 <div

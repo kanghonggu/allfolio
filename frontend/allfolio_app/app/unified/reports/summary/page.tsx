@@ -85,7 +85,7 @@ export default function SummaryReportPage() {
           <h2 className="mb-4 text-sm font-semibold text-gray-300">유형별 상세</h2>
           <div className="space-y-3">
             {data.byType.map((t: TypeBreakdown) => (
-              <div key={t.type} className="flex items-center gap-3">
+              <div key={t.type} className="flex items-center gap-3" aria-label={TYPE_KO[t.type] ?? t.type}>
                 <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: TYPE_COLORS[t.type] ?? '#6b7280' }} />
                 <span className="flex-1 text-sm text-gray-300">{TYPE_KO[t.type] ?? t.type}</span>
                 <div className="flex-1 h-2 rounded-full bg-gray-800 overflow-hidden">
