@@ -72,7 +72,8 @@ export default function DividendPage() {
 
       <p className="text-xs text-gray-500">생성: {new Date(data.generatedAt).toLocaleString('ko-KR')}</p>
 
-      {/* KPI 카드 */}
+      {/* KPI 카드 — 배당 내역 없으면 빈 카드 대신 아래 빈 상태만 노출 (QA P2) */}
+      {!isEmpty && (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border border-yellow-800 bg-gray-900 p-5">
           <p className="text-xs text-gray-500">총 수령액</p>
@@ -98,6 +99,7 @@ export default function DividendPage() {
           <p className="mt-0.5 text-xs text-gray-600">최근 12개월 기준</p>
         </div>
       </div>
+      )}
 
       {isEmpty ? (
         <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-gray-700 py-16 text-center">

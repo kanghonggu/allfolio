@@ -70,6 +70,7 @@ export interface PerformanceReport {
   dailySeries:    DailyPerf[]
   twr:            number | null
   benchmarkAlpha: number | null
+  coverageDays:   number   // 시계열이 덮는 일수 — 기간 버튼 비활성 판단
 }
 
 // ── Risk ───────────────────────────────────────────────────────

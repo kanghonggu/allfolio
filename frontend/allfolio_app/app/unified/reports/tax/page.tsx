@@ -57,7 +57,8 @@ function TaxCard({ label, base, tax, rate, desc, color = 'border-gray-700' }: {
 export default function TaxPage() {
   // 해외주식
   const [overseasGain, setOverseasGain] = useState(0)
-  // 국내주식 (금융투자소득세, 2025년 시행)
+  // 국내주식 — 금융투자소득세는 2024년 말 폐지(미시행). 현행: 소액주주 장내 양도차익
+  // 비과세, 대주주·장외 거래만 양도소득세 (QA P2: 세법 현행화)
   const [domesticGain, setDomesticGain] = useState(0)
   // 배당소득
   const [dividend, setDividend] = useState(0)
@@ -71,10 +72,15 @@ export default function TaxPage() {
   const overseasBase = Math.max(0, overseasGain - OVERSEAS_DEDUCTION)
   const overseasTax = Math.round(overseasBase * 0.22)
 
-  // 국내주식 금융투자소득세: (차익 - 5000만) × 22%
-  const DOMESTIC_DEDUCTION = 50_000_000
+  // 국내주식 양도소득세(대주주 등 과세 대상): 기본공제 250만, 과세표준 3억 이하 22% /
+  // 초과분 27.5% (지방세 포함)
+  const DOMESTIC_DEDUCTION = 2_500_000
+  const DOMESTIC_BRACKET = 300_000_000
   const domesticBase = Math.max(0, domesticGain - DOMESTIC_DEDUCTION)
-  const domesticTax = Math.round(domesticBase * 0.22)
+  const domesticTax = Math.round(
+    Math.min(domesticBase, DOMESTIC_BRACKET) * 0.22 +
+    Math.max(0, domesticBase - DOMESTIC_BRACKET) * 0.275,
+  )
 
   // 배당소득세: 15.4% (소득세 14% + 지방소득세 1.4%)
   // 금융소득 2,000만 초과 시 종합과세 (기본 계산은 분리과세 기준)
@@ -95,6 +101,7 @@ export default function TaxPage() {
       </div>
 
       <div className="rounded-xl border border-amber-800 bg-amber-950/20 p-4 text-xs text-amber-400">
+        2026년 현행 세법 기준입니다 (금융투자소득세는 2024년 말 폐지되어 적용되지 않습니다).
         예상 세액은 참고용입니다. 실제 납부 세액은 개인 상황(다른 소득, 공제 항목 등)에 따라 달라질 수 있으니 세무사 확인을 권장합니다.
       </div>
 
@@ -113,7 +120,7 @@ export default function TaxPage() {
             label="국내주식 양도차익 (연간 합계)"
             value={domesticGain}
             onChange={setDomesticGain}
-            hint="2025년부터 시행 — 금융투자소득세 적용"
+            hint="소액주주 장내 양도차익은 비과세 — 대주주·장외 거래분만 입력"
           />
           <MoneyInput
             label="배당소득 (연간 합계)"
@@ -152,11 +159,11 @@ export default function TaxPage() {
             color={overseasTax > 0 ? 'border-red-900' : 'border-gray-700'}
           />
           <TaxCard
-            label="국내주식 금융투자소득세"
+            label="국내주식 양도소득세 (대주주 등)"
             base={domesticBase}
             tax={domesticTax}
-            rate="22% (소득세 20% + 지방세 2%)"
-            desc="연 5,000만원 공제 후 과세 (2025년 시행)"
+            rate="22% · 3억 초과분 27.5% (지방세 포함)"
+            desc="기본공제 250만원 — 소액주주 장내 거래는 비과세"
             color={domesticTax > 0 ? 'border-red-900' : 'border-gray-700'}
           />
           <TaxCard

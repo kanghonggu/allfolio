@@ -48,10 +48,19 @@ class ReportServiceTest {
         ): List<Pair<java.time.LocalDate, BigDecimal>> = emptyList()
     }
 
+    private val emptyCashFlows = object : com.allfolio.unifiedasset.application.port.CashFlowRepository {
+        override fun save(cashFlow: com.allfolio.unifiedasset.domain.cashflow.CashFlow) = cashFlow
+        override fun findById(id: UUID): com.allfolio.unifiedasset.domain.cashflow.CashFlow? = null
+        override fun findByUserIdAndPeriod(userId: UUID, from: java.time.LocalDate, to: java.time.LocalDate) =
+            emptyList<com.allfolio.unifiedasset.domain.cashflow.CashFlow>()
+        override fun findByUserId(userId: UUID) = emptyList<com.allfolio.unifiedasset.domain.cashflow.CashFlow>()
+        override fun delete(id: UUID) = Unit
+    }
+
     private fun svc(
         fx: FxConverter = identityFx,
         benchmarkStore: com.allfolio.unifiedasset.application.port.BenchmarkDailyStore = emptyBenchmarkStore,
-    ) = ReportService(assetRepository, accountRepository, jdbc, fx, benchmarkStore)
+    ) = ReportService(assetRepository, accountRepository, jdbc, fx, benchmarkStore, emptyCashFlows)
 
     // ── summary ───────────────────────────────────────────────
 
@@ -342,6 +351,45 @@ class ReportServiceTest {
         assertEquals(0, bd("20.60").compareTo(result.twr)) {
             "twr expected percent 20.60 but was ${result.twr}"
         }
+    }
+
+    @Test
+    fun `performance - 커버리지 미달 기간은 null이고 coverageDays를 내려준다`() {
+        // 6일치 시계열 — 1W(7일)조차 못 덮으므로 전 기간 '데이터 부족'(null)이어야 한다.
+        // 기존 버그: 모든 기간 버튼이 같은 값(+2060%)을 반환.
+        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
+        val today = java.time.LocalDate.now()
+        val rows = (5 downTo 0).map { d ->
+            DailyPerf(today.minusDays(d.toLong()), bd("1000000"), bd("0"), bd("0"), null, null)
+        }
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenReturn(rows)
+
+        val result = svc().performance(userId, "1M")
+
+        assertEquals(6, result.coverageDays)
+        assertNull(result.periodReturns["1W"])
+        assertNull(result.periodReturns["1M"])
+        assertNull(result.periodReturns["1Y"])
+    }
+
+    @Test
+    fun `performance - 커버리지가 되는 기간만 TWR 수치를 반환한다`() {
+        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
+        val today = java.time.LocalDate.now()
+        val rows = listOf(
+            DailyPerf(today.minusDays(40), bd("1000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today.minusDays(1), bd("1100000"), bd("0"), bd("0"), null, null),
+        )
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenReturn(rows)
+
+        val result = svc().performance(userId, "1M")
+
+        // 40일 스팬 → 1W/1M은 계산 가능(+10.00%), 3M/1Y는 데이터 부족
+        assertEquals(0, bd("10.00").compareTo(result.periodReturns["1M"]))
+        assertNull(result.periodReturns["3M"])
+        assertNull(result.periodReturns["1Y"])
     }
 
     // ── benchmark (QA P1 #10) ─────────────────────────────────
