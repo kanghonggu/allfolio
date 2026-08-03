@@ -16,7 +16,11 @@ const TYPE_KO: Record<string, string> = {
 }
 
 function fmt(n: number, currency = 'KRW') {
-  return new Intl.NumberFormat('ko-KR', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n)
+  // KRW는 정수, 그 외 통화는 소수 2자리 — US$0 같은 과반올림 방지 (QA P2)
+  return new Intl.NumberFormat('ko-KR', {
+    style: 'currency', currency,
+    maximumFractionDigits: currency === 'KRW' ? 0 : 2,
+  }).format(n)
 }
 
 type SortKey = 'currentValue' | 'unrealizedPnl' | 'unrealizedPnlPct' | 'purchaseCost'
@@ -41,8 +45,10 @@ export default function PositionsPage() {
   const filtered = data.positions
     .filter((p) => filterType === 'ALL' || p.type === filterType)
     .sort((a, b) => {
-      const av = a[sortKey] as number
-      const bv = b[sortKey] as number
+      // 현재 가치 정렬은 통화 혼재를 피해 KRW 환산 기준 (QA P2)
+      const key = sortKey === 'currentValue' ? 'currentValueKrw' : sortKey
+      const av = a[key] as number
+      const bv = b[key] as number
       return sortDir === 'desc' ? bv - av : av - bv
     })
 
@@ -167,7 +173,11 @@ export default function PositionsPage() {
                     {fmt(Number(p.purchaseCost), p.currency)}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-gray-200">
-                    {fmt(Number(p.currentValue), p.currency)}
+                    {/* 표시 통화는 KRW로 통일, 원통화 값은 보조 표기 (QA P2) */}
+                    {fmt(Number(p.currentValueKrw))}
+                    {p.currency !== 'KRW' && (
+                      <div className="text-xs text-gray-500">{fmt(Number(p.currentValue), p.currency)}</div>
+                    )}
                   </td>
                   <td className={`px-4 py-3 text-right tabular-nums ${pnlColor}`}>
                     {pnl >= 0 ? '+' : ''}{fmt(pnl, p.currency)}

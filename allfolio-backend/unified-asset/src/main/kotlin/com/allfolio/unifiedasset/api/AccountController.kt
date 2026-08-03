@@ -52,7 +52,10 @@ data class AccountResponse(
     val status: String,
     val lastSyncedAt: LocalDateTime?,
     val createdAt: LocalDateTime,
+    /** 기관명 (externalId가 계좌번호형이면 null — 계좌번호는 accountNumber로) */
     val brokerage: String?,
+    /** 마스킹된 계좌번호 (예: 4485****_01). 원문은 응답에 싣지 않는다 (QA P2) */
+    val accountNumber: String?,
 )
 
 data class CreateManualAssetRequest(
@@ -357,7 +360,10 @@ class AccountController(
         status       = status.name,
         lastSyncedAt = lastSyncedAt,
         createdAt    = createdAt,
-        brokerage    = externalId,
+        brokerage    = externalId?.takeUnless { com.allfolio.unifiedasset.domain.common.isAccountNumberLike(it) },
+        accountNumber = externalId
+            ?.takeIf { com.allfolio.unifiedasset.domain.common.isAccountNumberLike(it) }
+            ?.let { com.allfolio.unifiedasset.domain.common.maskAccountNumber(it) },
     )
 
     private fun StockTrade.toResponse() = StockTradeResponse(
