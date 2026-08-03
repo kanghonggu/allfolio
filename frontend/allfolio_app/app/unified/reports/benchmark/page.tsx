@@ -49,9 +49,9 @@ export default function BenchmarkPage() {
   const chartData = data.series.map((s: BenchmarkSeries) => ({
     date: s.date,
     portfolio: Number(s.portfolio),
-    'S&P 500': Number(s.sp500),
-    BTC: Number(s.btc),
-    KOSPI: Number(s.kospi),
+    'S&P 500': s.sp500 !== null ? Number(s.sp500) : null,
+    BTC: s.btc !== null ? Number(s.btc) : null,
+    KOSPI: s.kospi !== null ? Number(s.kospi) : null,
   }))
 
   return (
@@ -84,7 +84,13 @@ export default function BenchmarkPage() {
         </p>
       </div>
 
-      {/* Alpha Cards */}
+      {/* Alpha Cards — 지수 데이터 없으면 명시적 빈 상태 (합성값 표시 금지) */}
+      {data.benchmarks.length === 0 && (
+        <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 text-sm text-gray-500">
+          벤치마크 지수 데이터가 아직 수집되지 않았습니다. 지수 시세는 매일 새벽 자동
+          동기화되며, 수집되는 대로 실제 지수 기준 비교가 표시됩니다.
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-3">
         {data.benchmarks.map((b: BenchmarkItem) => {
           const alpha = Number(b.alpha)
@@ -162,9 +168,9 @@ export default function BenchmarkPage() {
               <ReferenceLine y={0} stroke="#374151" strokeDasharray="4 4" />
               <Legend formatter={(v) => <span className="text-xs text-gray-300">{v}</span>} />
               <Line type="monotone" dataKey="portfolio" name="내 포트폴리오" stroke="#3b82f6" strokeWidth={2.5} dot={false} />
-              <Line type="monotone" dataKey="S&P 500" stroke="#10b981" strokeWidth={1.5} dot={false} strokeDasharray="5 5" />
-              <Line type="monotone" dataKey="BTC" stroke="#f59e0b" strokeWidth={1.5} dot={false} strokeDasharray="5 5" />
-              <Line type="monotone" dataKey="KOSPI" stroke="#8b5cf6" strokeWidth={1.5} dot={false} strokeDasharray="5 5" />
+              <Line type="monotone" dataKey="S&P 500" stroke="#10b981" strokeWidth={1.5} dot={false} strokeDasharray="5 5" connectNulls />
+              <Line type="monotone" dataKey="BTC" stroke="#f59e0b" strokeWidth={1.5} dot={false} strokeDasharray="5 5" connectNulls />
+              <Line type="monotone" dataKey="KOSPI" stroke="#8b5cf6" strokeWidth={1.5} dot={false} strokeDasharray="5 5" connectNulls />
             </LineChart>
           </ResponsiveContainer>
         ) : (
@@ -173,7 +179,7 @@ export default function BenchmarkPage() {
       </div>
 
       <p className="text-xs text-gray-600">
-        * S&P 500, BTC, KOSPI 수익률은 2024년 추정치 기반 시뮬레이션이며, 실제 지수 데이터와 다를 수 있습니다.
+        * S&P 500, BTC, KOSPI는 일별 종가 기준 실제 지수 데이터입니다. 데이터가 없는 날짜는 표시되지 않습니다.
       </p>
     </div>
   )
