@@ -121,12 +121,12 @@ class AccountControllerSecurityTest {
     }
 
     @Test
-    fun `X-User-Id 헤더가 없으면 현재 전역 예외 처리에 따라 500을 반환한다`() {
+    fun `X-User-Id 헤더가 없으면 400을 반환한다`() {
         val accountId = UUID.randomUUID()
 
         mockMvc.get("/api/unified/accounts/$accountId/assets")
             .andExpect {
-                status { isInternalServerError() }
+                status { isBadRequest() }
             }
 
         verifyNoInteractions(accountRepository, assetRepository)
