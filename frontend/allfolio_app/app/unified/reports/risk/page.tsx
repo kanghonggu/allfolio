@@ -61,7 +61,8 @@ export default function RiskPage() {
         </div>
       )}
 
-      {/* KPI Grid */}
+      {/* KPI Grid — 데이터 없으면 빈 카드 대신 배너만 노출 (QA P2) */}
+      {hasData && (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <RiskCard
           label="변동성 (일)"
@@ -87,7 +88,9 @@ export default function RiskPage() {
           desc="고점 대비 최대 하락"
         />
       </div>
+      )}
 
+      {hasData && (
       <div className="grid gap-4 sm:grid-cols-2">
         <RiskCard
           label="Sharpe Ratio"
@@ -102,6 +105,7 @@ export default function RiskPage() {
           valueClass={data.calmarRatio !== null ? (Number(data.calmarRatio) > 1 ? 'text-emerald-400' : 'text-amber-400') : 'text-gray-400'}
         />
       </div>
+      )}
 
       {/* Risk Metrics Guide */}
       <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">

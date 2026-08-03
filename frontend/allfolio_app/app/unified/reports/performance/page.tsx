@@ -34,6 +34,11 @@ export default function PerformancePage() {
   const periodLabels: Record<string, string> = {
     '1W': '1주', '1M': '1개월', '3M': '3개월', 'YTD': '연초 이후', '1Y': '1년',
   }
+  // 기간별 필요 일수 — 시계열 커버리지 미달이면 버튼 비활성 (QA P2)
+  const now = new Date()
+  const ytdDays = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / 86_400_000) + 1
+  const periodDays: Record<string, number> = { '1W': 7, '1M': 30, '3M': 90, 'YTD': ytdDays, '1Y': 365 }
+  const coverageDays = Number(data.coverageDays ?? 0)
 
   const chartData = data.dailySeries.map((d: DailyPerf) => ({
     date: d.date,
@@ -53,19 +58,24 @@ export default function PerformancePage() {
 
       {/* Period Selector */}
       <div className="flex gap-2">
-        {PERIODS.map((p) => (
-          <button
-            key={p}
-            onClick={() => setPeriod(p)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              period === p
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            {periodLabels[p]}
-          </button>
-        ))}
+        {PERIODS.map((p) => {
+          const insufficient = coverageDays > 0 && coverageDays < periodDays[p]
+          return (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              disabled={insufficient}
+              title={insufficient ? `데이터 부족 (${coverageDays}일)` : undefined}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                period === p
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+              } disabled:cursor-not-allowed disabled:opacity-40`}
+            >
+              {periodLabels[p]}
+            </button>
+          )
+        })}
       </div>
 
       {/* Total Return */}
@@ -87,10 +97,11 @@ export default function PerformancePage() {
           return (
             <div key={p} className={`rounded-xl border bg-gray-900 p-4 ${period === p ? 'border-blue-600' : 'border-gray-700'}`}>
               <p className="text-xs text-gray-500">{periodLabels[p]}</p>
-              <p className={`mt-1 text-xl font-bold tabular-nums ${
-                n === null ? 'text-gray-600' : n >= 0 ? 'text-emerald-400' : 'text-red-400'
+              <p className={`mt-1 font-bold tabular-nums ${
+                n === null ? 'text-sm text-gray-600' : `text-xl ${n >= 0 ? 'text-emerald-400' : 'text-red-400'}`
               }`}>
-                {n === null ? '—' : fmtPct(n)}
+                {/* 커버리지 미달 기간은 왜곡 수치 대신 명시 표기 (QA P2) */}
+                {n === null ? `데이터 부족 (${coverageDays}일)` : fmtPct(n)}
               </p>
             </div>
           )

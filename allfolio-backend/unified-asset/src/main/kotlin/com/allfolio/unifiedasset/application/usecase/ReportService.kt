@@ -55,10 +55,13 @@ data class PerformanceReport(
     val period: String,
     val generatedAt: LocalDateTime,
     val totalReturn: BigDecimal,
+    /** 기간별 TWR(percent). null = 시계열이 해당 기간을 못 덮음 → FE는 '데이터 부족' 표기 (QA P2) */
     val periodReturns: Map<String, BigDecimal?>,
     val dailySeries: List<DailyPerf>,
     val twr: BigDecimal?,
     val benchmarkAlpha: BigDecimal?,
+    /** 전체 시계열이 덮는 일수 (첫 관측~마지막 관측) — 기간 버튼 비활성 판단용 */
+    val coverageDays: Int,
 )
 
 data class DailyPerf(
@@ -203,6 +206,7 @@ class ReportService(
     private val jdbc: JdbcTemplate,
     private val fx: FxConverter,
     private val benchmarkStore: com.allfolio.unifiedasset.application.port.BenchmarkDailyStore,
+    private val cashFlowRepository: com.allfolio.unifiedasset.application.port.CashFlowRepository,
 ) {
     @Transactional(readOnly = true)
     fun summary(userId: UUID): SummaryReport {
@@ -263,7 +267,14 @@ class ReportService(
                 .multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
         else BigDecimal.ZERO
 
-        val periodReturns = computePeriodReturns(dailySeries, totalReturn)
+        // 기간별 수익률은 선택 기간과 무관하게 전체 시계열 + 현금흐름으로 계산 (QA P2)
+        val fullSeries = queryPerformanceSeries(userId, "ALL")
+        val flows = cashFlowRepository.findByUserId(userId)
+            .map { com.allfolio.report.domain.returns.Flow(it.flowDate, it.signedKrw()) }
+        val periodReturns = computePeriodReturns(fullSeries, flows)
+        val coverageDays = if (fullSeries.isEmpty()) 0
+        else java.time.temporal.ChronoUnit.DAYS
+            .between(fullSeries.first().date, fullSeries.last().date).toInt() + 1
         val latestAlpha = dailySeries.lastOrNull()?.alpha
 
         return PerformanceReport(
@@ -273,6 +284,7 @@ class ReportService(
             totalReturn = totalReturn,
             periodReturns = periodReturns,
             dailySeries = dailySeries,
+            coverageDays = coverageDays,
             // cumulative_return은 ratio(0~1) 저장 — 응답은 기간 카드(totalReturn 등)와 동일한 percent (QA P1 #7)
             twr = if (dailySeries.isNotEmpty())
                 dailySeries.last().cumulativeReturn.multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
@@ -616,26 +628,34 @@ class ReportService(
         }
     }
 
-    private fun computePeriodReturns(series: List<DailyPerf>, totalReturn: BigDecimal): Map<String, BigDecimal?> {
-        if (series.size < 2) return mapOf(
-            "1W" to null, "1M" to null, "3M" to null, "YTD" to null, "1Y" to totalReturn,
-        )
+    /**
+     * 기간별 수익률 (QA P2) — flow-aware TWR로 통일(대시보드와 동일 엔진).
+     * 시계열이 요청 기간을 못 덮으면(윈도 중간 시작) 왜곡된 수치 대신 null을 내려
+     * FE가 '데이터 부족'으로 표기하게 한다 — 모든 기간이 같은 값(+2060%)을 반환하던 버그 제거.
+     */
+    private fun computePeriodReturns(
+        series: List<DailyPerf>,
+        flows: List<com.allfolio.report.domain.returns.Flow>,
+    ): Map<String, BigDecimal?> {
+        val empty = mapOf<String, BigDecimal?>("1W" to null, "1M" to null, "3M" to null, "YTD" to null, "1Y" to null)
+        if (series.size < 2) return empty
         val now = LocalDate.now()
-        fun returnSince(days: Int): BigDecimal? {
+        val navPoints = series.map { com.allfolio.report.domain.returns.NavPoint(it.date, it.nav) }
+
+        fun twrSince(days: Int): BigDecimal? {
             val cutoff = now.minusDays(days.toLong())
-            val start = series.firstOrNull { !it.date.isBefore(cutoff) } ?: return null
-            val end = series.last()
-            if (start.date == end.date) return null  // 같은 날이면 이력 부족
-            if (start.nav <= BigDecimal.ZERO) return null
-            return (end.nav - start.nav).divide(start.nav, 4, RoundingMode.HALF_UP)
-                .multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
+            if (navPoints.first().date.isAfter(cutoff)) return null   // 커버리지 미달
+            val anchor = navPoints.last { !it.date.isAfter(cutoff) }.date
+            return com.allfolio.report.domain.returns.ReturnsCalculator
+                .calculate(navPoints, flows, anchor, now).twr
+                ?.multiply(BigDecimal(100))?.setScale(2, RoundingMode.HALF_UP)
         }
-        return mapOf<String, BigDecimal?>(
-            "1W"  to returnSince(7),
-            "1M"  to returnSince(30),
-            "3M"  to returnSince(90),
-            "YTD" to returnSince(now.dayOfYear),
-            "1Y"  to (returnSince(365) ?: totalReturn),
+        return mapOf(
+            "1W"  to twrSince(7),
+            "1M"  to twrSince(30),
+            "3M"  to twrSince(90),
+            "YTD" to twrSince(now.dayOfYear),
+            "1Y"  to twrSince(365),
         )
     }
 

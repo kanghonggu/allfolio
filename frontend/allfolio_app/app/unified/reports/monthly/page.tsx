@@ -12,6 +12,13 @@ import {
 function fmt(n: number) {
   return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 }).format(n)
 }
+// 부호 포맷터 통일 (QA P2) — 음수는 fmt가 -를 붙이므로 양수에만 + 부여
+function fmtSigned(n: number) {
+  return `${n >= 0 ? '+' : ''}${fmt(n)}`
+}
+function fmtSignedPct(n: number) {
+  return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
+}
 function fmtShort(n: number) {
   if (Math.abs(n) >= 100_000_000) return `${(n / 100_000_000).toFixed(1)}억`
   if (Math.abs(n) >= 10_000) return `${(n / 10_000).toFixed(0)}만`
@@ -71,16 +78,16 @@ export default function MonthlyPnlPage() {
         </div>
       </div>
 
-      {/* 베스트 / 워스트 */}
-      {(data.bestMonth || data.worstMonth) && (
+      {/* 베스트 / 워스트 — 데이터 1개월이면 최고=최저라 의미 없으므로 숨김 (부족 배너와 정책 일치, QA P2) */}
+      {data.months.length >= 2 && (data.bestMonth || data.worstMonth) && (
         <div className="grid gap-4 sm:grid-cols-2">
           {data.bestMonth && (
             <div className="rounded-xl border border-emerald-800 bg-gray-900 p-5">
               <p className="text-xs text-gray-500">최고 달</p>
               <p className="mt-1 text-lg font-bold text-emerald-400">{data.bestMonth.yearMonth}</p>
               <p className="text-sm text-emerald-300">
-                +{fmt(data.bestMonth.absolutePnl)}
-                <span className="ml-2 text-xs text-emerald-500">(+{Number(data.bestMonth.returnPct).toFixed(2)}%)</span>
+                {fmtSigned(Number(data.bestMonth.absolutePnl))}
+                <span className="ml-2 text-xs text-emerald-500">({fmtSignedPct(Number(data.bestMonth.returnPct))})</span>
               </p>
             </div>
           )}
@@ -89,8 +96,8 @@ export default function MonthlyPnlPage() {
               <p className="text-xs text-gray-500">최저 달</p>
               <p className="mt-1 text-lg font-bold text-red-400">{data.worstMonth.yearMonth}</p>
               <p className="text-sm text-red-300">
-                {fmt(data.worstMonth.absolutePnl)}
-                <span className="ml-2 text-xs text-red-500">({Number(data.worstMonth.returnPct).toFixed(2)}%)</span>
+                {fmtSigned(Number(data.worstMonth.absolutePnl))}
+                <span className="ml-2 text-xs text-red-500">({fmtSignedPct(Number(data.worstMonth.returnPct))})</span>
               </p>
             </div>
           )}
