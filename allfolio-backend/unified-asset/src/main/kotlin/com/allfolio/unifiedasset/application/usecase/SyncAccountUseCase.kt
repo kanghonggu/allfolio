@@ -4,6 +4,7 @@ import com.allfolio.common.crypto.SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE
 import com.allfolio.common.crypto.requiresSensitiveDataReconnection
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
+import com.allfolio.unifiedasset.application.port.CashFlowRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.application.port.ReconMutex
 import com.allfolio.unifiedasset.application.port.SyncAdapter
@@ -12,6 +13,8 @@ import com.allfolio.unifiedasset.domain.account.Account
 import com.allfolio.unifiedasset.domain.account.AccountProvider
 import com.allfolio.unifiedasset.domain.account.AccountStatus
 import com.allfolio.unifiedasset.domain.asset.Asset
+import com.allfolio.unifiedasset.domain.cashflow.CashFlow
+import com.allfolio.unifiedasset.domain.cashflow.FlowType
 import com.allfolio.unifiedasset.domain.sync.SyncLog
 import com.allfolio.unifiedasset.domain.sync.SyncLogStatus
 import com.allfolio.unifiedasset.domain.sync.SyncTrigger
@@ -36,6 +39,7 @@ class SyncAccountUseCase(
     private val fx: FxConverter,
     private val syncLogRepository: SyncLogRepository,
     private val reconMutex: ReconMutex,
+    private val cashFlowRepository: CashFlowRepository,
 ) : AccountSyncRunner {
     private val log = LoggerFactory.getLogger(javaClass)
     private val adapterMap: Map<AccountProvider, SyncAdapter> by lazy {
@@ -67,10 +71,18 @@ class SyncAccountUseCase(
 
         return try {
             val assets: List<Asset> = adapter.sync(account)
+            // 계좌에 자산이 처음 들어오는 순간인지 — 교체(full refresh) 전에 판정
+            val hadAssets = assetRepository.findByAccountId(accountId).isNotEmpty()
             // 기존 자산 삭제 후 새 자산으로 교체 (full refresh)
             assetRepository.deleteByAccountId(accountId)
             assetRepository.saveAll(assets)
             accountRepository.updateStatus(accountId, AccountStatus.ACTIVE)
+
+            // QA P1 #8: 최초 편입 자산은 수익이 아니라 원금 유입 — external inflow로 기록해야
+            // TWR/MWR이 초기 평가액을 수익률로 오인하지 않는다. 사용자 수동 입력에 의존하지 않는다.
+            if (!hadAssets && assets.isNotEmpty()) {
+                recordInitialInflow(account, assets)
+            }
 
             // 이 계좌 유저의 전체 NAV를 스냅샷으로 기록 (통화 혼재 → KRW 환산 후 합산)
             val allAssets = assetRepository.findByUserId(account.userId)
@@ -93,6 +105,24 @@ class SyncAccountUseCase(
         } finally {
             reconMutex.release(account.userId, lockToken)
         }
+    }
+
+    /** 최초 편입 평가액을 KRW로 환산해 자동 DEPOSIT flow로 남긴다. */
+    private fun recordInitialInflow(account: Account, assets: List<Asset>) {
+        val initialNavKrw = assets.navInKrw(fx)
+        if (initialNavKrw <= java.math.BigDecimal.ZERO) return
+        cashFlowRepository.save(
+            CashFlow.create(
+                userId = account.userId,
+                accountId = account.id,
+                flowDate = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Seoul")),
+                type = FlowType.DEPOSIT,
+                amount = initialNavKrw,
+                currency = "KRW",
+                amountKrw = initialNavKrw,
+                memo = "계좌 연동 초기 자산 편입(자동)",
+            )
+        )
     }
 
     /** 동기화 결과를 이력으로 남긴다. 이력 저장 실패가 동기화 결과에 영향을 주지 않게 격리. */
