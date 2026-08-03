@@ -130,9 +130,10 @@ export default function NetWorthPage() {
             const nw = Number(b.netWorth)
             const isPos = nw >= 0
             return (
-              <div key={b.type} className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-4">
+              <div key={b.type} className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-4" aria-label={TYPE_KO[b.type] ?? b.type}>
                 <span
                   className="h-3 w-3 shrink-0 rounded-full"
+                  aria-hidden="true"
                   style={{ background: TYPE_COLORS[b.type] ?? '#6b7280' }}
                 />
                 <span className="text-sm text-gray-300">{TYPE_KO[b.type] ?? b.type}</span>
