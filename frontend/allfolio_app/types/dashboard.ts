@@ -53,8 +53,8 @@ export interface DashboardResponse {
     liquid: number
     illiquid: number
     debt: number
-    change30d: number
-    changeRate30d: number
+    change30d: number | null
+    changeRate30d: number | null
   }
   portfolio: {
     totalValue: number

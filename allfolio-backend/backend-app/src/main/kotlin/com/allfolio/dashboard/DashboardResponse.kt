@@ -15,8 +15,9 @@ data class NetWorthDto(
     val liquid: BigDecimal,
     val illiquid: BigDecimal,
     val debt: BigDecimal,
-    val change30d: BigDecimal,
-    val changeRate30d: BigDecimal,
+    // null = 30일 전 비교 기준 스냅샷 없음 (0 변동과 구분 — QA)
+    val change30d: BigDecimal?,
+    val changeRate30d: BigDecimal?,
 )
 
 data class PortfolioDto(
