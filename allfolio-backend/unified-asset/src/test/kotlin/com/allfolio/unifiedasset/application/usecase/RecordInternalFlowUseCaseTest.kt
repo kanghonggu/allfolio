@@ -24,10 +24,31 @@ class RecordInternalFlowUseCaseTest {
         override fun toKrw(amount: BigDecimal, currency: String) =
             if (currency.uppercase() == "KRW") amount else amount * BigDecimal("1300")
     }
-    private val uc = RecordInternalFlowUseCase(repo, fx)
     private val user = UUID.randomUUID()
+    private val other = UUID.randomUUID()
     private val a1 = UUID.randomUUID(); private val a2 = UUID.randomUUID()
+    private val foreign = UUID.randomUUID()   // other 유저 소유
     private val date = LocalDate.of(2026, 6, 10)
+
+    private fun acct(id: UUID, owner: UUID) = com.allfolio.unifiedasset.domain.account.Account.reconstruct(
+        id = id, userId = owner,
+        provider = com.allfolio.unifiedasset.domain.account.AccountProvider.MANUAL,
+        accountType = com.allfolio.unifiedasset.domain.account.AccountType.MANUAL,
+        accountName = "acct", externalId = null, currency = "KRW",
+        status = com.allfolio.unifiedasset.domain.account.AccountStatus.ACTIVE,
+        lastSyncedAt = null, createdAt = java.time.LocalDateTime.now(),
+        apiKey = null, apiSecret = null, walletAddress = null, chain = null,
+    )
+    private val accountRepo = object : com.allfolio.unifiedasset.application.port.AccountRepository {
+        val store = mapOf(a1 to acct(a1, user), a2 to acct(a2, user), foreign to acct(foreign, other))
+        override fun save(account: com.allfolio.unifiedasset.domain.account.Account) = account
+        override fun findById(id: UUID) = store[id]
+        override fun findByUserId(userId: UUID) = store.values.filter { it.userId == userId }
+        override fun findByProviders(providers: Collection<com.allfolio.unifiedasset.domain.account.AccountProvider>) = emptyList<com.allfolio.unifiedasset.domain.account.Account>()
+        override fun delete(id: UUID) {}
+        override fun updateStatus(id: UUID, status: com.allfolio.unifiedasset.domain.account.AccountStatus) {}
+    }
+    private val uc = RecordInternalFlowUseCase(repo, fx, accountRepo)
 
     @Test
     fun `recordTransfer는 2레그를 linkId 공유로 저장한다`() {
@@ -47,6 +68,29 @@ class RecordInternalFlowUseCaseTest {
         assertThat(out.amountKrw).isEqualByComparingTo("1300")     // KRW 1300 → 1300
         assertThat(inn.amountKrw).isEqualByComparingTo("1300")     // USD 1 × 1300 → 1300
         assertThat(out.linkId).isEqualTo(inn.linkId)
+    }
+
+    @Test
+    fun `남의 계좌로 이체하면 예외 (소유권 검증)`() {
+        assertThatThrownBy { uc.recordTransfer(user, foreign, a1, date, BigDecimal("500"), "KRW", null) }
+            .isInstanceOf(NoSuchElementException::class.java)
+        assertThatThrownBy { uc.recordTransfer(user, a1, foreign, date, BigDecimal("500"), "KRW", null) }
+            .isInstanceOf(NoSuchElementException::class.java)
+        assertThat(saved).isEmpty()   // 실패 시 레그 미기록
+    }
+
+    @Test
+    fun `남의 계좌로 환전하면 예외 (소유권 검증)`() {
+        assertThatThrownBy { uc.recordFx(user, foreign, date, BigDecimal("1300"), "KRW", BigDecimal("1"), "USD", null) }
+            .isInstanceOf(NoSuchElementException::class.java)
+        assertThatThrownBy { uc.recordFx(user, a1, date, BigDecimal("1300"), "KRW", BigDecimal("1"), "USD", null, toAccountId = foreign) }
+            .isInstanceOf(NoSuchElementException::class.java)
+    }
+
+    @Test
+    fun `존재하지 않는 계좌로 이체하면 예외`() {
+        assertThatThrownBy { uc.recordTransfer(user, UUID.randomUUID(), a1, date, BigDecimal("500"), "KRW", null) }
+            .isInstanceOf(NoSuchElementException::class.java)
     }
 
     @Test

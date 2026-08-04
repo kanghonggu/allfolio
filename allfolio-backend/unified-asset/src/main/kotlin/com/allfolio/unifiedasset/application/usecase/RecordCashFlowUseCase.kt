@@ -1,5 +1,6 @@
 package com.allfolio.unifiedasset.application.usecase
 
+import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.CashFlowRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.domain.cashflow.CashFlow
@@ -13,6 +14,7 @@ import java.util.UUID
 class RecordCashFlowUseCase(
     private val repository: CashFlowRepository,
     private val fxConverter: FxConverter,
+    private val accountRepository: AccountRepository,
 ) {
     fun record(
         userId: UUID, accountId: UUID?, flowDate: LocalDate, type: FlowType,
@@ -22,6 +24,11 @@ class RecordCashFlowUseCase(
         require(!flowDate.isAfter(LocalDate.now(java.time.ZoneId.of("Asia/Seoul")))) { "미래 날짜는 등록할 수 없습니다" }
         // 내부이동(환전·이체)은 반드시 페어 레그로만 기록 → /transfer, /fx 유스케이스 사용
         require(!type.isInternal()) { "환전·이체는 /transfer, /fx 로 기록해야 합니다(페어 레그)" }
+        // 계좌 지정 시 소유권 검증 — 남의/없는 계좌는 404로 은닉 (QA)
+        accountId?.let { id ->
+            if (accountRepository.findById(id)?.userId != userId)
+                throw NoSuchElementException("Account not found: $id")
+        }
         val cur = com.allfolio.unifiedasset.domain.common.Currencies.normalize(currency)
         val amountKrw = fxConverter.toKrw(amount, cur)
         return repository.save(
