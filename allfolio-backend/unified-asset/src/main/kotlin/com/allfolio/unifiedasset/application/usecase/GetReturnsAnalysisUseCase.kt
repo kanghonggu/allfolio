@@ -17,11 +17,15 @@ import java.util.UUID
 data class BenchmarkComparison(
     val indexType: String,
     val label: String,
-    val periodReturn: BigDecimal?,   // 기간 첫 종가 대비 마지막 종가 수익률
-    val excessReturn: BigDecimal?,   // twr − periodReturn
+    val periodReturn: BigDecimal?,   // 기간 첫 종가 대비 마지막 종가 수익률 — ratio(0~1)
+    val excessReturn: BigDecimal?,   // twr − periodReturn — ratio
     val series: List<NavPoint>,      // 포트폴리오 기초 NAV로 정규화 — NAV 곡선에 같은 축으로 겹침
 )
 
+/**
+ * 도메인 결과는 ratio(0~1) 단위 유지 — 월간 리포트 아카이브 등 내부 소비자와의 호환.
+ * /api/reports/returns 응답은 ReportController에서 percent(0~100)로 변환된다 (QA 후속 #1).
+ */
 data class ReturnsAnalysis(
     val from: LocalDate,
     val to: LocalDate,

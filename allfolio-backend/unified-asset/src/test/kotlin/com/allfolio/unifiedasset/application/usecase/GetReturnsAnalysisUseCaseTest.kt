@@ -63,6 +63,7 @@ class GetReturnsAnalysisUseCaseTest {
 
         assertEquals(LocalDate.of(2026, 6, 30), result.asOfDate)
         assertEquals(2, result.navSeries.size)
+        // 도메인 결과는 ratio(0~1) — percent 변환은 ReportController API 경계에서 (QA 후속 #1)
         assertEquals(
             0,
             BigDecimal("0.1").compareTo(result.summary.twr!!.setScale(1, RoundingMode.HALF_UP)),
@@ -87,7 +88,7 @@ class GetReturnsAnalysisUseCaseTest {
 
     @Test
     fun `benchmark comparison when configured`() {
-        // 포트폴리오 1000→1100 (+10%), BM 100→105 (+5%) → 초과 +5%p, 정규화 시계열은 startNav 기준
+        // 포트폴리오 1000→1100 (+10%), BM 100→105 (+5%) → 초과 +5%p (ratio 단위), 정규화 시계열은 startNav 기준
         val useCase = useCase(
             navs = listOf(nav(1, "1000"), nav(30, "1100")),
             bmType = BenchmarkType.SPX,
