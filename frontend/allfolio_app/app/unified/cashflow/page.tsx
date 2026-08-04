@@ -184,6 +184,7 @@ export default function CashflowPage() {
             <label className="block text-sm text-gray-400">
               출발 계좌
               <select
+                aria-label="이체 출발 계좌"
                 className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
                 value={transferForm.fromAccountId}
                 onChange={(e) => handleFromAccountChange(e.target.value)}
@@ -197,6 +198,7 @@ export default function CashflowPage() {
             <label className="block text-sm text-gray-400">
               도착 계좌
               <select
+                aria-label="이체 도착 계좌"
                 className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
                 value={transferForm.toAccountId}
                 onChange={(e) => setTransferForm((f) => ({ ...f, toAccountId: e.target.value }))}
@@ -212,6 +214,7 @@ export default function CashflowPage() {
               <input
                 type="date"
                 required
+                aria-label="이체 날짜"
                 className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
                 value={transferForm.flowDate}
                 onChange={(e) => setTransferForm((f) => ({ ...f, flowDate: e.target.value }))}
@@ -224,6 +227,7 @@ export default function CashflowPage() {
                   type="number"
                   step="0.01"
                   min="0"
+                  aria-label="이체 금액"
                   className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
                   value={transferForm.amount}
                   onChange={(e) => setTransferForm((f) => ({ ...f, amount: e.target.value }))}
@@ -233,6 +237,7 @@ export default function CashflowPage() {
                 통화
                 <CurrencySelect
                   allowEmpty
+                  ariaLabel="이체 통화"
                   value={transferForm.currency}
                   onChange={(currency) => setTransferForm((f) => ({ ...f, currency }))}
                 />
@@ -242,6 +247,7 @@ export default function CashflowPage() {
               메모
               <input
                 type="text"
+                aria-label="이체 메모"
                 className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
                 value={transferForm.memo}
                 onChange={(e) => setTransferForm((f) => ({ ...f, memo: e.target.value }))}
@@ -274,6 +280,7 @@ export default function CashflowPage() {
             <label className="block text-sm text-gray-400">
               출발 계좌
               <select
+                aria-label="환전 출발 계좌"
                 className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
                 value={fxForm.accountId}
                 onChange={(e) => setFxForm((f) => ({ ...f, accountId: e.target.value }))}
@@ -287,6 +294,7 @@ export default function CashflowPage() {
             <label className="block text-sm text-gray-400">
               도착 계좌 <span className="text-xs text-gray-500">(선택 — 미지정 시 동일 계좌, 지정 시 계좌간 환전)</span>
               <select
+                aria-label="환전 도착 계좌"
                 className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
                 value={fxForm.toAccountId}
                 onChange={(e) => setFxForm((f) => ({ ...f, toAccountId: e.target.value }))}
@@ -302,6 +310,7 @@ export default function CashflowPage() {
               <input
                 type="date"
                 required
+                aria-label="환전 날짜"
                 className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
                 value={fxForm.flowDate}
                 onChange={(e) => setFxForm((f) => ({ ...f, flowDate: e.target.value }))}
@@ -314,6 +323,7 @@ export default function CashflowPage() {
                   type="number"
                   step="0.01"
                   min="0"
+                  aria-label="환전 From 금액"
                   className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
                   value={fxForm.fromAmount}
                   onChange={(e) => setFxForm((f) => ({ ...f, fromAmount: e.target.value }))}
@@ -323,6 +333,7 @@ export default function CashflowPage() {
                 From 통화
                 <CurrencySelect
                   allowEmpty
+                  ariaLabel="환전 From 통화"
                   value={fxForm.fromCurrency}
                   onChange={(fromCurrency) => setFxForm((f) => ({ ...f, fromCurrency }))}
                 />
@@ -335,6 +346,7 @@ export default function CashflowPage() {
                   type="number"
                   step="0.01"
                   min="0"
+                  aria-label="환전 To 금액"
                   className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
                   value={fxForm.toAmount}
                   onChange={(e) => setFxForm((f) => ({ ...f, toAmount: e.target.value }))}
@@ -344,6 +356,7 @@ export default function CashflowPage() {
                 To 통화
                 <CurrencySelect
                   allowEmpty
+                  ariaLabel="환전 To 통화"
                   value={fxForm.toCurrency}
                   onChange={(toCurrency) => setFxForm((f) => ({ ...f, toCurrency }))}
                 />
@@ -353,6 +366,7 @@ export default function CashflowPage() {
               메모
               <input
                 type="text"
+                aria-label="환전 메모"
                 className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
                 value={fxForm.memo}
                 onChange={(e) => setFxForm((f) => ({ ...f, memo: e.target.value }))}
