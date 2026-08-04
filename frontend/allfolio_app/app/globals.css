@@ -2,6 +2,68 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   디자인 토큰 — 기관 금융 리서치 문서 톤 (2026-08 리디자인)
+   여기가 원본. tailwind.config.ts가 시맨틱 이름으로 매핑한다.
+   ============================================================ */
+:root {
+  /* 배경·표면 */
+  --c-canvas: #eceef1;
+  --c-surface: #ffffff;
+  --c-surface-muted: #f7f8fa;
+
+  /* 잉크 — 본문 강조·강한 보더·프라이머리 버튼이 같은 색을 쓴다 */
+  --c-ink: #14161a;
+
+  /* 텍스트 램프 (진한 → 옅은) */
+  --c-fg-2: #464b55;
+  --c-fg-3: #5b6270;
+  --c-fg-muted: #767d8a;
+  --c-fg-faint: #8d949f;
+  --c-fg-ghost: #a2a8b2;
+
+  /* 보더 램프 (카드 외곽 → 헤어라인) */
+  --c-line-card: #cfd4db;
+  --c-line: #dfe2e7;
+  --c-line-soft: #e6e9ed;
+  --c-line-hair: #f0f2f4;
+
+  /* 손익 — 한국 시장 관례: 상승 빨강 / 하락 파랑 */
+  --c-gain: #b4232c;
+  --c-loss: #14509b;
+
+  /* 오류·파괴적 동작 (색값은 gain과 같지만 의미가 다르므로 분리) */
+  --c-danger: #b4232c;
+
+  /* 상태 판정 */
+  --c-ok: #1d7a4a;
+  --c-warn: #8a6a1c;
+  --c-warn-bg: #fbf7ee;
+  --c-warn-line: #e8dfc9;
+
+  /* 링크 */
+  --c-link: #123a6b;
+  --c-link-hover: #0a2445;
+
+  --c-selection: #d8e2ee;
+}
+
+@layer base {
+  ::selection {
+    background: var(--c-selection);
+  }
+  body {
+    @apply bg-canvas font-sans text-ink antialiased;
+  }
+}
+
+@layer utilities {
+  /* 숫자 문법: 모노스페이스 + tabular-nums (우측 정렬은 셀에서) */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
 /* === 월간 운용보고서 인쇄 (#37) === */
 @media print {
   .no-print { display: none !important; }
@@ -23,6 +85,7 @@
   .print-invert .text-emerald-400 { color: #047857 !important; }
   .print-invert .text-red-400 { color: #b91c1c !important; }
   .print-invert .text-yellow-300, .print-invert .text-yellow-400 { color: #a16207 !important; }
+  /* 리디자인 토큰 색은 인쇄에서도 그대로 (라이트 기준이라 이미 가독) */
   .print-invert svg text { fill: #111111 !important; }
   .print-invert section { break-inside: avoid; }
   @page { margin: 14mm; }
