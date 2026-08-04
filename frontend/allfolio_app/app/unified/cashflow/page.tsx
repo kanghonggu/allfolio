@@ -6,6 +6,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useCashFlowApi, useUnifiedApi } from '@/lib/useApi'
 import CurrencySelect from '@/components/CurrencySelect'
+import PageHeader from '@/components/ui/PageHeader'
+import SectionHeader from '@/components/ui/SectionHeader'
+import Button from '@/components/ui/Button'
+import Label from '@/components/ui/Label'
+import Num from '@/components/ui/Num'
+import Field, { Input, Select } from '@/components/ui/Field'
+import { EmptyState, LoadingState } from '@/components/ui/states'
 import { fmtKrw } from '@/lib/report-format'
 import type { Account } from '@/types/unified'
 import type { CashFlowItem, FxRequest, TransferRequest } from '@/types/returns'
@@ -69,6 +76,8 @@ const emptyTransferForm: TransferFormState = {
 const emptyFxForm: FxFormState = {
   accountId: '', toAccountId: '', flowDate: today(), fromAmount: '', fromCurrency: '', toAmount: '', toCurrency: '', memo: '',
 }
+
+const FLOW_GRID = 'grid grid-cols-[0.9fr_0.8fr_1.5fr_1.1fr_1.1fr_1fr] gap-3'
 
 export default function CashflowPage() {
   const api = useCashFlowApi()
@@ -169,262 +178,245 @@ export default function CashflowPage() {
     return account ? `${account.accountName} (${account.provider})` : accountId
   }
 
+  const accountOptions = accounts.map((a: Account) => (
+    <option key={a.id} value={a.id}>{a.accountName} ({a.provider})</option>
+  ))
+
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold">현금흐름 기록</h1>
-        <p className="mt-1 text-sm text-gray-400">계좌간이체·환전을 입력해 기록합니다</p>
-      </div>
+    <div className="border border-line-card bg-surface">
+      <PageHeader
+        className="px-5 pt-5 sm:px-7"
+        title="현금흐름 기록"
+        meta="계좌간이체 · 환전 입력"
+      />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* 계좌간이체 */}
-        <section className="rounded-xl border border-gray-700 bg-gray-900 p-5">
-          <h2 className="mb-4 text-lg font-semibold">계좌간이체</h2>
-          <form onSubmit={submitTransfer} className="space-y-3">
-            <label className="block text-sm text-gray-400">
-              출발 계좌
-              <select
-                className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
-                value={transferForm.fromAccountId}
-                onChange={(e) => handleFromAccountChange(e.target.value)}
+      <div className="px-5 py-5 pb-10 sm:px-7">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {/* 계좌간이체 */}
+          <section className="border border-line-card bg-surface-muted p-5">
+            <SectionHeader label="계좌간이체" />
+            <form onSubmit={submitTransfer} className="space-y-3.5">
+              <Field id="tf-from" label="출발 계좌">
+                <Select
+                  value={transferForm.fromAccountId}
+                  onChange={(e) => handleFromAccountChange(e.target.value)}
+                >
+                  <option value="">선택하세요</option>
+                  {accountOptions}
+                </Select>
+              </Field>
+              <Field id="tf-to" label="도착 계좌">
+                <Select
+                  value={transferForm.toAccountId}
+                  onChange={(e) => setTransferForm((f) => ({ ...f, toAccountId: e.target.value }))}
+                >
+                  <option value="">선택하세요</option>
+                  {accountOptions}
+                </Select>
+              </Field>
+              <Field id="tf-date" label="날짜">
+                <Input
+                  type="date"
+                  required
+                  value={transferForm.flowDate}
+                  onChange={(e) => setTransferForm((f) => ({ ...f, flowDate: e.target.value }))}
+                />
+              </Field>
+              <div className="flex gap-3">
+                <Field id="tf-amount" label="금액" className="flex-1">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={transferForm.amount}
+                    onChange={(e) => setTransferForm((f) => ({ ...f, amount: e.target.value }))}
+                  />
+                </Field>
+                <div className="w-28">
+                  <label htmlFor="tf-currency" className="mb-1.5 block font-mono text-[10px] tracking-label text-fg-muted">
+                    통화
+                  </label>
+                  <CurrencySelect
+                    id="tf-currency"
+                    aria-label="통화"
+                    allowEmpty
+                    value={transferForm.currency}
+                    onChange={(currency) => setTransferForm((f) => ({ ...f, currency }))}
+                  />
+                </div>
+              </div>
+              <Field id="tf-memo" label="메모">
+                <Input
+                  type="text"
+                  value={transferForm.memo}
+                  onChange={(e) => setTransferForm((f) => ({ ...f, memo: e.target.value }))}
+                />
+              </Field>
+
+              {transferValidationError && (
+                <p role="alert" className="m-0 text-xs text-danger">{transferValidationError}</p>
+              )}
+              {transferMutation.isError && (
+                <p role="alert" className="m-0 text-xs text-danger">
+                  {serverErrorMessage(transferMutation.error, '이체 기록에 실패했습니다.')}
+                </p>
+              )}
+
+              <Button type="submit" variant="primary" disabled={transferMutation.isPending || !api}>
+                {transferMutation.isPending ? '기록 중…' : '이체 기록'}
+              </Button>
+            </form>
+          </section>
+
+          {/* 환전 */}
+          <section className="border border-line-card bg-surface-muted p-5">
+            <SectionHeader label="환전" />
+            <form onSubmit={submitFx} className="space-y-3.5">
+              <Field id="fx-from" label="출발 계좌">
+                <Select
+                  value={fxForm.accountId}
+                  onChange={(e) => setFxForm((f) => ({ ...f, accountId: e.target.value }))}
+                >
+                  <option value="">선택하세요</option>
+                  {accountOptions}
+                </Select>
+              </Field>
+              <Field
+                id="fx-to"
+                label="도착 계좌 (선택)"
+                hint="미지정 시 동일 계좌, 지정 시 계좌간 환전"
               >
-                <option value="">선택하세요</option>
-                {accounts.map((a: Account) => (
-                  <option key={a.id} value={a.id}>{a.accountName} ({a.provider})</option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm text-gray-400">
-              도착 계좌
-              <select
-                className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
-                value={transferForm.toAccountId}
-                onChange={(e) => setTransferForm((f) => ({ ...f, toAccountId: e.target.value }))}
-              >
-                <option value="">선택하세요</option>
-                {accounts.map((a: Account) => (
-                  <option key={a.id} value={a.id}>{a.accountName} ({a.provider})</option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm text-gray-400">
-              날짜
-              <input
-                type="date"
-                required
-                className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
-                value={transferForm.flowDate}
-                onChange={(e) => setTransferForm((f) => ({ ...f, flowDate: e.target.value }))}
-              />
-            </label>
-            <div className="flex gap-3">
-              <label className="flex-1 text-sm text-gray-400">
-                금액
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
-                  value={transferForm.amount}
-                  onChange={(e) => setTransferForm((f) => ({ ...f, amount: e.target.value }))}
+                <Select
+                  value={fxForm.toAccountId}
+                  onChange={(e) => setFxForm((f) => ({ ...f, toAccountId: e.target.value }))}
+                >
+                  <option value="">동일 계좌</option>
+                  {accountOptions}
+                </Select>
+              </Field>
+              <Field id="fx-date" label="날짜">
+                <Input
+                  type="date"
+                  required
+                  value={fxForm.flowDate}
+                  onChange={(e) => setFxForm((f) => ({ ...f, flowDate: e.target.value }))}
                 />
-              </label>
-              <label className="w-28 text-sm text-gray-400">
-                통화
-                <CurrencySelect
-                  allowEmpty
-                  value={transferForm.currency}
-                  onChange={(currency) => setTransferForm((f) => ({ ...f, currency }))}
+              </Field>
+              <div className="flex gap-3">
+                <Field id="fx-from-amount" label="From 금액" className="flex-1">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={fxForm.fromAmount}
+                    onChange={(e) => setFxForm((f) => ({ ...f, fromAmount: e.target.value }))}
+                  />
+                </Field>
+                <div className="w-28">
+                  <label htmlFor="fx-from-currency" className="mb-1.5 block font-mono text-[10px] tracking-label text-fg-muted">
+                    From 통화
+                  </label>
+                  <CurrencySelect
+                    id="fx-from-currency"
+                    aria-label="From 통화"
+                    allowEmpty
+                    value={fxForm.fromCurrency}
+                    onChange={(fromCurrency) => setFxForm((f) => ({ ...f, fromCurrency }))}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <Field id="fx-to-amount" label="To 금액" className="flex-1">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={fxForm.toAmount}
+                    onChange={(e) => setFxForm((f) => ({ ...f, toAmount: e.target.value }))}
+                  />
+                </Field>
+                <div className="w-28">
+                  <label htmlFor="fx-to-currency" className="mb-1.5 block font-mono text-[10px] tracking-label text-fg-muted">
+                    To 통화
+                  </label>
+                  <CurrencySelect
+                    id="fx-to-currency"
+                    aria-label="To 통화"
+                    allowEmpty
+                    value={fxForm.toCurrency}
+                    onChange={(toCurrency) => setFxForm((f) => ({ ...f, toCurrency }))}
+                  />
+                </div>
+              </div>
+              <Field id="fx-memo" label="메모">
+                <Input
+                  type="text"
+                  value={fxForm.memo}
+                  onChange={(e) => setFxForm((f) => ({ ...f, memo: e.target.value }))}
                 />
-              </label>
-            </div>
-            <label className="block text-sm text-gray-400">
-              메모
-              <input
-                type="text"
-                className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
-                value={transferForm.memo}
-                onChange={(e) => setTransferForm((f) => ({ ...f, memo: e.target.value }))}
-              />
-            </label>
+              </Field>
 
-            {transferValidationError && (
-              <p className="text-sm text-red-400">{transferValidationError}</p>
-            )}
-            {transferMutation.isError && (
-              <p className="text-sm text-red-400">
-                {serverErrorMessage(transferMutation.error, '이체 기록에 실패했습니다.')}
-              </p>
-            )}
+              {fxValidationError && (
+                <p role="alert" className="m-0 text-xs text-danger">{fxValidationError}</p>
+              )}
+              {fxMutation.isError && (
+                <p role="alert" className="m-0 text-xs text-danger">
+                  {serverErrorMessage(fxMutation.error, '환전 기록에 실패했습니다.')}
+                </p>
+              )}
 
-            <button
-              type="submit"
-              disabled={transferMutation.isPending || !api}
-              className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
-            >
-              {transferMutation.isPending ? '기록 중…' : '이체 기록'}
-            </button>
-          </form>
-        </section>
+              <Button type="submit" variant="primary" disabled={fxMutation.isPending || !api}>
+                {fxMutation.isPending ? '기록 중…' : '환전 기록'}
+              </Button>
+            </form>
+          </section>
+        </div>
 
-        {/* 환전 */}
-        <section className="rounded-xl border border-gray-700 bg-gray-900 p-5">
-          <h2 className="mb-4 text-lg font-semibold">환전</h2>
-          <form onSubmit={submitFx} className="space-y-3">
-            <label className="block text-sm text-gray-400">
-              출발 계좌
-              <select
-                className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
-                value={fxForm.accountId}
-                onChange={(e) => setFxForm((f) => ({ ...f, accountId: e.target.value }))}
-              >
-                <option value="">선택하세요</option>
-                {accounts.map((a: Account) => (
-                  <option key={a.id} value={a.id}>{a.accountName} ({a.provider})</option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm text-gray-400">
-              도착 계좌 <span className="text-xs text-gray-500">(선택 — 미지정 시 동일 계좌, 지정 시 계좌간 환전)</span>
-              <select
-                className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
-                value={fxForm.toAccountId}
-                onChange={(e) => setFxForm((f) => ({ ...f, toAccountId: e.target.value }))}
-              >
-                <option value="">동일 계좌</option>
-                {accounts.map((a: Account) => (
-                  <option key={a.id} value={a.id}>{a.accountName} ({a.provider})</option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm text-gray-400">
-              날짜
-              <input
-                type="date"
-                required
-                className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
-                value={fxForm.flowDate}
-                onChange={(e) => setFxForm((f) => ({ ...f, flowDate: e.target.value }))}
-              />
-            </label>
-            <div className="flex gap-3">
-              <label className="flex-1 text-sm text-gray-400">
-                From 금액
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
-                  value={fxForm.fromAmount}
-                  onChange={(e) => setFxForm((f) => ({ ...f, fromAmount: e.target.value }))}
-                />
-              </label>
-              <label className="w-28 text-sm text-gray-400">
-                From 통화
-                <CurrencySelect
-                  allowEmpty
-                  value={fxForm.fromCurrency}
-                  onChange={(fromCurrency) => setFxForm((f) => ({ ...f, fromCurrency }))}
-                />
-              </label>
-            </div>
-            <div className="flex gap-3">
-              <label className="flex-1 text-sm text-gray-400">
-                To 금액
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
-                  value={fxForm.toAmount}
-                  onChange={(e) => setFxForm((f) => ({ ...f, toAmount: e.target.value }))}
-                />
-              </label>
-              <label className="w-28 text-sm text-gray-400">
-                To 통화
-                <CurrencySelect
-                  allowEmpty
-                  value={fxForm.toCurrency}
-                  onChange={(toCurrency) => setFxForm((f) => ({ ...f, toCurrency }))}
-                />
-              </label>
-            </div>
-            <label className="block text-sm text-gray-400">
-              메모
-              <input
-                type="text"
-                className="mt-1 w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200"
-                value={fxForm.memo}
-                onChange={(e) => setFxForm((f) => ({ ...f, memo: e.target.value }))}
-              />
-            </label>
-
-            {fxValidationError && (
-              <p className="text-sm text-red-400">{fxValidationError}</p>
-            )}
-            {fxMutation.isError && (
-              <p className="text-sm text-red-400">
-                {serverErrorMessage(fxMutation.error, '환전 기록에 실패했습니다.')}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={fxMutation.isPending || !api}
-              className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
-            >
-              {fxMutation.isPending ? '기록 중…' : '환전 기록'}
-            </button>
-          </form>
-        </section>
-      </div>
-
-      {/* 최근 내부이동 */}
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold">최근 내부이동</h2>
-        {accountsLoading || flowsLoading ? (
-          <div className="h-32 animate-pulse rounded-xl bg-gray-800" />
-        ) : internalFlows.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-gray-700 p-8 text-center text-sm text-gray-500">
-            기록된 이체·환전 내역이 없습니다.
-          </p>
-        ) : (
-          <div className="overflow-x-auto rounded-xl border border-gray-700 bg-gray-900">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-800 text-left text-xs text-gray-500">
-                  <th className="p-3">날짜</th><th className="p-3">유형</th>
-                  <th className="p-3">계좌</th><th className="p-3 text-right">금액</th>
-                  <th className="p-3 text-right">금액(KRW)</th><th className="p-3">메모</th>
-                </tr>
-              </thead>
-              <tbody>
+        {/* 최근 내부이동 */}
+        <section className="mt-8">
+          <SectionHeader label="최근 내부이동" note={internalFlows.length > 0 ? `${internalFlows.length}건` : undefined} />
+          {accountsLoading || flowsLoading ? (
+            <LoadingState label="내역 불러오는 중" />
+          ) : internalFlows.length === 0 ? (
+            <EmptyState
+              title="기록된 이체·환전 내역이 없습니다"
+              description="위 폼에서 계좌간이체 또는 환전을 기록하면 여기에 표시됩니다"
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <div className="min-w-[720px] border-t-[1.5px] border-ink">
+                <div className={`${FLOW_GRID} border-b border-line py-2`}>
+                  <Label size="sm" tone="faint">날짜</Label>
+                  <Label size="sm" tone="faint">유형</Label>
+                  <Label size="sm" tone="faint">계좌</Label>
+                  <Label size="sm" tone="faint" className="text-right">금액</Label>
+                  <Label size="sm" tone="faint" className="text-right">금액(KRW)</Label>
+                  <Label size="sm" tone="faint">메모</Label>
+                </div>
                 {internalFlows.map((r: CashFlowItem) => (
-                  <tr key={r.id} className="border-b border-gray-800 last:border-b-0">
-                    <td className="p-3 tabular-nums text-gray-400">{r.flowDate}</td>
-                    <td className="p-3">
-                      <span className="rounded bg-gray-800 px-2 py-0.5 text-xs text-gray-300">
-                        {FLOW_TYPE_KO[r.flowType] ?? r.flowType}
-                      </span>
-                    </td>
-                    <td className="p-3 text-gray-300">{accountLabel(r.accountId)}</td>
-                    <td className="p-3 text-right tabular-nums text-gray-300">
+                  <div key={r.id} className={`${FLOW_GRID} items-baseline border-b border-line-hair py-2.5 hover:bg-surface-muted`}>
+                    <Num className="text-[11.5px] text-fg-3">{r.flowDate}</Num>
+                    <span className="font-mono text-[10px] tracking-label text-fg-3">
+                      {FLOW_TYPE_KO[r.flowType] ?? r.flowType}
+                    </span>
+                    <span className="truncate text-[13px] text-fg-2">{accountLabel(r.accountId)}</span>
+                    <Num className="text-right text-[12.5px] text-fg-2">
                       {r.amount.toLocaleString()} {r.currency}
-                    </td>
-                    <td className="p-3 text-right tabular-nums text-gray-100">{fmtKrw(r.amountKrw)}</td>
-                    <td className="p-3 text-gray-400">{r.memo ?? '-'}</td>
-                  </tr>
+                    </Num>
+                    <Num className="text-right text-[12.5px]">{fmtKrw(r.amountKrw)}</Num>
+                    <span className="truncate text-xs text-fg-faint">{r.memo ?? '-'}</span>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+              </div>
+            </div>
+          )}
+        </section>
 
-      <div className="flex gap-3">
-        <Link href="/unified" className="text-sm text-gray-400 hover:text-white transition-colors">
-          ← 대시보드로
-        </Link>
+        <div className="mt-6">
+          <Link href="/unified" className="text-[13px] text-link transition-colors hover:text-link-hover">
+            ← 통합 자산으로
+          </Link>
+        </div>
       </div>
     </div>
   )
