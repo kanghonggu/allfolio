@@ -22,6 +22,8 @@ export interface Position {
   symbol: string | null
   type: string
   currentValue: number
+  /** KRW 환산 평가액 — 먼지 포지션 판정 기준 (QA 후속 #4) */
+  currentValueKrw: number
   returnRate: number
   weight: number
   currency: string

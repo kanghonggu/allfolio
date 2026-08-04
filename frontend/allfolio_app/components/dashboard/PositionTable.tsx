@@ -7,8 +7,9 @@ import { signPct, dirTone } from '@/lib/format'
 import { EmptyState } from '@/components/ui/states'
 import type { Position } from '@/types/dashboard'
 
-// QA P1 #11: 평가액 1 미만(코인 잔여 단위 등) 먼지 포지션은 접어서 표 노이즈를 줄인다
-const DUST_THRESHOLD = 1
+// QA 후속 #4: 먼지 포지션 판정은 원통화가 아니라 KRW 환산 기준 —
+// FDUSD 18원, TRX 13원 같은 잔여 단위가 실질 포지션처럼 노출되지 않게 접는다
+const DUST_THRESHOLD_KRW = 1000
 
 const TYPE_KO: Record<string, string> = {
   CRYPTO: '코인', STOCK: '주식', GOLD: '금', CASH: '현금', ETC: '기타',
@@ -27,15 +28,19 @@ export default function PositionTable({ positions }: PositionTableProps) {
     return <EmptyState title="투자 포지션 없음" description="계좌를 연결하고 sync하면 보유 포지션이 표시됩니다" />
   }
 
-  const mainPositions = positions.filter(p => p.currentValue >= DUST_THRESHOLD)
-  const dustPositions = positions.filter(p => p.currentValue < DUST_THRESHOLD)
+  const mainPositions = positions.filter(p => (p.currentValueKrw ?? p.currentValue) >= DUST_THRESHOLD_KRW)
+  const dustPositions = positions.filter(p => (p.currentValueKrw ?? p.currentValue) < DUST_THRESHOLD_KRW)
   const visible = showDust ? [...mainPositions, ...dustPositions] : mainPositions
 
   return (
     <div>
       <div className="mb-3 flex items-baseline justify-between">
+        {/* 카운터는 실질 포지션 기준 — 먼지는 별도 표기 (QA 후속 #4) */}
         <h2 className="m-0 font-mono text-[10px] font-medium uppercase tracking-wideLabel text-fg-muted">
-          포지션 ({positions.length})
+          포지션 ({mainPositions.length})
+          {dustPositions.length > 0 && (
+            <span className="ml-1.5 normal-case text-fg-ghost">+ 먼지 {dustPositions.length}건</span>
+          )}
         </h2>
       </div>
       <div className="overflow-x-auto">
@@ -78,7 +83,7 @@ export default function PositionTable({ positions }: PositionTableProps) {
               >
                 {showDust
                   ? '먼지 포지션 접기'
-                  : `먼지 포지션 ${dustPositions.length}건 표시 (평가액 1 미만)`}
+                  : `먼지 포지션 ${dustPositions.length}건 표시 (평가액 ₩1,000 미만)`}
               </button>
             </div>
           )}

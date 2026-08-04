@@ -198,6 +198,7 @@ export default function CashflowPage() {
             <form onSubmit={submitTransfer} className="space-y-3.5">
               <Field id="tf-from" label="출발 계좌">
                 <Select
+                  aria-label="이체 출발 계좌"
                   value={transferForm.fromAccountId}
                   onChange={(e) => handleFromAccountChange(e.target.value)}
                 >
@@ -207,6 +208,7 @@ export default function CashflowPage() {
               </Field>
               <Field id="tf-to" label="도착 계좌">
                 <Select
+                  aria-label="이체 도착 계좌"
                   value={transferForm.toAccountId}
                   onChange={(e) => setTransferForm((f) => ({ ...f, toAccountId: e.target.value }))}
                 >
@@ -218,6 +220,7 @@ export default function CashflowPage() {
                 <Input
                   type="date"
                   required
+                  aria-label="이체 날짜"
                   value={transferForm.flowDate}
                   onChange={(e) => setTransferForm((f) => ({ ...f, flowDate: e.target.value }))}
                 />
@@ -225,6 +228,7 @@ export default function CashflowPage() {
               <div className="flex gap-3">
                 <Field id="tf-amount" label="금액" className="flex-1">
                   <Input
+                    aria-label="이체 금액"
                     type="number"
                     step="0.01"
                     min="0"
@@ -238,7 +242,7 @@ export default function CashflowPage() {
                   </label>
                   <CurrencySelect
                     id="tf-currency"
-                    aria-label="통화"
+                    ariaLabel="이체 통화"
                     allowEmpty
                     value={transferForm.currency}
                     onChange={(currency) => setTransferForm((f) => ({ ...f, currency }))}
@@ -247,6 +251,7 @@ export default function CashflowPage() {
               </div>
               <Field id="tf-memo" label="메모">
                 <Input
+                  aria-label="이체 메모"
                   type="text"
                   value={transferForm.memo}
                   onChange={(e) => setTransferForm((f) => ({ ...f, memo: e.target.value }))}
@@ -274,6 +279,7 @@ export default function CashflowPage() {
             <form onSubmit={submitFx} className="space-y-3.5">
               <Field id="fx-from" label="출발 계좌">
                 <Select
+                  aria-label="환전 출발 계좌"
                   value={fxForm.accountId}
                   onChange={(e) => setFxForm((f) => ({ ...f, accountId: e.target.value }))}
                 >
@@ -287,6 +293,7 @@ export default function CashflowPage() {
                 hint="미지정 시 동일 계좌, 지정 시 계좌간 환전"
               >
                 <Select
+                  aria-label="환전 도착 계좌"
                   value={fxForm.toAccountId}
                   onChange={(e) => setFxForm((f) => ({ ...f, toAccountId: e.target.value }))}
                 >
@@ -298,6 +305,7 @@ export default function CashflowPage() {
                 <Input
                   type="date"
                   required
+                  aria-label="환전 날짜"
                   value={fxForm.flowDate}
                   onChange={(e) => setFxForm((f) => ({ ...f, flowDate: e.target.value }))}
                 />
@@ -305,6 +313,7 @@ export default function CashflowPage() {
               <div className="flex gap-3">
                 <Field id="fx-from-amount" label="From 금액" className="flex-1">
                   <Input
+                    aria-label="환전 From 금액"
                     type="number"
                     step="0.01"
                     min="0"
@@ -318,7 +327,7 @@ export default function CashflowPage() {
                   </label>
                   <CurrencySelect
                     id="fx-from-currency"
-                    aria-label="From 통화"
+                    ariaLabel="환전 From 통화"
                     allowEmpty
                     value={fxForm.fromCurrency}
                     onChange={(fromCurrency) => setFxForm((f) => ({ ...f, fromCurrency }))}
@@ -328,6 +337,7 @@ export default function CashflowPage() {
               <div className="flex gap-3">
                 <Field id="fx-to-amount" label="To 금액" className="flex-1">
                   <Input
+                    aria-label="환전 To 금액"
                     type="number"
                     step="0.01"
                     min="0"
@@ -341,7 +351,7 @@ export default function CashflowPage() {
                   </label>
                   <CurrencySelect
                     id="fx-to-currency"
-                    aria-label="To 통화"
+                    ariaLabel="환전 To 통화"
                     allowEmpty
                     value={fxForm.toCurrency}
                     onChange={(toCurrency) => setFxForm((f) => ({ ...f, toCurrency }))}
@@ -350,6 +360,7 @@ export default function CashflowPage() {
               </div>
               <Field id="fx-memo" label="메모">
                 <Input
+                  aria-label="환전 메모"
                   type="text"
                   value={fxForm.memo}
                   onChange={(e) => setFxForm((f) => ({ ...f, memo: e.target.value }))}

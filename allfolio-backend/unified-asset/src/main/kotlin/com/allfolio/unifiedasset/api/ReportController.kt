@@ -21,7 +21,24 @@ class ReportController(
         @RequestHeader("X-User-Id") userId: UUID,
         @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) from: LocalDate,
         @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) to: LocalDate,
-    ): ReturnsAnalysis = returnsAnalysis.analyze(userId, from, to)
+    ): ReturnsAnalysis {
+        val analysis = returnsAnalysis.analyze(userId, from, to)
+        // 응답 수익률은 percent(0~100)로 통일 (QA 후속 #1) — 같은 값을 dashboard는 2060.43(percent),
+        // 이 API는 20.60(ratio)으로 내려보내던 단위 불일치 제거. 도메인은 ratio 유지(월간 아카이브 호환),
+        // 변환은 API 경계인 여기 한 곳뿐.
+        fun java.math.BigDecimal.pct() =
+            multiply(java.math.BigDecimal(100)).setScale(2, java.math.RoundingMode.HALF_UP)
+        return analysis.copy(
+            summary = analysis.summary.copy(
+                twr = analysis.summary.twr?.pct(),
+                mwr = analysis.summary.mwr?.pct(),
+            ),
+            benchmark = analysis.benchmark?.copy(
+                periodReturn = analysis.benchmark.periodReturn?.pct(),
+                excessReturn = analysis.benchmark.excessReturn?.pct(),
+            ),
+        )
+    }
 
     @ExceptionHandler(InsufficientDataException::class)
     fun insufficientData(e: InsufficientDataException): ResponseEntity<Map<String, String>> =

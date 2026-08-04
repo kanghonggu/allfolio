@@ -71,10 +71,10 @@ class GetDashboardUseCaseReturnsTest {
 
     @Test
     fun `계좌 연동 초기 편입은 수익이 아니다 - QA +2060% 재현 케이스`() {
-        // day-20: 기존 소액 10만원 → day-10: 계좌 연동으로 3,800만원 (DEPOSIT flow 3,790만원 동반)
+        // day-40: 기존 소액 10만원 → day-10: 계좌 연동으로 3,800만원 (DEPOSIT flow 3,790만원 동반)
         // → day-1: 3,850만원. 단순 NAV 비율이면 +38,400%, TWR이면 +1.32%.
         val series = listOf(
-            perf(today.minusDays(20), "100000"),
+            perf(today.minusDays(40), "100000"),
             perf(today.minusDays(10), "38000000"),
             perf(today.minusDays(1), "38500000"),
         )
@@ -88,8 +88,9 @@ class GetDashboardUseCaseReturnsTest {
     }
 
     @Test
-    fun `균일 성장 시계열에서 같은 데이터 구간이면 1M과 3M이 일치한다`() {
-        // 10일치 +1%/일 — 1M/3M 윈도우가 같은 관측을 덮으므로 결과도 같아야 한다 (기간 포함관계 불변식)
+    fun `커버리지 미달 기간은 null - performance 리포트와 동일 규칙 (QA 후속 3)`() {
+        // 10일치 시계열 — 1M/3M 윈도우를 못 덮으므로 부분 시계열로 왜곡된 값을 만들지 않고
+        // null(FE '데이터 부족')이어야 한다. 기존: 전체 기간 TWR을 그대로 반환(+2060% 유형).
         var nav = BigDecimal("1000000")
         val series = (9 downTo 0).map { d ->
             val p = perf(today.minusDays(d.toLong()), nav.toPlainString())
@@ -99,11 +100,8 @@ class GetDashboardUseCaseReturnsTest {
 
         val metrics = useCase(series, emptyList()).execute(userId).portfolio.metrics
 
-        val r1m = metrics.return1m!!.value
-        val r3m = metrics.return3m!!.value
-        assertThat(r1m).isEqualByComparingTo(r3m)
-        // 9구간 복리 ≈ +9.37% (percent 스케일 확인 — ratio면 0.09)
-        assertThat(r1m).isCloseTo(BigDecimal("9.37"), within(BigDecimal("0.05")))
+        assertThat(metrics.return1m).isNull()
+        assertThat(metrics.return3m).isNull()
     }
 
     @Test

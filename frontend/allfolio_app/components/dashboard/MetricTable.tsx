@@ -22,10 +22,10 @@ function Stars({ count }: { count: number }) {
   )
 }
 
-const PERIOD_ROWS: Array<{ key: keyof DashboardMetrics; label: string }> = [
-  { key: 'returnYtd', label: '연초 이후 (YTD)' },
-  { key: 'return1m',  label: '1개월' },
-  { key: 'return3m',  label: '3개월' },
+const PERIOD_ROWS: Array<{ key: keyof DashboardMetrics; label: string; emptyNote: string }> = [
+  { key: 'returnYtd', label: '연초 이후 (YTD)', emptyNote: '연초부터의 스냅샷이 쌓이면 표시됩니다' },
+  { key: 'return1m',  label: '1개월',           emptyNote: '30일 이상 스냅샷이 쌓이면 표시됩니다' },
+  { key: 'return3m',  label: '3개월',           emptyNote: '90일 이상 스냅샷이 쌓이면 표시됩니다' },
 ]
 
 const RISK_TILES: Array<{
@@ -42,9 +42,8 @@ const RISK_TILES: Array<{
 
 /** 기간 수익률 테이블 + 리스크 타일 — MetricValue의 grade/stars/벤치마크/dataWarning 유지 */
 export default function MetricTable({ metrics }: { metrics: DashboardMetrics }) {
-  const periodRows = PERIOD_ROWS
-    .map((r) => ({ ...r, metric: metrics[r.key] }))
-    .filter((r): r is typeof r & { metric: MetricValue } => !!r.metric)
+  // null = 커버리지 미달 — 행을 숨기지 않고 '데이터 부족'으로 명시 (QA 후속 #3)
+  const periodRows = PERIOD_ROWS.map((r) => ({ ...r, metric: metrics[r.key] ?? null }))
 
   const riskTiles = RISK_TILES
     .map((t) => ({ ...t, metric: metrics[t.key] }))
@@ -53,7 +52,7 @@ export default function MetricTable({ metrics }: { metrics: DashboardMetrics }) 
   const warnings = Array.from(
     new Set(
       [...periodRows, ...riskTiles]
-        .map((r) => r.metric.dataWarning)
+        .map((r) => r.metric?.dataWarning)
         .filter((w): w is string => !!w),
     ),
   )
@@ -68,24 +67,39 @@ export default function MetricTable({ metrics }: { metrics: DashboardMetrics }) 
             <Label size="sm" tone="faint" className="text-right">코스피 대비</Label>
             <Label size="sm" tone="faint" className="text-right">판정</Label>
           </div>
-          {periodRows.map((r) => (
-            <div
-              key={r.key}
-              className="grid grid-cols-[1.3fr_1fr_1fr_0.9fr] items-baseline gap-3 border-b border-line-hair py-2.5"
-            >
-              <span className="text-[13px] text-fg-2">{r.label}</span>
-              <Num tone={dirTone(r.metric.value)} className="text-right text-[12.5px]">
-                {signPct(r.metric.value)}
-              </Num>
-              <Num className="text-right text-[12.5px] text-fg-muted">
-                {r.metric.benchmarkVsKospi != null ? `${signPct(r.metric.benchmarkVsKospi)}p` : '—'}
-              </Num>
-              <span className="flex items-baseline justify-end gap-2">
-                <Stars count={r.metric.stars} />
-                <Badge variant={GRADE[r.metric.grade].variant}>{GRADE[r.metric.grade].label}</Badge>
-              </span>
-            </div>
-          ))}
+          {periodRows.map((r) =>
+            r.metric ? (
+              <div
+                key={r.key}
+                className="grid grid-cols-[1.3fr_1fr_1fr_0.9fr] items-baseline gap-3 border-b border-line-hair py-2.5"
+              >
+                <span className="text-[13px] text-fg-2">{r.label}</span>
+                <Num tone={dirTone(r.metric.value)} className="text-right text-[12.5px]">
+                  {signPct(r.metric.value)}
+                </Num>
+                <Num className="text-right text-[12.5px] text-fg-muted">
+                  {r.metric.benchmarkVsKospi != null ? `${signPct(r.metric.benchmarkVsKospi)}p` : '—'}
+                </Num>
+                <span className="flex items-baseline justify-end gap-2">
+                  <Stars count={r.metric.stars} />
+                  <Badge variant={GRADE[r.metric.grade].variant}>{GRADE[r.metric.grade].label}</Badge>
+                </span>
+              </div>
+            ) : (
+              <div
+                key={r.key}
+                className="grid grid-cols-[1.3fr_1fr_1fr_0.9fr] items-baseline gap-3 border-b border-line-hair py-2.5"
+              >
+                <span className="flex min-w-0 flex-col text-[13px] text-fg-2">
+                  {r.label}
+                  <span className="text-[10.5px] text-fg-ghost">{r.emptyNote}</span>
+                </span>
+                <span className="text-right font-mono text-[10px] tracking-label text-fg-faint">데이터 부족</span>
+                <Num className="text-right text-[12.5px] text-fg-ghost">—</Num>
+                <span className="text-right font-mono text-[10px] text-fg-ghost">—</span>
+              </div>
+            ),
+          )}
         </div>
       )}
 

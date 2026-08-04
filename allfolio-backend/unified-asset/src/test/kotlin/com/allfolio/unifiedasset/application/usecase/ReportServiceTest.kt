@@ -125,6 +125,20 @@ class ReportServiceTest {
         assertEquals(BigDecimal.ZERO, result.unrealizedPnlPct)
     }
 
+    @Test
+    fun `topHoldings - KRW 환산 1000원 미만 먼지 포지션은 제외한다 (QA 후속 4)`() {
+        // FDUSD 18원 같은 잔여 단위가 실질 포지션처럼 노출되지 않아야 한다
+        val main = stock(currentValue = bd("500000"))
+        val dust = stock(name = "FDUSD 잔여", currentValue = bd("18"))
+        `when`(assetRepository.findByUserId(userId)).thenReturn(listOf(main, dust))
+        `when`(accountRepository.findByUserId(userId)).thenReturn(emptyList())
+
+        val result = svc().summary(userId)
+
+        assertEquals(1, result.topHoldings.size)
+        assertEquals("테스트 주식", result.topHoldings.first().name)
+    }
+
     // ── allocation ────────────────────────────────────────────
 
     @Test

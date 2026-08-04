@@ -207,6 +207,9 @@ class ReportService(
     private val fx: FxConverter,
     private val benchmarkStore: com.allfolio.unifiedasset.application.port.BenchmarkDailyStore,
     private val cashFlowRepository: com.allfolio.unifiedasset.application.port.CashFlowRepository,
+    // 상위 보유에서 제외할 먼지 포지션 임계값(KRW) — 코인 잔여 단위 등 (QA 후속 #4)
+    @org.springframework.beans.factory.annotation.Value("\${allfolio.report.dust-threshold-krw:1000}")
+    private val dustThresholdKrw: BigDecimal = BigDecimal(1000),
 ) {
     @Transactional(readOnly = true)
     fun summary(userId: UUID): SummaryReport {
@@ -548,13 +551,13 @@ class ReportService(
             }
             .sortedByDescending { it.value }
 
+    // 임계값(KRW) 미만 먼지 포지션(FDUSD 18원 등)은 상위 보유 목록에서 제외 (QA 후속 #4)
     private fun buildTopHoldings(assets: List<Asset>, totalValue: BigDecimal, n: Int): List<TopHolding> =
-        assets.sortedByDescending { it.currentValueInKrw(fx) }
+        assets.map { a -> a to a.currentValueInKrw(fx) }
+            .filter { (_, vKrw) -> vKrw >= dustThresholdKrw }
+            .sortedByDescending { (_, vKrw) -> vKrw }
             .take(n)
-            .map { a ->
-                val vKrw = a.currentValueInKrw(fx)
-                TopHolding(a.name, a.symbol, a.type.name, vKrw, pct(vKrw, totalValue))
-            }
+            .map { (a, vKrw) -> TopHolding(a.name, a.symbol, a.type.name, vKrw, pct(vKrw, totalValue)) }
 
     private fun computeHHI(assets: List<Asset>, totalValue: BigDecimal): BigDecimal {
         if (totalValue <= BigDecimal.ZERO) return BigDecimal.ZERO
@@ -642,20 +645,16 @@ class ReportService(
         val now = LocalDate.now()
         val navPoints = series.map { com.allfolio.report.domain.returns.NavPoint(it.date, it.nav) }
 
-        fun twrSince(days: Int): BigDecimal? {
-            val cutoff = now.minusDays(days.toLong())
-            if (navPoints.first().date.isAfter(cutoff)) return null   // 커버리지 미달
-            val anchor = navPoints.last { !it.date.isAfter(cutoff) }.date
-            return com.allfolio.report.domain.returns.ReturnsCalculator
-                .calculate(navPoints, flows, anchor, now).twr
-                ?.multiply(BigDecimal(100))?.setScale(2, RoundingMode.HALF_UP)
-        }
+        // 대시보드(GetDashboardUseCase)와 동일한 공용 엔진 — 두 엔드포인트 수치 불일치 방지 (QA 후속 #3)
+        fun twrSince(cutoff: LocalDate): BigDecimal? =
+            com.allfolio.report.domain.returns.ReturnsCalculator
+                .periodTwrPercent(navPoints, flows, cutoff, now)
         return mapOf(
-            "1W"  to twrSince(7),
-            "1M"  to twrSince(30),
-            "3M"  to twrSince(90),
-            "YTD" to twrSince(now.dayOfYear),
-            "1Y"  to twrSince(365),
+            "1W"  to twrSince(now.minusDays(7)),
+            "1M"  to twrSince(now.minusDays(30)),
+            "3M"  to twrSince(now.minusDays(90)),
+            "YTD" to twrSince(LocalDate.of(now.year, 1, 1)),
+            "1Y"  to twrSince(now.minusDays(365)),
         )
     }
 
