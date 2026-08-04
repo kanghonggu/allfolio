@@ -46,6 +46,15 @@ class GetDashboardUseCaseFxTest {
     )
 
     @Test
+    fun `30일 전 스냅샷이 없으면 change30d는 null (비교 데이터 없음)`() {
+        `when`(assetRepository.findByUserId(userId)).thenReturn(listOf(asset("삼성전자", "1000000", "KRW")))
+        // perf30d 조회는 mock 기본값 null → 비교 기준 없음
+        val res = useCase.execute(userId)
+        assertThat(res.netWorth.change30d).isNull()
+        assertThat(res.netWorth.changeRate30d).isNull()
+    }
+
+    @Test
     fun `순자산은 USD 자산을 KRW로 환산해 합산한다`() {
         `when`(assetRepository.findByUserId(userId)).thenReturn(listOf(
             asset("삼성전자", "1000000", "KRW"),

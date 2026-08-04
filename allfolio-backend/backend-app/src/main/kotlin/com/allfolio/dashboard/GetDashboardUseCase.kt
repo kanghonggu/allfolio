@@ -49,13 +49,15 @@ class GetDashboardUseCase(
         val date30d = today.minusDays(30)
         val perf30d = performanceRepo
             .findTopByIdPortfolioIdAndIdDateBeforeOrderByIdDateDesc(userId, date30d.plusDays(1))
-        val nav30d        = perf30d?.nav ?: BigDecimal.ZERO
-        val change30d     = if (nav30d > BigDecimal.ZERO)
+        // 30일 전 스냅샷이 없으면 change/rate를 null로 — '변동 없음(0)'과 '비교 데이터 없음'을 구분 (QA)
+        val nav30d        = perf30d?.nav
+        val hasBaseline   = nav30d != null && nav30d > BigDecimal.ZERO
+        val change30d     = if (hasBaseline)
             totalNow.subtract(nav30d).setScale(0, RoundingMode.HALF_UP)
-        else BigDecimal.ZERO
-        val changeRate30d = if (nav30d > BigDecimal.ZERO)
-            change30d.divide(nav30d, 4, RoundingMode.HALF_UP).multiply(BigDecimal(100))
-        else BigDecimal.ZERO
+        else null
+        val changeRate30d = if (hasBaseline)
+            change30d!!.divide(nav30d, 4, RoundingMode.HALF_UP).multiply(BigDecimal(100))
+        else null
 
         // 수익률 (QA P1 #6/#7) — 단순 NAV 비율 대신 입출금을 차감한 flow-aware TWR로 통일.
         // 계좌 연동 초기 편입(자동 DEPOSIT flow, P1 #8)이 수익으로 오인되지 않는다.
@@ -221,7 +223,7 @@ class GetDashboardUseCase(
                 illiquid      = illiquidValue,
                 debt          = debtValue,
                 change30d     = change30d,
-                changeRate30d = changeRate30d.setScale(2, RoundingMode.HALF_UP),
+                changeRate30d = changeRate30d?.setScale(2, RoundingMode.HALF_UP),
             ),
             portfolio = PortfolioDto(
                 totalValue = liquidValue,

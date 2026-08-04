@@ -5,8 +5,9 @@ interface NetWorthBarProps {
   liquid: number
   illiquid: number
   debt: number
-  change30d: number
-  changeRate30d: number
+  // null = 30일 전 비교 기준 없음
+  change30d: number | null
+  changeRate30d: number | null
   currency?: string
 }
 
@@ -25,7 +26,9 @@ function fmtFull(n: number) {
 export default function NetWorthBar({
   total, liquid, illiquid, debt, change30d, changeRate30d,
 }: NetWorthBarProps) {
-  const isUp = changeRate30d >= 0
+  // QA: 비교 기준 스냅샷이 없으면 0이 아니라 '비교 데이터 없음'으로 표기
+  const hasBaseline = change30d !== null && changeRate30d !== null
+  const isUp = (changeRate30d ?? 0) >= 0
 
   return (
     <div className="rounded-xl border border-gray-700 bg-gray-900 px-6 py-5">
@@ -38,10 +41,14 @@ export default function NetWorthBar({
           <p className="mt-1 text-3xl font-bold tabular-nums text-white">
             {fmtFull(total)}
           </p>
-          <p className={`mt-1 text-sm tabular-nums ${isUp ? 'text-emerald-400' : 'text-red-400'}`}>
-            {isUp ? '+' : ''}{fmtFull(change30d)} ({isUp ? '+' : ''}{changeRate30d.toFixed(2)}%)
-            <span className="ml-1 text-xs text-gray-600">30일 전 대비</span>
-          </p>
+          {hasBaseline ? (
+            <p className={`mt-1 text-sm tabular-nums ${isUp ? 'text-emerald-400' : 'text-red-400'}`}>
+              {isUp ? '+' : ''}{fmtFull(change30d!)} ({isUp ? '+' : ''}{changeRate30d!.toFixed(2)}%)
+              <span className="ml-1 text-xs text-gray-600">30일 전 대비</span>
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-gray-500">30일 전 비교 데이터 없음</p>
+          )}
         </div>
 
         {/* 오른쪽: 구성 */}

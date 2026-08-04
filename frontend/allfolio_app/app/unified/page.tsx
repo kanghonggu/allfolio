@@ -13,6 +13,15 @@ import type { DashboardResponse } from '@/types/dashboard'
 const MDD_DESC = (v: number) =>
   `최근 1년 중 가장 크게 떨어졌을 때 ${v.toFixed(1)}%였어요. 낮을수록 손실 관리가 잘 된 포트폴리오예요.`
 
+// QA: 가장 최근 계좌 동기화 시각을 'N일 전'으로 표기 (실시간 가격배지와 구분)
+function lastSyncLabel(iso: string | null): { text: string; stale: boolean } | null {
+  if (!iso) return null
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
+  const stale = days >= 2
+  const text = days <= 0 ? '오늘' : `${days}일 전`
+  return { text, stale }
+}
+
 export default function UnifiedDashboard() {
   const api = useUnifiedApi()
   const { connected: liveConnected } = useLivePrices()
@@ -23,6 +32,20 @@ export default function UnifiedDashboard() {
     enabled:  !!api,
     staleTime: 60_000,
   })
+
+  const { data: syncStatus } = useQuery({
+    queryKey: ['dashboard', 'sync-status'],
+    queryFn:  () => api!.accounts.syncStatus(),
+    enabled:  !!api,
+    staleTime: 60_000,
+  })
+  const lastSync = lastSyncLabel(
+    (syncStatus ?? [])
+      .map((s) => s.lastSyncedAt)
+      .filter((d): d is string => !!d)
+      .sort()
+      .at(-1) ?? null,
+  )
 
   if (isLoading || !api) return <PageSkeleton />
   if (isError)   return <ErrorBox message={(error as Error).message} />
@@ -40,10 +63,17 @@ export default function UnifiedDashboard() {
           <p className="mt-1 text-sm text-gray-400">모든 자산을 한눈에</p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1.5 text-xs text-gray-500">
+          {/* 실시간 = 시세 스트림 연결 상태 (계좌 동기화 시각과 별개) */}
+          <span className="flex items-center gap-1.5 text-xs text-gray-500" title="실시간 시세 스트림 연결 상태">
             <span className={`h-2 w-2 rounded-full ${liveConnected ? 'bg-emerald-400 animate-pulse' : 'bg-gray-600'}`} />
-            {liveConnected ? '실시간' : '연결 중'}
+            {liveConnected ? '시세 실시간' : '시세 연결 중'}
           </span>
+          {lastSync && (
+            <span className={`text-xs ${lastSync.stale ? 'text-amber-500' : 'text-gray-500'}`}
+              title="계좌 마지막 동기화 시각">
+              마지막 동기화: {lastSync.text}
+            </span>
+          )}
           <Link
             href="/unified/accounts"
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-500 transition-colors"
