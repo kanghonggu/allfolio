@@ -34,7 +34,7 @@ export default function NavBar() {
         </Link>
 
         {authenticated && (
-          <div className="flex items-center gap-1 overflow-x-auto">
+          <div className="flex items-center gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {NAV_ITEMS.map((item) => (
               <Link
                 key={item.href}
