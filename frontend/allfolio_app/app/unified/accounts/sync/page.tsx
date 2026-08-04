@@ -4,13 +4,16 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useUnifiedApi } from '@/lib/useApi'
+import PageHeader from '@/components/ui/PageHeader'
+import Badge, { type BadgeVariant } from '@/components/ui/Badge'
+import Button from '@/components/ui/Button'
+import Label from '@/components/ui/Label'
+import SectionHeader from '@/components/ui/SectionHeader'
+import { EmptyState, LoadingState } from '@/components/ui/states'
 import type { AccountSyncStatus, SyncLogView } from '@/types/unified'
 
-const STATUS_STYLE: Record<string, string> = {
-  ACTIVE:   'bg-emerald-900/40 text-emerald-400 border-emerald-800',
-  SYNCING:  'bg-yellow-900/40 text-yellow-400 border-yellow-800',
-  ERROR:    'bg-red-900/40 text-red-400 border-red-800',
-  INACTIVE: 'bg-gray-800 text-gray-500 border-gray-700',
+const STATUS_BADGE: Record<string, BadgeVariant> = {
+  ACTIVE: 'ok', SYNCING: 'warn', ERROR: 'danger', INACTIVE: 'muted',
 }
 const STATUS_KO: Record<string, string> = {
   ACTIVE: '정상', SYNCING: '동기화 중', ERROR: '오류', INACTIVE: '비활성',
@@ -31,34 +34,35 @@ function SyncHistory({ accountId }: { accountId: string }) {
     enabled:  !!api,
   })
 
-  if (isLoading) return <div className="py-3 text-xs text-gray-500">이력 불러오는 중…</div>
-  if (logs.length === 0) return <div className="py-3 text-xs text-gray-500">동기화 이력이 없습니다</div>
+  if (isLoading) {
+    return <div className="py-3 font-mono text-[10px] tracking-label text-fg-faint">이력 불러오는 중 …</div>
+  }
+  if (logs.length === 0) {
+    return <div className="py-3 text-xs text-fg-faint">동기화 이력이 없습니다</div>
+  }
 
+  const GRID = 'grid grid-cols-[1.2fr_0.5fr_0.6fr_1.7fr] gap-3'
   return (
-    <table className="mt-3 w-full text-xs">
-      <thead>
-        <tr className="text-left text-gray-500">
-          <th className="py-1 pr-4 font-medium">시각</th>
-          <th className="py-1 pr-4 font-medium">트리거</th>
-          <th className="py-1 pr-4 font-medium">결과</th>
-          <th className="py-1 font-medium">상세</th>
-        </tr>
-      </thead>
-      <tbody>
-        {logs.map((l: SyncLogView) => (
-          <tr key={l.id} className="border-t border-gray-800">
-            <td className="py-1.5 pr-4 text-gray-400">{fmt(l.createdAt)}</td>
-            <td className="py-1.5 pr-4 text-gray-400">{TRIGGER_KO[l.trigger]}</td>
-            <td className={`py-1.5 pr-4 ${l.status === 'SUCCESS' ? 'text-emerald-400' : 'text-red-400'}`}>
-              {l.status === 'SUCCESS' ? '성공' : '실패'}
-            </td>
-            <td className="py-1.5 text-gray-400">
-              {l.status === 'SUCCESS' ? `${l.syncedCount}개 자산` : (l.errorMessage ?? '-')}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="mt-3 border-t border-line">
+      <div className={`${GRID} border-b border-line-soft py-1.5`}>
+        <Label size="sm" tone="faint">시각</Label>
+        <Label size="sm" tone="faint">트리거</Label>
+        <Label size="sm" tone="faint">결과</Label>
+        <Label size="sm" tone="faint">상세</Label>
+      </div>
+      {logs.map((l: SyncLogView) => (
+        <div key={l.id} className={`${GRID} items-baseline border-b border-line-hair py-1.5`}>
+          <span className="font-mono text-[11px] text-fg-3 tnum">{fmt(l.createdAt)}</span>
+          <span className="text-xs text-fg-3">{TRIGGER_KO[l.trigger]}</span>
+          <Badge variant={l.status === 'SUCCESS' ? 'ok' : 'danger'}>
+            {l.status === 'SUCCESS' ? '성공' : '실패'}
+          </Badge>
+          <span className={`text-xs ${l.status === 'SUCCESS' ? 'text-fg-3' : 'text-danger'}`}>
+            {l.status === 'SUCCESS' ? `${l.syncedCount}개 자산` : (l.errorMessage ?? '-')}
+          </span>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -74,21 +78,23 @@ function AccountRow({
 }) {
   const lastLog = row.lastLog
   return (
-    <div className="rounded-xl border border-gray-700 bg-gray-900 p-4">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="font-semibold truncate">{row.accountName}</h3>
-            <span className="text-xs text-gray-500">{row.provider}</span>
-            <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[row.status] ?? STATUS_STYLE.INACTIVE}`}>
+    <div className="border-b border-line-hair py-3.5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-2.5">
+            <h3 className="m-0 truncate text-[13.5px] font-medium">{row.accountName}</h3>
+            <Label size="sm" tone="ghost">{row.provider}</Label>
+            <Badge variant={STATUS_BADGE[row.status] ?? 'muted'}>
               {syncing ? '동기화 중…' : (STATUS_KO[row.status] ?? row.status)}
-            </span>
+            </Badge>
           </div>
-          <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
-            <span>마지막 동기화: {fmt(row.lastSyncedAt)}</span>
+          <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-faint">
+            <span>
+              최종 동기화 <span className="font-mono text-[11px] tnum">{fmt(row.lastSyncedAt)}</span>
+            </span>
             {lastLog && (
-              <span className={lastLog.status === 'ERROR' ? 'text-red-400' : 'text-gray-500'}>
-                마지막 결과:{' '}
+              <span className={lastLog.status === 'ERROR' ? 'text-danger' : undefined}>
+                최근 결과:{' '}
                 {lastLog.status === 'SUCCESS'
                   ? `${lastLog.syncedCount}개 자산 (${TRIGGER_KO[lastLog.trigger]})`
                   : `실패 — ${lastLog.errorMessage ?? '사유 미상'} (${TRIGGER_KO[lastLog.trigger]})`}
@@ -99,20 +105,13 @@ function AccountRow({
 
         <div className="flex shrink-0 items-center gap-2">
           {row.syncable && (
-            <button
-              onClick={onSync}
-              disabled={syncDisabled}
-              className="rounded-lg border border-gray-600 px-3 py-1.5 text-xs font-medium hover:border-blue-500 hover:text-blue-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {syncing ? '⟳ 동기화 중' : '↻ 재동기화'}
-            </button>
+            <Button size="sm" onClick={onSync} disabled={syncDisabled}>
+              {syncing ? '동기화 중' : '재동기화'}
+            </Button>
           )}
-          <button
-            onClick={onToggle}
-            className="rounded-lg border border-gray-600 px-3 py-1.5 text-xs font-medium hover:border-gray-400 transition-colors"
-          >
+          <Button size="sm" variant="ghost" onClick={onToggle}>
             {expanded ? '이력 닫기' : '이력'}
-          </button>
+          </Button>
         </div>
       </div>
       {expanded && <SyncHistory accountId={row.accountId} />}
@@ -155,73 +154,72 @@ export default function SyncStatusPage() {
   const erroredCount = syncable.filter(r => r.status === 'ERROR').length
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">동기화 상태</h1>
-          <p className="mt-1 text-sm text-gray-400">계좌별 동기화 이력과 실패 사유를 확인합니다</p>
-        </div>
-        <Link
-          href="/unified/accounts"
-          className="rounded-lg border border-gray-600 px-4 py-2 text-sm font-medium hover:border-gray-400 transition-colors"
-        >
-          계좌 관리
-        </Link>
-      </div>
+    <div className="border border-line-card bg-surface">
+      <PageHeader
+        className="px-5 pt-5 sm:px-7"
+        title="동기화 상태"
+        meta="계좌별 동기화 이력과 실패 사유"
+        actions={
+          <Link
+            href="/unified/accounts"
+            className="border border-line bg-surface px-3.5 py-2 text-[12.5px] text-fg-2 transition-colors hover:border-ink hover:text-ink"
+          >
+            계좌 관리
+          </Link>
+        }
+      />
 
-      {erroredCount > 0 && (
-        <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-          ⚠ {erroredCount}개 계좌가 동기화 실패 상태입니다
-        </div>
-      )}
-
-      {isLoading ? (
-        <div className="space-y-3">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="h-20 animate-pulse rounded-xl bg-gray-800" />
-          ))}
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-700 p-12 text-center">
-          <p className="text-gray-400">등록된 계좌가 없습니다</p>
-        </div>
-      ) : (
-        <>
-          <div className="space-y-3">
-            {sorted.map(row => (
-              <AccountRow
-                key={row.accountId}
-                row={row}
-                expanded={expandedId === row.accountId}
-                onToggle={() => setExpandedId(prev => (prev === row.accountId ? null : row.accountId))}
-                onSync={() => handleSync(row.accountId)}
-                syncing={syncingId === row.accountId}
-                syncDisabled={syncingId !== null}
-              />
-            ))}
+      <div className="px-5 py-5 pb-10 sm:px-7">
+        {erroredCount > 0 && (
+          <div className="mb-5 flex items-center gap-3 border border-warn-line bg-warn-bg px-4 py-2.5">
+            <Label size="sm" className="text-warn">주의</Label>
+            <span className="text-[12.5px] text-fg-2">
+              {erroredCount}개 계좌가 동기화 실패 상태입니다
+            </span>
           </div>
+        )}
 
-          {nonSyncable.length > 0 && (
-            <div className="space-y-3">
-              <h2 className="text-sm font-medium text-gray-500">자동 동기화 대상 아님</h2>
-              {nonSyncable.map(row => (
-                <div key={row.accountId} className="rounded-xl border border-gray-800 bg-gray-900/60 px-4 py-3">
-                  <div className="flex items-center gap-2 flex-wrap text-sm">
-                    <span className="font-medium text-gray-400">{row.accountName}</span>
-                    <span className="text-xs text-gray-600">{row.provider}</span>
-                    <span className="text-xs text-gray-600">수동 관리 계좌</span>
-                  </div>
-                </div>
+        {isLoading ? (
+          <LoadingState label="동기화 상태 불러오는 중" />
+        ) : rows.length === 0 ? (
+          <EmptyState title="등록된 계좌가 없습니다" />
+        ) : (
+          <>
+            <div className="border-t-[1.5px] border-ink">
+              {sorted.map(row => (
+                <AccountRow
+                  key={row.accountId}
+                  row={row}
+                  expanded={expandedId === row.accountId}
+                  onToggle={() => setExpandedId(prev => (prev === row.accountId ? null : row.accountId))}
+                  onSync={() => handleSync(row.accountId)}
+                  syncing={syncingId === row.accountId}
+                  syncDisabled={syncingId !== null}
+                />
               ))}
             </div>
-          )}
-        </>
-      )}
 
-      <div className="flex gap-3">
-        <Link href="/unified" className="text-sm text-gray-400 hover:text-white transition-colors">
-          ← 대시보드로
-        </Link>
+            {nonSyncable.length > 0 && (
+              <div className="mt-8">
+                <SectionHeader label="자동 동기화 대상 아님" note="수동 관리 계좌" />
+                <div className="border-t border-line">
+                  {nonSyncable.map(row => (
+                    <div key={row.accountId} className="flex flex-wrap items-baseline gap-2.5 border-b border-line-hair py-2.5">
+                      <span className="text-[13px] text-fg-2">{row.accountName}</span>
+                      <Label size="sm" tone="ghost">{row.provider}</Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="mt-6">
+          <Link href="/unified" className="text-[13px] text-link transition-colors hover:text-link-hover">
+            ← 통합 자산으로
+          </Link>
+        </div>
       </div>
     </div>
   )

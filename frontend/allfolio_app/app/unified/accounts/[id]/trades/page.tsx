@@ -6,18 +6,26 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useUnifiedApi } from '@/lib/useApi'
 import { useAuth } from '@/contexts/AuthContext'
+import PageHeader from '@/components/ui/PageHeader'
+import SectionHeader from '@/components/ui/SectionHeader'
+import Button from '@/components/ui/Button'
+import Label from '@/components/ui/Label'
+import Num from '@/components/ui/Num'
+import Field, { Input } from '@/components/ui/Field'
+import { EmptyState, LoadingState } from '@/components/ui/states'
 import type { StockTrade, StockTradeType, CreateStockTradePayload } from '@/types/unified'
 import { useStockSearch } from '@/lib/useStockSearch'
 
 // ── 거래 유형 설정 ─────────────────────────────────────────────
+// 색은 국내 HTS 관례: 매수 계열 빨강 / 매도 계열 파랑 / 미수 경고 / 배당 녹색
 
-const TRADE_TYPE_CONFIG: Record<StockTradeType, { label: string; color: string; bg: string }> = {
-  BUY:         { label: '매수',     color: 'text-blue-400',    bg: 'bg-blue-900/40 border-blue-800' },
-  SELL:        { label: '매도',     color: 'text-red-400',     bg: 'bg-red-900/40 border-red-800' },
-  CREDIT_BUY:  { label: '신용매수', color: 'text-cyan-400',    bg: 'bg-cyan-900/40 border-cyan-800' },
-  CREDIT_SELL: { label: '신용매도', color: 'text-orange-400',  bg: 'bg-orange-900/40 border-orange-800' },
-  MARGIN:      { label: '미수',     color: 'text-yellow-400',  bg: 'bg-yellow-900/40 border-yellow-800' },
-  DIVIDEND:    { label: '배당',     color: 'text-emerald-400', bg: 'bg-emerald-900/40 border-emerald-800' },
+const TRADE_TYPE_CONFIG: Record<StockTradeType, { label: string; color: string }> = {
+  BUY:         { label: '매수',     color: 'text-gain' },
+  SELL:        { label: '매도',     color: 'text-loss' },
+  CREDIT_BUY:  { label: '신용매수', color: 'text-gain' },
+  CREDIT_SELL: { label: '신용매도', color: 'text-loss' },
+  MARGIN:      { label: '미수',     color: 'text-warn' },
+  DIVIDEND:    { label: '배당',     color: 'text-ok' },
 }
 
 function fmt(n: number) {
@@ -40,6 +48,8 @@ const EMPTY_FORM: CreateStockTradePayload = {
   tradedAt:    today(),
   memo:        '',
 }
+
+const TABLE_GRID = 'grid grid-cols-[0.9fr_0.6fr_1.6fr_0.7fr_0.8fr_1fr_0.9fr_1fr_0.4fr] gap-3'
 
 // ── Page ───────────────────────────────────────────────────────
 
@@ -131,297 +141,257 @@ export default function StockTradesPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <Link href={`/unified/accounts/${id}`} className="mb-2 inline-block text-xs text-gray-500 hover:text-gray-300">
-            ← 계좌 상세
-          </Link>
-          <h1 className="text-2xl font-bold">거래내역</h1>
-          <p className="mt-0.5 text-sm text-gray-400">
-            {account ? `${account.brokerage ?? ''} ${account.accountName}` : ''}
-          </p>
-        </div>
-        <button
-          onClick={() => setShowForm(v => !v)}
-          className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-500 transition-colors"
+    <div className="border border-line-card bg-surface">
+      <div className="px-5 pt-4 sm:px-7">
+        <Link
+          href={`/unified/accounts/${id}`}
+          className="font-mono text-[10px] tracking-label text-fg-faint transition-colors hover:text-ink"
         >
-          {showForm ? '취소' : '+ 거래 추가'}
-        </button>
+          ← 계좌 상세
+        </Link>
       </div>
+      <PageHeader
+        className="px-5 pt-2 sm:px-7"
+        title="거래내역"
+        meta={account ? `${account.brokerage ?? ''} ${account.accountName}`.trim() : undefined}
+        actions={
+          <Button variant={showForm ? 'outline' : 'primary'} onClick={() => setShowForm(v => !v)}>
+            {showForm ? '취소' : '거래 추가'}
+          </Button>
+        }
+      />
 
-      {/* 요약 카드 */}
-      {trades.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <SummaryCard label="총 매수금액" value={`₩${fmt(summary.buyTotal)}`} color="text-blue-400" />
-          <SummaryCard label="총 매도금액" value={`₩${fmt(summary.sellTotal)}`} color="text-red-400" />
-          <SummaryCard label="순 투자금액" value={`₩${fmt(summary.netInvested)}`} color="text-white" />
-          <SummaryCard label="배당 + 수수료" value={`₩${fmt(summary.dividend)} / ₩${fmt(summary.fees)}`} color="text-emerald-400" />
-        </div>
-      )}
-
-      {/* 거래 추가 폼 */}
-      {showForm && (
-        <form
-          onSubmit={handleSubmit}
-          className="rounded-xl border border-blue-800 bg-gray-900 p-6 space-y-4"
-        >
-          <h2 className="text-sm font-semibold text-blue-400">새 거래 추가</h2>
-
-          {/* 거래 유형 선택 */}
-          <div>
-            <label className="mb-2 block text-xs text-gray-400">거래 유형 *</label>
-            <div className="flex flex-wrap gap-2">
-              {(Object.entries(TRADE_TYPE_CONFIG) as [StockTradeType, typeof TRADE_TYPE_CONFIG[StockTradeType]][]).map(([type, cfg]) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => set('tradeType', type)}
-                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
-                    form.tradeType === type
-                      ? cfg.bg + ' ' + cfg.color
-                      : 'border-gray-700 text-gray-400 hover:border-gray-500'
-                  }`}
-                >
-                  {cfg.label}
-                </button>
-              ))}
-            </div>
+      <div className="px-5 py-5 pb-10 sm:px-7">
+        {/* 요약 */}
+        {trades.length > 0 && (
+          <div className="mb-6 grid grid-cols-2 gap-px border border-line-soft bg-line-soft sm:grid-cols-4">
+            <SummaryTile label="총 매수금액" value={`₩${fmt(summary.buyTotal)}`} color="text-gain" />
+            <SummaryTile label="총 매도금액" value={`₩${fmt(summary.sellTotal)}`} color="text-loss" />
+            <SummaryTile label="순 투자금액" value={`₩${fmt(summary.netInvested)}`} color="text-ink" />
+            <SummaryTile label="배당 / 수수료·세금" value={`₩${fmt(summary.dividend)} / ₩${fmt(summary.fees)}`} color="text-ok" />
           </div>
+        )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2 grid grid-cols-3 gap-3">
-              <div className="col-span-2 relative" ref={suggestRef}>
-                <label className="mb-1 block text-xs text-gray-400">
-                  종목명 *
-                  {searchLoading && <span className="ml-2 text-gray-500">검색 중…</span>}
-                </label>
-                <input
-                  required type="text" placeholder="예: 삼성전자, HANARO 반도체"
-                  value={stockQuery || form.stockName}
-                  onChange={e => {
-                    set('stockName', e.target.value)
-                    setStockQuery(e.target.value)
-                    setShowSuggest(true)
-                  }}
-                  onFocus={() => {
-                    if (form.stockName) setStockQuery(form.stockName)
-                    setShowSuggest(true)
-                  }}
-                  className={inputCls}
-                  autoComplete="off"
+        {/* 거래 추가 폼 */}
+        {showForm && (
+          <form onSubmit={handleSubmit} className="mb-6 border border-ink bg-surface-muted p-5 sm:p-6">
+            <SectionHeader label="새 거래 추가" />
+
+            {/* 거래 유형 선택 */}
+            <div className="mb-4">
+              <span className="mb-2 block font-mono text-[10px] tracking-label text-fg-muted">거래 유형 *</span>
+              <div className="flex flex-wrap gap-1.5">
+                {(Object.entries(TRADE_TYPE_CONFIG) as [StockTradeType, typeof TRADE_TYPE_CONFIG[StockTradeType]][]).map(([type, cfg]) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => set('tradeType', type)}
+                    aria-pressed={form.tradeType === type}
+                    className={`border px-3 py-1.5 text-xs transition-colors ${
+                      form.tradeType === type
+                        ? 'border-ink bg-ink text-white'
+                        : 'border-line bg-surface text-fg-3 hover:border-ink hover:text-ink'
+                    }`}
+                  >
+                    {cfg.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="sm:col-span-2 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="relative sm:col-span-2" ref={suggestRef}>
+                  <label htmlFor="trade-stock-name" className="mb-1.5 block font-mono text-[10px] tracking-label text-fg-muted">
+                    종목명 *
+                    {searchLoading && <span className="ml-2 text-fg-ghost">검색 중…</span>}
+                  </label>
+                  <Input
+                    id="trade-stock-name"
+                    required type="text" placeholder="예: 삼성전자, HANARO 반도체"
+                    value={stockQuery || form.stockName}
+                    onChange={e => {
+                      set('stockName', e.target.value)
+                      setStockQuery(e.target.value)
+                      setShowSuggest(true)
+                    }}
+                    onFocus={() => {
+                      if (form.stockName) setStockQuery(form.stockName)
+                      setShowSuggest(true)
+                    }}
+                    autoComplete="off"
+                  />
+                  {showSuggest && suggestions.length > 0 && (
+                    <ul className="absolute z-10 mt-1 w-full overflow-hidden border border-ink bg-surface">
+                      {suggestions.map(s => (
+                        <li
+                          key={s.symbol}
+                          onMouseDown={() => {
+                            setForm(prev => ({ ...prev, stockName: s.name, symbol: s.symbol }))
+                            setStockQuery('')
+                            setShowSuggest(false)
+                          }}
+                          className="flex cursor-pointer items-center justify-between border-b border-line-hair px-3 py-2 text-sm transition-colors last:border-b-0 hover:bg-surface-muted"
+                        >
+                          <span className="mr-2 truncate">{s.name}</span>
+                          <Num className="shrink-0 text-xs text-fg-muted">
+                            {s.symbol} <span className="text-fg-ghost">{s.market}</span>
+                          </Num>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <Field id="trade-symbol" label="종목코드">
+                  <Input type="text" placeholder="005930"
+                    value={form.symbol ?? ''} onChange={e => set('symbol', e.target.value)} />
+                </Field>
+              </div>
+
+              <Field id="trade-date" label="체결일 *">
+                <Input required type="date" value={form.tradedAt}
+                  onChange={e => set('tradedAt', e.target.value)} />
+              </Field>
+
+              <Field id="trade-qty" label={`수량 ${form.tradeType === 'DIVIDEND' ? '(선택)' : '*'}`}>
+                <Input
+                  type="number" step="any" min="0"
+                  required={form.tradeType !== 'DIVIDEND'}
+                  value={form.quantity || ''}
+                  onChange={e => set('quantity', e.target.value)}
                 />
-                {showSuggest && suggestions.length > 0 && (
-                  <ul className="absolute z-10 mt-1 w-full rounded-lg border border-gray-600 bg-gray-800 shadow-xl overflow-hidden">
-                    {suggestions.map(s => (
-                      <li
-                        key={s.symbol}
-                        onMouseDown={() => {
-                          setForm(prev => ({ ...prev, stockName: s.name, symbol: s.symbol }))
-                          setStockQuery('')
-                          setShowSuggest(false)
-                        }}
-                        className="flex items-center justify-between px-3 py-2 text-sm cursor-pointer hover:bg-gray-700 transition-colors"
-                      >
-                        <span className="text-white truncate mr-2">{s.name}</span>
-                        <span className="text-xs text-gray-400 tabular-nums shrink-0">
-                          {s.symbol} <span className="text-gray-600">{s.market}</span>
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              </Field>
+
+              <Field id="trade-price" label={`단가 (원) ${form.tradeType === 'DIVIDEND' ? '(선택)' : '*'}`}>
+                <Input
+                  type="number" step="any" min="0"
+                  required={form.tradeType !== 'DIVIDEND'}
+                  value={form.price || ''}
+                  onChange={e => set('price', e.target.value)}
+                />
+              </Field>
+
               <div>
-                <label className="mb-1 block text-xs text-gray-400">종목코드</label>
-                <input type="text" placeholder="005930"
-                  value={form.symbol ?? ''} onChange={e => set('symbol', e.target.value)}
-                  className={inputCls} />
+                <div className="mb-1.5 flex items-center justify-between">
+                  <label htmlFor="trade-total" className="font-mono text-[10px] tracking-label text-fg-muted">
+                    거래금액 (원) *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setAutoCalc(v => !v)}
+                    className={`px-1.5 py-0.5 font-mono text-[9.5px] tracking-label transition-colors ${
+                      autoCalc ? 'bg-ink text-white' : 'bg-line-soft text-fg-3'
+                    }`}
+                  >
+                    {autoCalc ? '자동계산 ON' : '수동'}
+                  </button>
+                </div>
+                <Input
+                  id="trade-total"
+                  required type="number" step="any" min="0"
+                  value={form.totalAmount || ''}
+                  onChange={e => set('totalAmount', e.target.value)}
+                  readOnly={autoCalc && form.tradeType !== 'DIVIDEND'}
+                  className={autoCalc && form.tradeType !== 'DIVIDEND' ? 'cursor-not-allowed bg-surface-muted' : ''}
+                />
               </div>
+
+              <Field id="trade-fee" label="수수료 (원)">
+                <Input type="number" step="any" min="0"
+                  value={form.fee || ''} onChange={e => set('fee', e.target.value)} />
+              </Field>
+
+              <Field id="trade-tax" label="세금 (원)">
+                <Input type="number" step="any" min="0"
+                  value={form.tax || ''} onChange={e => set('tax', e.target.value)} />
+              </Field>
+
+              <Field id="trade-memo" label="메모" className="sm:col-span-2">
+                <Input type="text" placeholder="선택 사항"
+                  value={form.memo ?? ''} onChange={e => set('memo', e.target.value)} />
+              </Field>
             </div>
 
-            <div>
-              <label className="mb-1 block text-xs text-gray-400">체결일 *</label>
-              <input required type="date" value={form.tradedAt}
-                onChange={e => set('tradedAt', e.target.value)} className={inputCls} />
+            {addMutation.isError && (
+              <p role="alert" className="mt-4 text-xs text-danger">
+                {(addMutation.error as Error).message}
+              </p>
+            )}
+
+            <div className="mt-5 flex gap-2.5">
+              <Button type="submit" variant="primary" disabled={addMutation.isPending}>
+                {addMutation.isPending ? '저장 중…' : '거래 저장'}
+              </Button>
+              <Button type="button" onClick={() => { setShowForm(false); setForm(EMPTY_FORM) }}>
+                취소
+              </Button>
             </div>
+          </form>
+        )}
 
-            <div>
-              <label className="mb-1 block text-xs text-gray-400">
-                수량 {form.tradeType === 'DIVIDEND' ? '(선택)' : '*'}
-              </label>
-              <input
-                type="number" step="any" min="0"
-                required={form.tradeType !== 'DIVIDEND'}
-                value={form.quantity || ''}
-                onChange={e => set('quantity', e.target.value)}
-                className={inputCls}
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs text-gray-400">
-                단가 (원) {form.tradeType === 'DIVIDEND' ? '(선택)' : '*'}
-              </label>
-              <input
-                type="number" step="any" min="0"
-                required={form.tradeType !== 'DIVIDEND'}
-                value={form.price || ''}
-                onChange={e => set('price', e.target.value)}
-                className={inputCls}
-              />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs text-gray-400">거래금액 (원) *</label>
-                <button
-                  type="button"
-                  onClick={() => setAutoCalc(v => !v)}
-                  className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
-                    autoCalc ? 'text-blue-400 bg-blue-900/30' : 'text-gray-500 bg-gray-800'
-                  }`}
-                >
-                  {autoCalc ? '자동계산 ON' : '수동'}
-                </button>
-              </div>
-              <input
-                required type="number" step="any" min="0"
-                value={form.totalAmount || ''}
-                onChange={e => set('totalAmount', e.target.value)}
-                readOnly={autoCalc && form.tradeType !== 'DIVIDEND'}
-                className={`${inputCls} ${autoCalc && form.tradeType !== 'DIVIDEND' ? 'bg-gray-700 cursor-not-allowed' : ''}`}
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs text-gray-400">수수료 (원)</label>
-              <input type="number" step="any" min="0"
-                value={form.fee || ''} onChange={e => set('fee', e.target.value)}
-                className={inputCls} />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs text-gray-400">세금 (원)</label>
-              <input type="number" step="any" min="0"
-                value={form.tax || ''} onChange={e => set('tax', e.target.value)}
-                className={inputCls} />
-            </div>
-
-            <div className="col-span-2">
-              <label className="mb-1 block text-xs text-gray-400">메모</label>
-              <input type="text" placeholder="선택 사항"
-                value={form.memo ?? ''} onChange={e => set('memo', e.target.value)}
-                className={inputCls} />
-            </div>
-          </div>
-
-          {addMutation.isError && (
-            <p className="text-xs text-red-400">{(addMutation.error as Error).message}</p>
-          )}
-
-          <div className="flex gap-3">
-            <button
-              type="submit"
-              disabled={addMutation.isPending}
-              className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium hover:bg-blue-500 disabled:opacity-50 transition-colors"
-            >
-              {addMutation.isPending ? '저장 중…' : '거래 저장'}
-            </button>
-            <button
-              type="button"
-              onClick={() => { setShowForm(false); setForm(EMPTY_FORM) }}
-              className="rounded-lg border border-gray-600 px-4 py-2 text-sm hover:border-gray-400 transition-colors"
-            >
-              취소
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* 거래내역 목록 */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
-          <h2 className="text-sm font-semibold text-gray-300">거래 로그</h2>
-          <span className="text-xs text-gray-500">{trades.length}건</span>
-        </div>
-
+        {/* 거래내역 목록 */}
+        <SectionHeader label="거래 로그" note={`${trades.length}건`} />
         {isLoading ? (
-          <div className="space-y-2 p-4">
-            {[1, 2, 3].map(i => <div key={i} className="h-14 animate-pulse rounded bg-gray-800" />)}
-          </div>
+          <LoadingState label="거래내역 불러오는 중" />
         ) : trades.length === 0 ? (
-          <div className="py-12 text-center text-sm text-gray-500">
-            거래내역이 없습니다.{' '}
-            <button onClick={() => setShowForm(true)} className="text-blue-400 hover:underline">
-              첫 거래를 추가하세요.
-            </button>
-          </div>
+          <EmptyState
+            title="거래내역이 없습니다"
+            action={
+              <Button variant="primary" size="sm" onClick={() => setShowForm(true)}>
+                첫 거래 추가
+              </Button>
+            }
+          />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-gray-500 border-b border-gray-800">
-                  <th className="px-4 py-3 font-medium">체결일</th>
-                  <th className="px-4 py-3 font-medium">유형</th>
-                  <th className="px-4 py-3 font-medium">종목</th>
-                  <th className="px-4 py-3 text-right font-medium">수량</th>
-                  <th className="px-4 py-3 text-right font-medium">단가</th>
-                  <th className="px-4 py-3 text-right font-medium">거래금액</th>
-                  <th className="px-4 py-3 text-right font-medium">수수료+세금</th>
-                  <th className="px-4 py-3 font-medium">메모</th>
-                  <th className="px-3 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800">
-                {trades.map((t: StockTrade) => {
-                  const cfg = TRADE_TYPE_CONFIG[t.tradeType as StockTradeType]
-                  return (
-                    <tr key={t.id} className="hover:bg-gray-800/40 transition-colors">
-                      <td className="px-4 py-3 text-xs text-gray-400 tabular-nums whitespace-nowrap">
-                        {t.tradedAt}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${cfg.bg} ${cfg.color}`}>
-                          {cfg.label}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="font-medium">{t.stockName}</div>
-                        {t.symbol && <div className="text-xs text-gray-500">{t.symbol}</div>}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-gray-300">
-                        {t.quantity > 0 ? t.quantity.toLocaleString('ko-KR') : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-gray-300">
-                        {t.price > 0 ? `₩${fmt(t.price)}` : '—'}
-                      </td>
-                      <td className={`px-4 py-3 text-right tabular-nums font-medium ${cfg.color}`}>
-                        ₩{fmt(t.totalAmount)}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-xs text-gray-500">
-                        {t.fee + t.tax > 0 ? `₩${fmt(t.fee + t.tax)}` : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-500 max-w-[120px] truncate">
-                        {t.memo ?? ''}
-                      </td>
-                      <td className="px-3 py-3">
-                        <button
-                          onClick={() => {
-                            if (confirm('이 거래내역을 삭제하시겠습니까?'))
-                              deleteMutation.mutate(t.id)
-                          }}
-                          className="text-xs text-gray-600 hover:text-red-400 transition-colors"
-                        >
-                          삭제
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+            <div className="min-w-[860px] border-t-[1.5px] border-ink">
+              <div className={`${TABLE_GRID} border-b border-line py-2`}>
+                <Label size="sm" tone="faint">체결일</Label>
+                <Label size="sm" tone="faint">유형</Label>
+                <Label size="sm" tone="faint">종목</Label>
+                <Label size="sm" tone="faint" className="text-right">수량</Label>
+                <Label size="sm" tone="faint" className="text-right">단가</Label>
+                <Label size="sm" tone="faint" className="text-right">거래금액</Label>
+                <Label size="sm" tone="faint" className="text-right">수수료+세금</Label>
+                <Label size="sm" tone="faint">메모</Label>
+                <span />
+              </div>
+              {trades.map((t: StockTrade) => {
+                const cfg = TRADE_TYPE_CONFIG[t.tradeType as StockTradeType]
+                return (
+                  <div key={t.id} className={`${TABLE_GRID} items-baseline border-b border-line-hair py-2.5 hover:bg-surface-muted`}>
+                    <Num className="text-[11.5px] text-fg-3">{t.tradedAt}</Num>
+                    <span className={`font-mono text-[10px] tracking-label ${cfg.color}`}>{cfg.label}</span>
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate text-[13px]">{t.stockName}</span>
+                      {t.symbol && (
+                        <span className="font-mono text-[9.5px] tracking-[0.08em] text-fg-ghost">{t.symbol}</span>
+                      )}
+                    </span>
+                    <Num className="text-right text-[12px] text-fg-3">
+                      {t.quantity > 0 ? t.quantity.toLocaleString('ko-KR') : '—'}
+                    </Num>
+                    <Num className="text-right text-[12px] text-fg-3">
+                      {t.price > 0 ? fmt(t.price) : '—'}
+                    </Num>
+                    <Num className={`text-right text-[12.5px] ${cfg.color}`}>₩{fmt(t.totalAmount)}</Num>
+                    <Num className="text-right text-[11.5px] text-fg-faint">
+                      {t.fee + t.tax > 0 ? `₩${fmt(t.fee + t.tax)}` : '—'}
+                    </Num>
+                    <span className="max-w-[120px] truncate text-xs text-fg-faint">{t.memo ?? ''}</span>
+                    <button
+                      onClick={() => {
+                        if (confirm('이 거래내역을 삭제하시겠습니까?'))
+                          deleteMutation.mutate(t.id)
+                      }}
+                      className="text-right text-xs text-fg-ghost transition-colors hover:text-danger"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )}
       </div>
@@ -429,13 +399,11 @@ export default function StockTradesPage() {
   )
 }
 
-function SummaryCard({ label, value, color }: { label: string; value: string; color: string }) {
+function SummaryTile({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <div className="rounded-xl border border-gray-700 bg-gray-900 p-4">
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className={`mt-1 text-sm font-bold tabular-nums ${color}`}>{value}</p>
+    <div className="bg-surface px-3.5 py-3">
+      <Label size="sm" tone="faint">{label}</Label>
+      <Num className={`mt-1 block text-[14px] ${color}`}>{value}</Num>
     </div>
   )
 }
-
-const inputCls = 'w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none transition-colors'
