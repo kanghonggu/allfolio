@@ -60,6 +60,8 @@ data class PositionDto(
     val symbol: String?,
     val type: String,
     val currentValue: BigDecimal,
+    // KRW 환산 평가액 — FE 먼지 포지션 판정은 원통화가 아니라 이 값 기준 (QA 후속 #4)
+    val currentValueKrw: BigDecimal,
     val returnRate: BigDecimal,
     val weight: BigDecimal,
     val currency: String,

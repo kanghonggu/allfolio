@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import type { Position } from '@/types/dashboard'
 
-// QA P1 #11: 평가액 1 미만(코인 잔여 단위 등) 먼지 포지션은 접어서 표 노이즈를 줄인다
-const DUST_THRESHOLD = 1
+// QA 후속 #4: 먼지 포지션 판정은 원통화가 아니라 KRW 환산 기준 —
+// FDUSD 18원, TRX 13원 같은 잔여 단위가 실질 포지션처럼 노출되지 않게 접는다
+const DUST_THRESHOLD_KRW = 1000
 
 const TYPE_COLORS: Record<string, string> = {
   CRYPTO: '#f59e0b', STOCK: '#3b82f6', GOLD: '#eab308',
@@ -29,14 +30,20 @@ export default function PositionTable({ positions }: PositionTableProps) {
     )
   }
 
-  const mainPositions = positions.filter(p => p.currentValue >= DUST_THRESHOLD)
-  const dustPositions = positions.filter(p => p.currentValue < DUST_THRESHOLD)
+  const mainPositions = positions.filter(p => (p.currentValueKrw ?? p.currentValue) >= DUST_THRESHOLD_KRW)
+  const dustPositions = positions.filter(p => (p.currentValueKrw ?? p.currentValue) < DUST_THRESHOLD_KRW)
   const visible = showDust ? [...mainPositions, ...dustPositions] : mainPositions
 
   return (
     <div className="rounded-xl border border-gray-700 bg-gray-900 overflow-hidden">
       <div className="px-6 py-4 border-b border-gray-700">
-        <h3 className="text-sm font-semibold text-gray-300">포지션 ({positions.length})</h3>
+        {/* 카운터는 실질 포지션 기준 — 먼지는 별도 표기 (QA 후속 #4) */}
+        <h3 className="text-sm font-semibold text-gray-300">
+          포지션 ({mainPositions.length})
+          {dustPositions.length > 0 && (
+            <span className="ml-1 text-xs font-normal text-gray-500">+ 먼지 {dustPositions.length}건</span>
+          )}
+        </h3>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -89,7 +96,7 @@ export default function PositionTable({ positions }: PositionTableProps) {
                   >
                     {showDust
                       ? '먼지 포지션 접기'
-                      : `먼지 포지션 ${dustPositions.length}건 표시 (평가액 1 미만)`}
+                      : `먼지 포지션 ${dustPositions.length}건 표시 (평가액 ₩1,000 미만)`}
                   </button>
                 </td>
               </tr>
