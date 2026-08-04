@@ -5,6 +5,12 @@ import { useParams, useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useUnifiedApi } from '@/lib/useApi'
+import PageHeader from '@/components/ui/PageHeader'
+import SectionHeader from '@/components/ui/SectionHeader'
+import Button from '@/components/ui/Button'
+import Label from '@/components/ui/Label'
+import Num from '@/components/ui/Num'
+import { LoadingState } from '@/components/ui/states'
 import type { CsvPreviewRow, CsvImportResult } from '@/types/unified'
 
 const CSV_TEMPLATE = `name,symbol,type,quantity,purchasePrice,currentValue,currency,memo
@@ -12,6 +18,8 @@ const CSV_TEMPLATE = `name,symbol,type,quantity,purchasePrice,currentValue,curre
 비트코인,BTC,CRYPTO,0.5,30000000,45000000,KRW,장기보유
 강남아파트,,REAL_ESTATE,1,800000000,950000000,KRW,
 현금,,CASH,5000000,5000000,5000000,KRW,비상금`
+
+const PREVIEW_GRID = 'grid grid-cols-[36px_1.3fr_0.9fr_0.9fr_0.7fr_0.9fr_0.9fr_1.3fr] gap-3'
 
 export default function CsvUploadPage() {
   const { id } = useParams<{ id: string }>()
@@ -66,172 +74,168 @@ export default function CsvUploadPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <Link href={`/unified/accounts/${id}`} className="mb-2 inline-block text-xs text-gray-500 hover:text-gray-300">
+    <div className="border border-line-card bg-surface">
+      <div className="px-5 pt-4 sm:px-7">
+        <Link
+          href={`/unified/accounts/${id}`}
+          className="font-mono text-[10px] tracking-label text-fg-faint transition-colors hover:text-ink"
+        >
           ← 계좌 상세로
         </Link>
-        <h1 className="text-2xl font-bold">CSV 업로드</h1>
-        <p className="mt-1 text-sm text-gray-400">자산 내역 CSV 파일을 업로드해 가져옵니다</p>
       </div>
+      <PageHeader
+        className="px-5 pt-2 sm:px-7"
+        title="CSV 업로드"
+        meta="자산 내역 CSV 파일을 업로드해 가져옵니다"
+      />
 
-      {/* Template Download */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium">CSV 형식 안내</p>
-            <p className="mt-0.5 text-xs text-gray-500">
-              name, symbol, type, quantity, purchasePrice, currentValue, currency, memo
-            </p>
-            <p className="mt-1 text-xs text-gray-600">
-              지원 type: STOCK / CRYPTO / REAL_ESTATE / VEHICLE / GOLD / CASH / ETC
-            </p>
+      <div className="space-y-6 px-5 py-5 pb-10 sm:px-7">
+
+        {/* Template Download */}
+        <div className="border border-line bg-surface-muted p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <Label size="sm">CSV 형식 안내</Label>
+              <p className="mt-1.5 font-mono text-[10.5px] tracking-[0.02em] text-fg-3">
+                name, symbol, type, quantity, purchasePrice, currentValue, currency, memo
+              </p>
+              <p className="mt-1 font-mono text-[10px] tracking-[0.02em] text-fg-faint">
+                지원 type: STOCK / CRYPTO / REAL_ESTATE / VEHICLE / GOLD / CASH / ETC
+              </p>
+            </div>
+            <Button size="sm" className="shrink-0" onClick={downloadTemplate}>
+              템플릿 다운로드
+            </Button>
           </div>
-          <button
-            onClick={downloadTemplate}
-            className="shrink-0 rounded-lg border border-gray-600 px-3 py-1.5 text-xs hover:border-gray-400 transition-colors"
+        </div>
+
+        {/* Drop Zone */}
+        {!result && (
+          <div
+            onDragOver={e => { e.preventDefault(); setDragging(true) }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={e => {
+              e.preventDefault()
+              setDragging(false)
+              const f = e.dataTransfer.files[0]
+              if (f) handleFile(f)
+            }}
+            onClick={() => fileRef.current?.click()}
+            className={`cursor-pointer border-2 border-dashed p-12 text-center transition-colors ${
+              dragging
+                ? 'border-ink bg-surface-muted'
+                : 'border-line hover:border-ink'
+            }`}
           >
-            템플릿 다운로드
-          </button>
-        </div>
-      </div>
-
-      {/* Drop Zone */}
-      {!result && (
-        <div
-          onDragOver={e => { e.preventDefault(); setDragging(true) }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={e => {
-            e.preventDefault()
-            setDragging(false)
-            const f = e.dataTransfer.files[0]
-            if (f) handleFile(f)
-          }}
-          onClick={() => fileRef.current?.click()}
-          className={`cursor-pointer rounded-xl border-2 border-dashed p-12 text-center transition-all ${
-            dragging
-              ? 'border-blue-500 bg-blue-950/20'
-              : 'border-gray-700 hover:border-gray-500'
-          }`}
-        >
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
-          />
-          <p className="text-2xl">📂</p>
-          <p className="mt-2 text-sm text-gray-300">
-            {file ? file.name : 'CSV 파일을 드래그하거나 클릭해서 선택'}
-          </p>
-          <p className="mt-1 text-xs text-gray-500">최대 10MB</p>
-        </div>
-      )}
-
-      {/* Loading */}
-      {loading && (
-        <div className="flex items-center gap-2 text-sm text-gray-400">
-          <span className="animate-spin">⟳</span> 처리 중…
-        </div>
-      )}
-
-      {/* Preview */}
-      {preview && !result && !loading && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-300">
-              미리보기 ({preview.length}행)
-            </h2>
-            <div className="flex gap-2">
-              <button
-                onClick={() => { setFile(null); setPreview(null); if (fileRef.current) fileRef.current.value = '' }}
-                className="rounded-lg border border-gray-600 px-3 py-1.5 text-xs hover:border-gray-400 transition-colors"
-              >
-                다시 선택
-              </button>
-              <button
-                onClick={handleImport}
-                disabled={preview.filter(r => !r.error).length === 0}
-                className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium hover:bg-blue-500 disabled:opacity-50 transition-colors"
-              >
-                가져오기 ({preview.filter(r => !r.error).length}개
-                {preview.some(r => r.error) && ` / ${preview.filter(r => r.error).length}개 오류 건너뜀`})
-              </button>
-            </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
+            />
+            <p className="text-sm text-fg-2">
+              {file ? file.name : 'CSV 파일을 드래그하거나 클릭해서 선택'}
+            </p>
+            <p className="mt-1 text-xs text-fg-faint">최대 10MB</p>
           </div>
+        )}
 
-          <div className="overflow-x-auto rounded-xl border border-gray-700">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-gray-700 bg-gray-800 text-left text-gray-400">
-                  <th className="px-3 py-2">#</th>
-                  <th className="px-3 py-2">이름</th>
-                  <th className="px-3 py-2">심볼</th>
-                  <th className="px-3 py-2">유형</th>
-                  <th className="px-3 py-2 text-right">수량</th>
-                  <th className="px-3 py-2 text-right">매입가</th>
-                  <th className="px-3 py-2 text-right">현재가치</th>
-                  <th className="px-3 py-2">오류</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800">
+        {/* Loading */}
+        {loading && <LoadingState label="처리 중" />}
+
+        {/* Preview */}
+        {preview && !result && !loading && (
+          <div>
+            <SectionHeader
+              label="미리보기"
+              note={`${preview.length}행`}
+              actions={
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => { setFile(null); setPreview(null); if (fileRef.current) fileRef.current.value = '' }}
+                  >
+                    다시 선택
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onClick={handleImport}
+                    disabled={preview.filter(r => !r.error).length === 0}
+                  >
+                    가져오기 ({preview.filter(r => !r.error).length}개
+                    {preview.some(r => r.error) && ` / ${preview.filter(r => r.error).length}개 오류 건너뜀`})
+                  </Button>
+                </div>
+              }
+            />
+
+            <div className="overflow-x-auto">
+              <div className="min-w-[760px] border-t-[1.5px] border-ink">
+                <div className={`${PREVIEW_GRID} border-b border-line py-2`}>
+                  <Label size="sm" tone="faint">#</Label>
+                  <Label size="sm" tone="faint">이름</Label>
+                  <Label size="sm" tone="faint">심볼</Label>
+                  <Label size="sm" tone="faint">유형</Label>
+                  <Label size="sm" tone="faint" className="text-right">수량</Label>
+                  <Label size="sm" tone="faint" className="text-right">매입가</Label>
+                  <Label size="sm" tone="faint" className="text-right">현재가치</Label>
+                  <Label size="sm" tone="faint">오류</Label>
+                </div>
                 {preview.map(row => (
-                  <tr key={row.line} className={row.error ? 'bg-red-950/20' : 'bg-gray-900'}>
-                    <td className="px-3 py-2 text-gray-500">{row.line}</td>
-                    <td className="px-3 py-2">{row.name}</td>
-                    <td className="px-3 py-2 text-gray-400">{row.symbol}</td>
-                    <td className="px-3 py-2">{row.type}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{row.quantity}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{row.purchasePrice}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{row.currentValue}</td>
-                    <td className="px-3 py-2 text-red-400">{row.error}</td>
-                  </tr>
+                  <div
+                    key={row.line}
+                    className={`${PREVIEW_GRID} items-baseline border-b border-line-hair py-2.5 hover:bg-surface-muted`}
+                  >
+                    <Num className="text-[11px] text-fg-faint">{row.line}</Num>
+                    <span className="truncate text-[13px]">{row.name}</span>
+                    <span className="truncate font-mono text-[10.5px] tracking-[0.04em] text-fg-3">{row.symbol}</span>
+                    <span className="font-mono text-[10px] tracking-label text-fg-3">{row.type}</span>
+                    <Num className="text-right text-[12px] text-fg-3">{row.quantity}</Num>
+                    <Num className="text-right text-[12px] text-fg-3">{row.purchasePrice}</Num>
+                    <Num className="text-right text-[12px] text-fg-3">{row.currentValue}</Num>
+                    <span className="text-xs text-danger">{row.error}</span>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Import Result */}
-      {result && (
-        <div className="rounded-xl border border-emerald-800 bg-emerald-950 p-6 space-y-3">
-          <p className="font-semibold text-emerald-400">✓ 가져오기 완료</p>
-          <div className="flex gap-6 text-sm">
-            <div>
-              <p className="text-xs text-gray-400">성공</p>
-              <p className="text-xl font-bold text-emerald-400">{result.imported}개</p>
+        {/* Import Result */}
+        {result && (
+          <div className="border border-ink bg-surface-muted p-5 sm:p-6">
+            <SectionHeader label="가져오기 완료" />
+            <div className="flex gap-10">
+              <div>
+                <Label size="sm" tone="faint">성공</Label>
+                <Num className="mt-1 block text-[15px] text-ok">{result.imported}개</Num>
+              </div>
+              <div>
+                <Label size="sm" tone="faint">건너뜀</Label>
+                <Num className="mt-1 block text-[15px] text-warn">{result.skipped}개</Num>
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-gray-400">건너뜀</p>
-              <p className="text-xl font-bold text-yellow-400">{result.skipped}개</p>
+            {result.errors.length > 0 && (
+              <div className="mt-4 border border-line bg-surface px-4 py-2.5">
+                <Label size="sm" className="text-danger">오류 목록</Label>
+                {result.errors.map((e, i) => (
+                  <p key={i} className="mt-1 text-xs text-danger">{e}</p>
+                ))}
+              </div>
+            )}
+            <div className="mt-5 flex gap-2.5">
+              <Button variant="primary" onClick={() => router.push(`/unified/accounts/${id}`)}>
+                계좌 상세 보기
+              </Button>
+              <Button onClick={() => { setFile(null); setPreview(null); setResult(null) }}>
+                다시 업로드
+              </Button>
             </div>
           </div>
-          {result.errors.length > 0 && (
-            <div className="rounded-lg border border-red-800 bg-red-950 p-3">
-              <p className="mb-1 text-xs font-medium text-red-400">오류 목록</p>
-              {result.errors.map((e, i) => (
-                <p key={i} className="text-xs text-red-500">{e}</p>
-              ))}
-            </div>
-          )}
-          <div className="flex gap-3 pt-2">
-            <button
-              onClick={() => router.push(`/unified/accounts/${id}`)}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-500 transition-colors"
-            >
-              계좌 상세 보기
-            </button>
-            <button
-              onClick={() => { setFile(null); setPreview(null); setResult(null) }}
-              className="rounded-lg border border-gray-600 px-4 py-2 text-sm hover:border-gray-400 transition-colors"
-            >
-              다시 업로드
-            </button>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

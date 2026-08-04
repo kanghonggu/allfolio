@@ -6,6 +6,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useUnifiedApi } from '@/lib/useApi'
 import { isSyncable } from '@/lib/providers'
+import PageHeader from '@/components/ui/PageHeader'
+import SectionHeader from '@/components/ui/SectionHeader'
+import Badge from '@/components/ui/Badge'
+import Button from '@/components/ui/Button'
+import Label from '@/components/ui/Label'
+import Num from '@/components/ui/Num'
+import Field, { Input, Select, Textarea } from '@/components/ui/Field'
+import { EmptyState, ErrorState, LoadingState } from '@/components/ui/states'
 import type { Asset, AssetType, SyncResult, CreateManualAssetPayload } from '@/types/unified'
 
 // ── 상수 ──────────────────────────────────────────────────────
@@ -181,7 +189,7 @@ function MoneyInput({
   required?: boolean
 }) {
   return (
-    <input
+    <Input
       type="text"
       inputMode="numeric"
       required={required}
@@ -191,7 +199,6 @@ function MoneyInput({
         const d = digitsOnly(e.target.value)
         onChange(d ? parseInt(d, 10) : null)
       }}
-      className={inputCls}
     />
   )
 }
@@ -207,7 +214,7 @@ function DecimalInput({
 }) {
   const [raw, setRaw] = useState(value > 0 ? String(value) : '')
   return (
-    <input
+    <Input
       type="text"
       inputMode="decimal"
       required={required}
@@ -219,10 +226,11 @@ function DecimalInput({
         const n = parseFloat(s)
         if (!isNaN(n)) onChange(n)
       }}
-      className={inputCls}
     />
   )
 }
+
+const ASSET_GRID = 'grid grid-cols-[1.6fr_0.9fr_0.7fr_1fr_1fr_0.9fr_1fr_1fr] gap-3'
 
 // ── 메인 페이지 ───────────────────────────────────────────────
 
@@ -309,354 +317,336 @@ export default function AccountDetailPage() {
     : null
 
   if (!account && accounts.length > 0) {
-    return <div className="text-gray-400">계좌를 찾을 수 없습니다.</div>
+    return (
+      <div className="border border-line-card bg-surface px-5 py-5 sm:px-7">
+        <ErrorState message="계좌를 찾을 수 없습니다." />
+      </div>
+    )
   }
 
   return (
-    <div className="space-y-6">
+    <div className="border border-line-card bg-surface">
 
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <Link href="/unified/accounts" className="mb-2 inline-block text-xs text-gray-500 hover:text-gray-300">
-            ← 계좌 목록
-          </Link>
-          <h1 className="text-2xl font-bold">{account?.accountName ?? '계좌 상세'}</h1>
-          <p className="mt-1 text-sm text-gray-400">
-            {account?.provider} · {account?.accountType} · {account?.currency}
-          </p>
-          {account?.lastSyncedAt && (
-            <p className="mt-0.5 text-xs text-gray-500">
-              마지막 동기화: {new Date(account.lastSyncedAt).toLocaleString('ko-KR')}
-            </p>
-          )}
-        </div>
-
-        <div className="flex shrink-0 gap-2">
-          {account?.provider === 'MANUAL' && (
-            <button
-              onClick={() => { setShowAddForm(v => !v); addAssetMutation.reset() }}
-              className="rounded-lg border border-gray-600 px-4 py-2 text-sm hover:border-blue-500 hover:text-blue-400 transition-colors"
-            >
-              {showAddForm ? '✕ 닫기' : '+ 자산 추가'}
-            </button>
-          )}
-          {account?.provider === 'STOCK' && (
-            <Link
-              href={`/unified/accounts/${id}/trades`}
-              className="rounded-lg border border-gray-600 px-4 py-2 text-sm font-medium hover:border-blue-500 hover:text-blue-400 transition-colors"
-            >
-              거래내역 관리
-            </Link>
-          )}
-          {/* STOCK은 수동 거래내역 재계산 sync라 상세에서만 노출(목록 제외) */}
-          {(isSyncable(account?.provider) || account?.provider === 'STOCK') && (
-            <button
-              onClick={handleSync}
-              disabled={syncing}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-500 disabled:opacity-50 transition-colors"
-            >
-              {syncing ? '동기화 중…' : '↻ Sync'}
-            </button>
-          )}
-        </div>
+      <div className="px-5 pt-4 sm:px-7">
+        <Link
+          href="/unified/accounts"
+          className="font-mono text-[10px] tracking-label text-fg-faint transition-colors hover:text-ink"
+        >
+          ← 계좌 목록
+        </Link>
       </div>
+      <PageHeader
+        className="px-5 pt-2 sm:px-7"
+        title={account?.accountName ?? '계좌 상세'}
+        meta={
+          <>
+            {account?.provider} · {account?.accountType} · {account?.currency}
+            {account?.lastSyncedAt && (
+              <> · 최종 동기화 {new Date(account.lastSyncedAt).toLocaleString('ko-KR')}</>
+            )}
+          </>
+        }
+        actions={
+          <>
+            {account?.provider === 'MANUAL' && (
+              <Button onClick={() => { setShowAddForm(v => !v); addAssetMutation.reset() }}>
+                {showAddForm ? '닫기' : '자산 추가'}
+              </Button>
+            )}
+            {account?.provider === 'STOCK' && (
+              <Link
+                href={`/unified/accounts/${id}/trades`}
+                className="border border-line bg-surface px-3.5 py-2 text-[12.5px] text-fg-2 transition-colors hover:border-ink hover:text-ink"
+              >
+                거래내역 관리
+              </Link>
+            )}
+            {/* STOCK은 수동 거래내역 재계산 sync라 상세에서만 노출(목록 제외) */}
+            {(isSyncable(account?.provider) || account?.provider === 'STOCK') && (
+              <Button variant="primary" onClick={handleSync} disabled={syncing}>
+                {syncing ? '동기화 중…' : 'Sync'}
+              </Button>
+            )}
+          </>
+        }
+      />
 
-      {/* Sync Result */}
-      {syncResult && (
-        <div className={`rounded-xl border p-4 text-sm ${
-          syncResult.error
-            ? 'border-red-800 bg-red-950 text-red-400'
-            : 'border-emerald-800 bg-emerald-950 text-emerald-400'
-        }`}>
-          {syncResult.error ? `동기화 실패: ${syncResult.error}` : `✓ ${syncResult.synced}개 자산 동기화 완료`}
-        </div>
-      )}
+      <div className="px-5 py-5 pb-10 sm:px-7">
 
-      {/* Add Asset Form */}
-      {showAddForm && account?.provider === 'MANUAL' && (
-        <form onSubmit={handleSubmit} className="rounded-xl border border-blue-800 bg-gray-900 p-6 space-y-5">
-          <h2 className="text-sm font-semibold text-blue-400">새 자산 추가</h2>
+        {/* Sync Result */}
+        {syncResult && (
+          <p className={`mb-5 font-mono text-[10.5px] tracking-[0.04em] ${syncResult.error ? 'text-danger' : 'text-ok'}`}>
+            {syncResult.error ? `동기화 실패: ${syncResult.error}` : `${syncResult.synced}개 자산 동기화 완료`}
+          </p>
+        )}
 
-          {/* 자산 유형 탭 */}
-          <div>
-            <label className="mb-2 block text-xs font-medium text-gray-400">자산 유형 *</label>
-            <div className="flex flex-wrap gap-2">
-              {ASSET_TYPES.map(t => (
-                <button key={t} type="button" onClick={() => switchType(t)}
-                  className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-                    assetForm.type === t
-                      ? 'border-blue-500 bg-blue-600/20 text-blue-300'
-                      : 'border-gray-700 text-gray-400 hover:border-gray-500'
-                  }`}
-                >
-                  {TYPE_KO[t]}
-                </button>
-              ))}
-            </div>
-          </div>
+        {/* Add Asset Form */}
+        {showAddForm && account?.provider === 'MANUAL' && (
+          <form onSubmit={handleSubmit} className="mb-6 border border-ink bg-surface-muted p-5 sm:p-6">
+            <SectionHeader label="새 자산 추가" />
 
-          {/* 세부 유형 */}
-          {SUB_TYPES[assetForm.type] && (
-            <div>
-              <label className="mb-2 block text-xs font-medium text-gray-400">세부 유형</label>
-              <div className="flex flex-wrap gap-2">
-                {SUB_TYPES[assetForm.type].map(s => (
-                  <button key={s.value} type="button"
-                    onClick={() => set('subType', s.value)}
-                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-                      assetForm.subType === s.value
-                        ? 'border-emerald-500 bg-emerald-600/20 text-emerald-300'
-                        : 'border-gray-700 text-gray-400 hover:border-gray-500'
+            {/* 자산 유형 탭 */}
+            <div className="mb-4">
+              <span className="mb-2 block font-mono text-[10px] tracking-label text-fg-muted">자산 유형 *</span>
+              <div className="flex flex-wrap gap-1.5">
+                {ASSET_TYPES.map(t => (
+                  <button key={t} type="button" onClick={() => switchType(t)}
+                    aria-pressed={assetForm.type === t}
+                    className={`border px-3 py-1.5 text-xs transition-colors ${
+                      assetForm.type === t
+                        ? 'border-ink bg-ink text-white'
+                        : 'border-line bg-surface text-fg-3 hover:border-ink hover:text-ink'
                     }`}
                   >
-                    {s.label}
+                    {TYPE_KO[t]}
                   </button>
                 ))}
               </div>
             </div>
-          )}
 
-          {/* 힌트 */}
-          {cfg.hint && (
-            <div className="rounded-lg border border-gray-700 bg-gray-800/50 px-3 py-2 text-xs text-gray-400">
-              ℹ️ {cfg.hint}
-            </div>
-          )}
+            {/* 세부 유형 */}
+            {SUB_TYPES[assetForm.type] && (
+              <div className="mb-4">
+                <span className="mb-2 block font-mono text-[10px] tracking-label text-fg-muted">세부 유형</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {SUB_TYPES[assetForm.type].map(s => (
+                    <button key={s.value} type="button"
+                      onClick={() => set('subType', s.value)}
+                      aria-pressed={assetForm.subType === s.value}
+                      className={`border px-3 py-1.5 text-xs transition-colors ${
+                        assetForm.subType === s.value
+                          ? 'border-ink bg-ink text-white'
+                          : 'border-line bg-surface text-fg-3 hover:border-ink hover:text-ink'
+                      }`}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
-          <div className="grid grid-cols-2 gap-3">
+            {/* 힌트 */}
+            {cfg.hint && (
+              <div className="mb-4 border border-line bg-surface px-3 py-2 text-xs text-fg-3">
+                {cfg.hint}
+              </div>
+            )}
 
-            {/* 면적 (평) — 부동산 전용 */}
-            {isAreaType && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+
+              {/* 면적 (평) — 부동산 전용 */}
+              {isAreaType && (
+                <div>
+                  <label className="mb-1.5 block font-mono text-[10px] tracking-label text-fg-muted">면적 (평)</label>
+                  <DecimalInput
+                    placeholder="예: 30"
+                    value={assetForm.areaPyeong ?? 0}
+                    onChange={v => set('areaPyeong', v)}
+                  />
+                </div>
+              )}
+
+              {/* 자산명 */}
+              <Field id="asset-name" label="자산명 *" className="sm:col-span-2">
+                <Input required type="text"
+                  placeholder={cfg.namePlaceholder}
+                  value={assetForm.name}
+                  onChange={e => set('name', e.target.value)}
+                />
+              </Field>
+
+              {/* 심볼/주소/단위 */}
+              {cfg.showSymbol && (
+                <Field id="asset-symbol" label={cfg.symbolLabel ?? ''} className="sm:col-span-2">
+                  <Input type="text"
+                    placeholder={cfg.symbolPlaceholder}
+                    value={assetForm.symbol ?? ''}
+                    onChange={e => set('symbol', e.target.value)}
+                  />
+                </Field>
+              )}
+
+              {/* 수량 */}
+              {cfg.showQuantity && (
+                <div>
+                  <label className="mb-1.5 block font-mono text-[10px] tracking-label text-fg-muted">{cfg.quantityLabel}</label>
+                  <DecimalInput
+                    required
+                    placeholder={cfg.quantityPlaceholder}
+                    value={assetForm.quantity}
+                    onChange={v => set('quantity', v)}
+                  />
+                </div>
+              )}
+
+              {/* 통화 */}
+              <Field id="asset-currency" label="통화">
+                <Select value={currency} onChange={e => set('currency', e.target.value)}>
+                  <option value="KRW">KRW</option>
+                  <option value="USD">USD</option>
+                </Select>
+              </Field>
+
+              {/* 취득가 / 매입가 */}
               <div>
-                <label className="mb-1 block text-xs text-gray-400">면적 (평)</label>
-                <DecimalInput
-                  placeholder="예: 30"
-                  value={assetForm.areaPyeong ?? 0}
-                  onChange={v => set('areaPyeong', v)}
-                />
-              </div>
-            )}
-
-            {/* 자산명 */}
-            <div className="col-span-2">
-              <label className="mb-1 block text-xs text-gray-400">자산명 *</label>
-              <input required type="text"
-                placeholder={cfg.namePlaceholder}
-                value={assetForm.name}
-                onChange={e => set('name', e.target.value)}
-                className={inputCls}
-              />
-            </div>
-
-            {/* 심볼/주소/단위 */}
-            {cfg.showSymbol && (
-              <div className="col-span-2">
-                <label className="mb-1 block text-xs text-gray-400">{cfg.symbolLabel}</label>
-                <input type="text"
-                  placeholder={cfg.symbolPlaceholder}
-                  value={assetForm.symbol ?? ''}
-                  onChange={e => set('symbol', e.target.value)}
-                  className={inputCls}
-                />
-              </div>
-            )}
-
-            {/* 수량 */}
-            {cfg.showQuantity && (
-              <div>
-                <label className="mb-1 block text-xs text-gray-400">{cfg.quantityLabel}</label>
-                <DecimalInput
-                  required
-                  placeholder={cfg.quantityPlaceholder}
-                  value={assetForm.quantity}
-                  onChange={v => set('quantity', v)}
-                />
-              </div>
-            )}
-
-            {/* 통화 */}
-            <div>
-              <label className="mb-1 block text-xs text-gray-400">통화</label>
-              <select value={currency} onChange={e => set('currency', e.target.value)} className={inputCls}>
-                <option value="KRW">KRW</option>
-                <option value="USD">USD</option>
-              </select>
-            </div>
-
-            {/* 취득가 / 매입가 */}
-            <div>
-              <label className="mb-1 block text-xs text-gray-400">{cfg.purchasePriceLabel} *</label>
-              <MoneyInput
-                required
-                placeholder="0"
-                value={assetForm.purchasePrice}
-                onChange={v => set('purchasePrice', v ?? 0)}
-              />
-            </div>
-
-            {/* 현재 시세 / 현재 가치 */}
-            <div>
-              <label className="mb-1 block text-xs text-gray-400">{cfg.currentValueLabel} *</label>
-              <MoneyInput
-                required
-                placeholder="0"
-                value={assetForm.currentValue}
-                onChange={v => set('currentValue', v ?? 0)}
-              />
-            </div>
-
-            {/* 대출 잔액 */}
-            {subInfo?.loanLabel && (
-              <div className="col-span-2">
-                <label className="mb-1 block text-xs text-gray-400">
-                  {subInfo.loanLabel}
-                  <span className="ml-1 text-gray-600">(없으면 빈칸)</span>
-                </label>
+                <label className="mb-1.5 block font-mono text-[10px] tracking-label text-fg-muted">{cfg.purchasePriceLabel} *</label>
                 <MoneyInput
+                  required
                   placeholder="0"
-                  value={assetForm.loanAmount ?? null}
-                  onChange={v => set('loanAmount', v)}
+                  value={assetForm.purchasePrice}
+                  onChange={v => set('purchasePrice', v ?? 0)}
                 />
-                {(assetForm.loanAmount ?? 0) > 0 && (
-                  <p className="mt-1 text-xs text-emerald-400">
-                    순자산: {fmt((assetForm.currentValue ?? 0) - (assetForm.loanAmount ?? 0), currency)}
-                  </p>
-                )}
               </div>
+
+              {/* 현재 시세 / 현재 가치 */}
+              <div>
+                <label className="mb-1.5 block font-mono text-[10px] tracking-label text-fg-muted">{cfg.currentValueLabel} *</label>
+                <MoneyInput
+                  required
+                  placeholder="0"
+                  value={assetForm.currentValue}
+                  onChange={v => set('currentValue', v ?? 0)}
+                />
+              </div>
+
+              {/* 대출 잔액 */}
+              {subInfo?.loanLabel && (
+                <div className="sm:col-span-2">
+                  <label className="mb-1.5 block font-mono text-[10px] tracking-label text-fg-muted">
+                    {subInfo.loanLabel}
+                    <span className="ml-1 text-fg-ghost">(없으면 빈칸)</span>
+                  </label>
+                  <MoneyInput
+                    placeholder="0"
+                    value={assetForm.loanAmount ?? null}
+                    onChange={v => set('loanAmount', v)}
+                  />
+                  {(assetForm.loanAmount ?? 0) > 0 && (
+                    <p className="mt-1 text-xs text-ok">
+                      순자산: {fmt((assetForm.currentValue ?? 0) - (assetForm.loanAmount ?? 0), currency)}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* 메모 */}
+              <Field id="asset-memo" label={cfg.memoLabel} className="sm:col-span-2">
+                <Textarea rows={2}
+                  placeholder={cfg.memoPlaceholder}
+                  value={assetForm.memo ?? ''}
+                  onChange={e => set('memo', e.target.value)}
+                  className="resize-none"
+                />
+              </Field>
+            </div>
+
+            {/* 에러 */}
+            {errMsg && (
+              <p role="alert" className="mt-4 text-xs text-danger">
+                {typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg)}
+              </p>
             )}
 
-            {/* 메모 */}
-            <div className="col-span-2">
-              <label className="mb-1 block text-xs text-gray-400">{cfg.memoLabel}</label>
-              <textarea rows={2}
-                placeholder={cfg.memoPlaceholder}
-                value={assetForm.memo ?? ''}
-                onChange={e => set('memo', e.target.value)}
-                className={`${inputCls} resize-none`}
-              />
+            <div className="mt-5 flex gap-2.5">
+              <Button type="submit" variant="primary" disabled={addAssetMutation.isPending}>
+                {addAssetMutation.isPending ? '저장 중…' : '자산 저장'}
+              </Button>
+              <Button type="button" onClick={() => { setShowAddForm(false); addAssetMutation.reset() }}>
+                취소
+              </Button>
             </div>
-          </div>
+          </form>
+        )}
 
-          {/* 에러 */}
-          {errMsg && (
-            <div className="rounded-lg border border-red-800 bg-red-950/50 px-3 py-2 text-xs text-red-400">
-              {typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg)}
-            </div>
-          )}
-
-          <div className="flex gap-3">
-            <button type="submit" disabled={addAssetMutation.isPending}
-              className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium hover:bg-blue-500 disabled:opacity-50 transition-colors"
-            >
-              {addAssetMutation.isPending ? '저장 중…' : '자산 저장'}
-            </button>
-            <button type="button" onClick={() => { setShowAddForm(false); addAssetMutation.reset() }}
-              className="rounded-lg border border-gray-600 px-4 py-2 text-sm hover:border-gray-400 transition-colors"
-            >
-              취소
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* 보유 자산 목록 */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
-          <h2 className="text-sm font-semibold text-gray-300">보유 자산</h2>
-          <span className="text-xs text-gray-500">{assets.length}개</span>
-        </div>
+        {/* 보유 자산 목록 */}
+        <SectionHeader label="보유 자산" note={`${assets.length}개`} />
 
         {assetsLoading ? (
-          <div className="space-y-2 p-4">
-            {[1,2,3].map(i => <div key={i} className="h-12 animate-pulse rounded bg-gray-800" />)}
-          </div>
+          <LoadingState label="자산 불러오는 중" />
         ) : assets.length === 0 ? (
-          <div className="py-12 text-center text-sm text-gray-500">
-            {account?.provider === 'MANUAL' ? '자산을 추가해 주세요.' : 'Sync 버튼을 눌러 자산을 조회하세요.'}
-          </div>
+          <EmptyState
+            title={account?.provider === 'MANUAL' ? '자산을 추가해 주세요' : 'Sync 버튼을 눌러 자산을 조회하세요'}
+          />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-gray-500 border-b border-gray-800">
-                  <th className="px-6 py-3 font-medium">자산명</th>
-                  <th className="px-4 py-3 font-medium">유형</th>
-                  <th className="px-4 py-3 text-right font-medium">수량</th>
-                  <th className="px-4 py-3 text-right font-medium">매입가 / 현재가</th>
-                  <th className="px-4 py-3 text-right font-medium">현재 가치</th>
-                  <th className="px-4 py-3 text-right font-medium">대출</th>
-                  <th className="px-4 py-3 text-right font-medium">순자산</th>
-                  <th className="px-4 py-3 text-right font-medium">손익 / 수익률</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800">
-                {assets.map((a: Asset) => {
-                  const pnl        = Number(a.unrealizedPnl)
-                  const qty        = Number(a.quantity)
-                  const purchase   = Number(a.purchasePrice)
-                  const isIlliquid = a.liquidityType === 'ILLIQUID'
-                  const curPerUnit = isIlliquid ? Number(a.currentValue) : (qty > 0 ? Number(a.currentValue) / qty : 0)
-                  const totalCost  = isIlliquid ? purchase : purchase * qty
-                  const returnPct  = totalCost > 0 ? (pnl / totalCost) * 100 : 0
-                  const isPos      = pnl >= 0
-                  const qtyDisplay = a.areaPyeong != null
-                    ? `${Number(a.areaPyeong).toFixed(0)}평`
-                    : qty.toLocaleString('ko-KR', { maximumFractionDigits: 6 })
-                  return (
-                    <tr key={a.id} className="hover:bg-gray-800/40 transition-colors">
-                      <td className="px-6 py-3">
-                        <div className="font-medium">{a.name}</div>
-                        {a.symbol && <div className="text-xs text-gray-500">{a.symbol}</div>}
-                        {a.memo && <div className="text-xs text-gray-600 max-w-xs truncate">{a.memo}</div>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="text-xs text-gray-400">{TYPE_KO[a.type] ?? a.type}</div>
-                        {a.subType && (
-                          <span className="mt-0.5 inline-block rounded-full bg-emerald-900/50 px-2 py-0.5 text-xs text-emerald-400">
-                            {SUB_TYPE_KO[a.subType] ?? a.subType}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-xs text-gray-300">
-                        {qtyDisplay}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-xs">
-                        <div className="text-gray-400">
-                          {purchase > 0 ? fmt(purchase, a.currency) : '—'}
-                        </div>
-                        <div className={isPos ? 'text-emerald-400' : 'text-red-400'}>
-                          {curPerUnit > 0 ? fmt(curPerUnit, a.currency) : '—'}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        {fmt(Number(a.currentValue), a.currency)}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-xs text-red-400">
-                        {a.loanAmount ? `-${fmt(Number(a.loanAmount), a.currency)}` : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums font-medium">
-                        {fmt(Number(a.netEquity), a.currency)}
-                      </td>
-                      <td className={`px-4 py-3 text-right tabular-nums text-xs ${isPos ? 'text-emerald-400' : 'text-red-400'}`}>
-                        <div>{isPos ? '+' : ''}{fmt(pnl, a.currency)}</div>
-                        {totalCost > 0 && (
-                          <div className="font-semibold">
-                            {isPos ? '+' : ''}{returnPct.toFixed(2)}%
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+            <div className="min-w-[900px] border-t-[1.5px] border-ink">
+              <div className={`${ASSET_GRID} border-b border-line py-2`}>
+                <Label size="sm" tone="faint">자산명</Label>
+                <Label size="sm" tone="faint">유형</Label>
+                <Label size="sm" tone="faint" className="text-right">수량</Label>
+                <Label size="sm" tone="faint" className="text-right">매입가 / 현재가</Label>
+                <Label size="sm" tone="faint" className="text-right">현재 가치</Label>
+                <Label size="sm" tone="faint" className="text-right">대출</Label>
+                <Label size="sm" tone="faint" className="text-right">순자산</Label>
+                <Label size="sm" tone="faint" className="text-right">손익 / 수익률</Label>
+              </div>
+              {assets.map((a: Asset) => {
+                const pnl        = Number(a.unrealizedPnl)
+                const qty        = Number(a.quantity)
+                const purchase   = Number(a.purchasePrice)
+                const isIlliquid = a.liquidityType === 'ILLIQUID'
+                const curPerUnit = isIlliquid ? Number(a.currentValue) : (qty > 0 ? Number(a.currentValue) / qty : 0)
+                const totalCost  = isIlliquid ? purchase : purchase * qty
+                const returnPct  = totalCost > 0 ? (pnl / totalCost) * 100 : 0
+                const isPos      = pnl >= 0
+                const qtyDisplay = a.areaPyeong != null
+                  ? `${Number(a.areaPyeong).toFixed(0)}평`
+                  : qty.toLocaleString('ko-KR', { maximumFractionDigits: 6 })
+                return (
+                  <div key={a.id} className={`${ASSET_GRID} items-baseline border-b border-line-hair py-2.5 hover:bg-surface-muted`}>
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span className="truncate text-[13px]">{a.name}</span>
+                      {a.symbol && (
+                        <span className="font-mono text-[9.5px] tracking-[0.08em] text-fg-ghost">{a.symbol}</span>
+                      )}
+                      {a.memo && (
+                        <span className="max-w-xs truncate text-[10.5px] text-fg-ghost">{a.memo}</span>
+                      )}
+                    </span>
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span className="text-xs text-fg-3">{TYPE_KO[a.type] ?? a.type}</span>
+                      {a.subType && (
+                        <Badge variant="muted">{SUB_TYPE_KO[a.subType] ?? a.subType}</Badge>
+                      )}
+                    </span>
+                    <Num className="text-right text-xs text-fg-3">
+                      {qtyDisplay}
+                    </Num>
+                    <span className="flex min-w-0 flex-col items-end gap-0.5 text-right">
+                      <Num className="text-[11.5px] text-fg-3">
+                        {purchase > 0 ? fmt(purchase, a.currency) : '—'}
+                      </Num>
+                      <Num className={`text-[11.5px] ${isPos ? 'text-gain' : 'text-loss'}`}>
+                        {curPerUnit > 0 ? fmt(curPerUnit, a.currency) : '—'}
+                      </Num>
+                    </span>
+                    <Num className="text-right text-[12.5px]">
+                      {fmt(Number(a.currentValue), a.currency)}
+                    </Num>
+                    <Num className="text-right text-[11.5px] text-danger">
+                      {a.loanAmount ? `-${fmt(Number(a.loanAmount), a.currency)}` : '—'}
+                    </Num>
+                    <Num className="text-right text-[12.5px] font-medium">
+                      {fmt(Number(a.netEquity), a.currency)}
+                    </Num>
+                    <span className={`flex min-w-0 flex-col items-end gap-0.5 text-right ${isPos ? 'text-gain' : 'text-loss'}`}>
+                      <Num className="text-[11.5px]">{isPos ? '+' : ''}{fmt(pnl, a.currency)}</Num>
+                      {totalCost > 0 && (
+                        <Num className="text-[11.5px] font-semibold">
+                          {isPos ? '+' : ''}{returnPct.toFixed(2)}%
+                        </Num>
+                      )}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )}
-      </div>
 
+      </div>
     </div>
   )
 }
-
-const inputCls = 'w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none transition-colors'

@@ -4,17 +4,24 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/AuthContext'
 import { createReconApi } from '@/lib/recon-api'
+import PageHeader from '@/components/ui/PageHeader'
+import Badge, { type BadgeVariant } from '@/components/ui/Badge'
+import Button from '@/components/ui/Button'
+import Label from '@/components/ui/Label'
+import Num from '@/components/ui/Num'
+import Field, { Input, Select } from '@/components/ui/Field'
+import { EmptyState } from '@/components/ui/states'
 import type { ReconDiffDetail, ReconKd, ReconRun, ReconSummary, RegisterKdPayload } from '@/types/recon'
 
-const RUN_STATUS_STYLE: Record<string, string> = {
-  RUNNING:   'bg-yellow-900/40 text-yellow-400 border-yellow-800',
-  COMPLETED: 'bg-emerald-900/40 text-emerald-400 border-emerald-800',
-  FAILED:    'bg-red-900/40 text-red-400 border-red-800',
+const RUN_STATUS: Record<string, { label: string; variant: BadgeVariant }> = {
+  RUNNING:   { label: '실행 중', variant: 'warn' },
+  COMPLETED: { label: '완료',   variant: 'ok' },
+  FAILED:    { label: '실패',   variant: 'danger' },
 }
-const SUMMARY_STATUS: Record<ReconSummary['status'], { label: string; cls: string }> = {
-  PASSED:     { label: '통과',     cls: 'bg-emerald-900/40 text-emerald-400 border-emerald-800' },
-  DIFF_FOUND: { label: '차이 발견', cls: 'bg-orange-900/40 text-orange-400 border-orange-800' },
-  FAILED:     { label: '실행 실패', cls: 'bg-red-900/40 text-red-400 border-red-800' },
+const SUMMARY_STATUS: Record<ReconSummary['status'], { label: string; variant: BadgeVariant }> = {
+  PASSED:     { label: '통과',      variant: 'ok' },
+  DIFF_FOUND: { label: '차이 발견', variant: 'warn' },
+  FAILED:     { label: '실행 실패', variant: 'danger' },
 }
 const RULE_KO: Record<string, string> = {
   NEGATIVE_QUANTITY: '음수 수량',
@@ -39,49 +46,51 @@ function today() {
 
 // ── 실행·결과 탭 ─────────────────────────────────────────────
 
+const DETAIL_GRID = 'grid grid-cols-[0.9fr_0.7fr_0.7fr_0.8fr_0.8fr_0.7fr_1.2fr] gap-3'
+
 function DiffDetails({ runId, ruleCode, api }: { runId: string; ruleCode?: string; api: ReturnType<typeof createReconApi> }) {
   const { data: details = [], isLoading } = useQuery({
     queryKey: ['recon', 'details', runId, ruleCode ?? 'all'],
     queryFn:  () => api.runs.details(runId, ruleCode),
   })
-  if (isLoading) return <div className="py-3 text-xs text-gray-500">상세 불러오는 중…</div>
-  if (details.length === 0) return <div className="py-3 text-xs text-gray-500">차이 상세가 없습니다</div>
+  if (isLoading) {
+    return <div className="py-3 font-mono text-[10px] tracking-label text-fg-faint">상세 불러오는 중 …</div>
+  }
+  if (details.length === 0) {
+    return <div className="py-3 text-xs text-fg-faint">차이 상세가 없습니다</div>
+  }
   return (
-    <table className="mt-2 w-full text-xs">
-      <thead>
-        <tr className="text-left text-gray-500">
-          <th className="py-1 pr-3 font-medium">유형</th>
-          <th className="py-1 pr-3 font-medium">심볼</th>
-          <th className="py-1 pr-3 font-medium">필드</th>
-          <th className="py-1 pr-3 font-medium text-right">내부</th>
-          <th className="py-1 pr-3 font-medium text-right">외부(브로커)</th>
-          <th className="py-1 pr-3 font-medium text-right">차이</th>
-          <th className="py-1 font-medium">비고</th>
-        </tr>
-      </thead>
-      <tbody>
+    <div className="mb-2 mt-1 overflow-x-auto bg-surface-muted px-3 py-2">
+      <div className="min-w-[720px]">
+        <div className={`${DETAIL_GRID} border-b border-line py-1.5`}>
+          <Label size="sm" tone="faint">유형</Label>
+          <Label size="sm" tone="faint">심볼</Label>
+          <Label size="sm" tone="faint">필드</Label>
+          <Label size="sm" tone="faint" className="text-right">Allfolio 집계</Label>
+          <Label size="sm" tone="faint" className="text-right">기관 원장</Label>
+          <Label size="sm" tone="faint" className="text-right">차이</Label>
+          <Label size="sm" tone="faint">비고</Label>
+        </div>
         {details.map(d => (
-          <tr key={d.id} className="border-t border-gray-800">
-            <td className="py-1.5 pr-3">{DIFF_TYPE_KO[d.diffType]}</td>
-            <td className="py-1.5 pr-3">{d.symbol ?? '-'}</td>
-            <td className="py-1.5 pr-3 text-gray-400">{d.fieldName ?? '-'}</td>
-            <td className="py-1.5 pr-3 text-right">{d.internalValue ?? '-'}</td>
-            <td className="py-1.5 pr-3 text-right">{d.externalValue ?? '-'}</td>
-            <td className="py-1.5 pr-3 text-right text-orange-400">{d.diffValue ?? '-'}</td>
-            <td className="py-1.5">
-              {d.kdId && (
-                <span className="rounded-full border border-blue-800 bg-blue-900/40 px-2 py-0.5 text-blue-400">
-                  알려진 차이
-                </span>
-              )}
-              {d.extras && <span className="ml-2 text-gray-500">{d.extras}</span>}
-            </td>
-          </tr>
+          <div key={d.id} className={`${DETAIL_GRID} items-baseline border-b border-line-hair py-1.5 text-xs`}>
+            <span>{DIFF_TYPE_KO[d.diffType]}</span>
+            <Num className="text-[11px]">{d.symbol ?? '-'}</Num>
+            <span className="text-fg-3">{d.fieldName ?? '-'}</span>
+            <Num className="text-right text-[11.5px]">{d.internalValue ?? '-'}</Num>
+            <Num className="text-right text-[11.5px] text-fg-3">{d.externalValue ?? '-'}</Num>
+            <Num className="text-right text-[11.5px] text-warn">{d.diffValue ?? '-'}</Num>
+            <span className="flex items-baseline gap-2">
+              {d.kdId && <Badge variant="ink">알려진 차이</Badge>}
+              {d.extras && <span className="text-fg-faint">{d.extras}</span>}
+            </span>
+          </div>
         ))}
-      </tbody>
-    </table>
+      </div>
+    </div>
   )
 }
+
+const RULE_GRID = 'grid grid-cols-[1.3fr_0.8fr_0.6fr_0.6fr_0.8fr_1.2fr] gap-3'
 
 function RunResult({ runId, api }: { runId: string; api: ReturnType<typeof createReconApi> }) {
   const [expandedRule, setExpandedRule] = useState<string | null>(null)
@@ -89,36 +98,36 @@ function RunResult({ runId, api }: { runId: string; api: ReturnType<typeof creat
     queryKey: ['recon', 'run', runId],
     queryFn:  () => api.runs.get(runId),
   })
-  if (isLoading) return <div className="py-4 text-sm text-gray-500">결과 불러오는 중…</div>
+  if (isLoading) {
+    return <div className="py-4 font-mono text-[10px] tracking-label text-fg-faint">결과 불러오는 중 …</div>
+  }
   if (!data) return null
   const { run, summaries } = data
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
-        <span>기준일: {run.runDate}</span>
-        <span>내부 시점: {run.internalAsOf ?? '-'}</span>
-        <span>외부 시점(마지막 동기화): {fmt(run.externalAsOf)}</span>
-        <span>실행: {fmt(run.startedAt)}</span>
+    <div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 pb-3 font-mono text-[10px] tracking-label text-fg-muted">
+        <span>기준일 {run.runDate}</span>
+        <span>내부 시점 {run.internalAsOf ?? '-'}</span>
+        <span>외부 시점(마지막 동기화) {fmt(run.externalAsOf)}</span>
+        <span>실행 {fmt(run.startedAt)}</span>
       </div>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-xs text-gray-500">
-            <th className="py-2 pr-4 font-medium">룰</th>
-            <th className="py-2 pr-4 font-medium">결과</th>
-            <th className="py-2 pr-4 font-medium text-right">검사</th>
-            <th className="py-2 pr-4 font-medium text-right">차이</th>
-            <th className="py-2 pr-4 font-medium text-right">알려진 차이</th>
-            <th className="py-2 font-medium">오류</th>
-          </tr>
-        </thead>
-        <tbody>
+      <div className="overflow-x-auto">
+        <div className="min-w-[680px] border-t-[1.5px] border-ink">
+          <div className={`${RULE_GRID} border-b border-line py-2`}>
+            <Label size="sm" tone="faint">검증 룰</Label>
+            <Label size="sm" tone="faint">판정</Label>
+            <Label size="sm" tone="faint" className="text-right">검사</Label>
+            <Label size="sm" tone="faint" className="text-right">차이</Label>
+            <Label size="sm" tone="faint" className="text-right">알려진 차이</Label>
+            <Label size="sm" tone="faint">오류</Label>
+          </div>
           {summaries.map(s => (
             <RuleRow key={s.id} summary={s} runId={runId} api={api}
               expanded={expandedRule === s.ruleCode}
               onToggle={() => setExpandedRule(prev => (prev === s.ruleCode ? null : s.ruleCode))} />
           ))}
-        </tbody>
-      </table>
+        </div>
+      </div>
     </div>
   )
 }
@@ -133,27 +142,25 @@ function RuleRow({ summary: s, runId, api, expanded, onToggle }: {
   const st = SUMMARY_STATUS[s.status]
   return (
     <>
-      <tr
+      <div
         onClick={() => { if (s.diffCnt > 0) onToggle() }}
-        className={`border-t border-gray-800 ${s.diffCnt > 0 ? 'cursor-pointer hover:bg-gray-800/50' : ''}`}
+        className={`${RULE_GRID} items-baseline border-b border-line-hair py-2.5 ${
+          s.diffCnt > 0 ? 'cursor-pointer hover:bg-surface-muted' : ''
+        }`}
       >
-        <td className="py-2 pr-4">
+        <span className="text-[13px]">
           {RULE_KO[s.ruleCode] ?? s.ruleCode}
-          {s.diffCnt > 0 && <span className="ml-1 text-xs text-gray-500">{expanded ? '▾' : '▸'}</span>}
-        </td>
-        <td className="py-2 pr-4">
-          <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${st.cls}`}>{st.label}</span>
-        </td>
-        <td className="py-2 pr-4 text-right text-gray-400">{s.checkedCnt}</td>
-        <td className={`py-2 pr-4 text-right ${s.diffCnt > 0 ? 'text-orange-400 font-medium' : 'text-gray-400'}`}>{s.diffCnt}</td>
-        <td className="py-2 pr-4 text-right text-blue-400">{s.kdAbsorbedCnt}</td>
-        <td className="py-2 text-xs text-red-400/80 max-w-xs truncate">{s.errorMsg ?? '-'}</td>
-      </tr>
-      {expanded && (
-        <tr className="border-t border-gray-800/50">
-          <td colSpan={6}><DiffDetails runId={runId} ruleCode={s.ruleCode} api={api} /></td>
-        </tr>
-      )}
+          {s.diffCnt > 0 && (
+            <span className="ml-1.5 font-mono text-[10px] text-fg-faint">{expanded ? '−' : '+'}</span>
+          )}
+        </span>
+        <Badge variant={st.variant}>{st.label}</Badge>
+        <Num className="text-right text-[12.5px] text-fg-3">{s.checkedCnt}</Num>
+        <Num className={`text-right text-[12.5px] ${s.diffCnt > 0 ? 'text-warn' : 'text-fg-3'}`}>{s.diffCnt}</Num>
+        <Num className="text-right text-[12.5px] text-fg-muted">{s.kdAbsorbedCnt}</Num>
+        <span className="max-w-xs truncate text-xs text-danger">{s.errorMsg ?? '-'}</span>
+      </div>
+      {expanded && <DiffDetails runId={runId} ruleCode={s.ruleCode} api={api} />}
     </>
   )
 }
@@ -185,50 +192,54 @@ function RunsTab({ api }: { api: ReturnType<typeof createReconApi> }) {
   const selected = selectedRunId ?? runs[0]?.id ?? null
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-400">
+    <div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="m-0 text-[12.5px] text-fg-3">
           브로커 동기화 데이터와 내부 계산 포지션을 비교하고 데이터 품질 룰을 검사합니다
         </p>
-        <button
-          onClick={() => executeMutation.mutate()}
-          disabled={executeMutation.isPending}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-500 disabled:opacity-50 transition-colors"
-        >
-          {executeMutation.isPending ? '실행 중…' : '▶ 대사 실행'}
-        </button>
+        <Button variant="primary" onClick={() => executeMutation.mutate()} disabled={executeMutation.isPending}>
+          {executeMutation.isPending ? '실행 중…' : '대사 실행'}
+        </Button>
       </div>
 
       {error && (
-        <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">⚠ {error}</div>
+        <div role="alert" className="mb-4 flex items-center gap-3 border border-warn-line bg-warn-bg px-4 py-2.5">
+          <Label size="sm" className="text-warn">주의</Label>
+          <span className="text-[12.5px] text-fg-2">{error}</span>
+        </div>
       )}
 
       {runs.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-700 p-12 text-center text-gray-400">
-          실행 이력이 없습니다 — 대사 실행 버튼으로 시작하세요
-        </div>
+        <EmptyState
+          title="실행 이력이 없습니다"
+          description="대사 실행 버튼으로 첫 검증을 시작하세요"
+        />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
-          <div className="space-y-2">
-            {runs.map((r: ReconRun) => (
-              <button
-                key={r.id}
-                onClick={() => setSelectedRunId(r.id)}
-                className={`w-full rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
-                  selected === r.id ? 'border-blue-600 bg-blue-950/30' : 'border-gray-700 bg-gray-900 hover:border-gray-500'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{r.runDate}</span>
-                  <span className={`rounded-full border px-1.5 py-0.5 ${RUN_STATUS_STYLE[r.status]}`}>{r.status}</span>
-                </div>
-                <div className="mt-1 text-gray-500">{fmt(r.startedAt)} · {r.runType}</div>
-              </button>
-            ))}
+        <div className="grid gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
+          <div className="min-w-0 border-t-[1.5px] border-ink">
+            {runs.map((r: ReconRun) => {
+              const st = RUN_STATUS[r.status]
+              return (
+                <button
+                  key={r.id}
+                  onClick={() => setSelectedRunId(r.id)}
+                  aria-pressed={selected === r.id}
+                  className={`block w-full border-b border-line-hair px-2.5 py-2.5 text-left transition-colors ${
+                    selected === r.id ? 'bg-surface-muted' : 'hover:bg-surface-muted'
+                  }`}
+                >
+                  <span className="flex items-baseline justify-between">
+                    <Num className={`text-[12px] ${selected === r.id ? 'font-medium' : 'text-fg-2'}`}>{r.runDate}</Num>
+                    {st && <Badge variant={st.variant}>{st.label}</Badge>}
+                  </span>
+                  <span className="mt-1 block font-mono text-[9.5px] tracking-[0.04em] text-fg-faint">
+                    {fmt(r.startedAt)} · {r.runType}
+                  </span>
+                </button>
+              )
+            })}
           </div>
-          <div className="rounded-xl border border-gray-700 bg-gray-900 p-4">
-            {selected ? <RunResult runId={selected} api={api} /> : null}
-          </div>
+          <div className="min-w-0">{selected ? <RunResult runId={selected} api={api} /> : null}</div>
         </div>
       )}
     </div>
@@ -241,6 +252,8 @@ const EMPTY_KD_FORM = {
   kdCode: '', targetSymbol: '', targetField: 'quantity',
   valueType: 'ABS' as 'ABS' | 'RATIO', allowValue: '', reason: '', apldStrtDt: today(),
 }
+
+const KD_GRID = 'grid grid-cols-[1fr_1.1fr_0.7fr_1.1fr_1.4fr_0.6fr_0.7fr] gap-3'
 
 function KdTab({ api }: { api: ReturnType<typeof createReconApi> }) {
   const qc = useQueryClient()
@@ -279,96 +292,100 @@ function KdTab({ api }: { api: ReturnType<typeof createReconApi> }) {
     })
   }
 
-  const input = 'rounded-lg border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm'
-
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-gray-400">
+    <div>
+      <p className="m-0 mb-4 max-w-[88ch] text-[12.5px] leading-relaxed text-fg-3">
         허용 가능한 차이를 등록하면 대사 결과에서 &ldquo;알려진 차이&rdquo;로 구분 표시됩니다 (숨기지 않음).
         같은 코드로 재등록하면 기존 항목은 마감되고 새 버전이 열립니다.
       </p>
 
-      <form onSubmit={submit} className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-700 bg-gray-900 p-4">
-        <label className="text-xs text-gray-500">코드
-          <input required value={form.kdCode} onChange={e => setForm({ ...form, kdCode: e.target.value })}
-            placeholder="KD-005930-QTY" className={`mt-1 block ${input}`} />
-        </label>
-        <label className="text-xs text-gray-500">심볼 (비우면 전체)
-          <input value={form.targetSymbol} onChange={e => setForm({ ...form, targetSymbol: e.target.value })}
-            placeholder="005930" className={`mt-1 block ${input}`} />
-        </label>
-        <label className="text-xs text-gray-500">필드
-          <input value={form.targetField} onChange={e => setForm({ ...form, targetField: e.target.value })}
-            className={`mt-1 block w-28 ${input}`} />
-        </label>
-        <label className="text-xs text-gray-500">유형
-          <select value={form.valueType} onChange={e => setForm({ ...form, valueType: e.target.value as 'ABS' | 'RATIO' })}
-            className={`mt-1 block ${input}`}>
+      <form onSubmit={submit} className="mb-4 grid grid-cols-1 items-end gap-3 border border-ink bg-surface-muted p-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Field id="kd-code" label="코드">
+          <Input required value={form.kdCode} onChange={e => setForm({ ...form, kdCode: e.target.value })}
+            placeholder="KD-005930-QTY" />
+        </Field>
+        <Field id="kd-symbol" label="심볼 (비우면 전체)">
+          <Input value={form.targetSymbol} onChange={e => setForm({ ...form, targetSymbol: e.target.value })}
+            placeholder="005930" />
+        </Field>
+        <Field id="kd-field" label="필드">
+          <Input value={form.targetField} onChange={e => setForm({ ...form, targetField: e.target.value })} />
+        </Field>
+        <Field id="kd-type" label="유형">
+          <Select value={form.valueType} onChange={e => setForm({ ...form, valueType: e.target.value as 'ABS' | 'RATIO' })}>
             <option value="ABS">절대값</option>
             <option value="RATIO">비율</option>
-          </select>
-        </label>
-        <label className="text-xs text-gray-500">허용값
-          <input required type="number" step="any" min="0" value={form.allowValue}
-            onChange={e => setForm({ ...form, allowValue: e.target.value })} className={`mt-1 block w-24 ${input}`} />
-        </label>
-        <label className="text-xs text-gray-500">적용 시작일
-          <input required type="date" value={form.apldStrtDt}
-            onChange={e => setForm({ ...form, apldStrtDt: e.target.value })} className={`mt-1 block ${input}`} />
-        </label>
-        <label className="flex-1 min-w-[200px] text-xs text-gray-500">사유
-          <input required value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })}
-            placeholder="예: 브로커 소수점 단수차" className={`mt-1 block w-full ${input}`} />
-        </label>
-        <button type="submit" disabled={registerMutation.isPending}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-500 disabled:opacity-50 transition-colors">
-          등록
-        </button>
+          </Select>
+        </Field>
+        <Field id="kd-allow" label="허용값">
+          <Input required type="number" step="any" min="0" value={form.allowValue}
+            onChange={e => setForm({ ...form, allowValue: e.target.value })} />
+        </Field>
+        <Field id="kd-start" label="적용 시작일">
+          <Input required type="date" value={form.apldStrtDt}
+            onChange={e => setForm({ ...form, apldStrtDt: e.target.value })} />
+        </Field>
+        <Field id="kd-reason" label="사유">
+          <Input required value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })}
+            placeholder="예: 브로커 소수점 단수차" />
+        </Field>
+        <div>
+          <Button type="submit" variant="primary" disabled={registerMutation.isPending} className="w-full">
+            등록
+          </Button>
+        </div>
       </form>
 
-      {error && <div className="rounded-xl border border-red-800 bg-red-900/20 px-4 py-3 text-sm text-red-400">⚠ {error}</div>}
+      {error && (
+        <div role="alert" className="mb-4 flex items-center gap-3 border border-warn-line bg-warn-bg px-4 py-2.5">
+          <Label size="sm" className="text-warn">주의</Label>
+          <span className="text-[12.5px] text-fg-2">{error}</span>
+        </div>
+      )}
 
       {kds.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-700 p-10 text-center text-gray-400">등록된 KD가 없습니다</div>
+        <EmptyState title="등록된 KD가 없습니다" description="위 폼에서 허용 가능한 차이를 등록하세요" />
       ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-gray-500">
-              <th className="py-2 pr-4 font-medium">코드</th>
-              <th className="py-2 pr-4 font-medium">대상</th>
-              <th className="py-2 pr-4 font-medium">허용</th>
-              <th className="py-2 pr-4 font-medium">기간</th>
-              <th className="py-2 pr-4 font-medium">사유</th>
-              <th className="py-2 pr-4 font-medium">상태</th>
-              <th className="py-2 font-medium" />
-            </tr>
-          </thead>
-          <tbody>
+        <div className="overflow-x-auto">
+          <div className="min-w-[820px] border-t-[1.5px] border-ink">
+            <div className={`${KD_GRID} border-b border-line py-2`}>
+              <Label size="sm" tone="faint">코드</Label>
+              <Label size="sm" tone="faint">대상</Label>
+              <Label size="sm" tone="faint" className="text-right">허용</Label>
+              <Label size="sm" tone="faint">기간</Label>
+              <Label size="sm" tone="faint">사유</Label>
+              <Label size="sm" tone="faint">상태</Label>
+              <span />
+            </div>
             {kds.map((kd: ReconKd) => {
               const open = kd.apldEndDt.startsWith('9999')
               return (
-                <tr key={kd.id} className={`border-t border-gray-800 ${!kd.useYn ? 'opacity-50' : ''}`}>
-                  <td className="py-2 pr-4 font-medium">{kd.kdCode}</td>
-                  <td className="py-2 pr-4 text-gray-400">{kd.targetSymbol ?? '전체'} · {kd.targetField ?? '전체'}</td>
-                  <td className="py-2 pr-4">{kd.valueType === 'ABS' ? '±' : '비율 '}{kd.allowValue}</td>
-                  <td className="py-2 pr-4 text-xs text-gray-400">{kd.apldStrtDt} ~ {open ? '현행' : kd.apldEndDt}</td>
-                  <td className="py-2 pr-4 text-xs text-gray-400 max-w-xs truncate">{kd.reason}</td>
-                  <td className="py-2 pr-4 text-xs">{kd.useYn ? (open ? <span className="text-emerald-400">활성</span> : <span className="text-gray-500">마감</span>) : <span className="text-gray-500">비활성</span>}</td>
-                  <td className="py-2 text-right">
+                <div key={kd.id} className={`${KD_GRID} items-baseline border-b border-line-hair py-2.5 ${!kd.useYn ? 'opacity-50' : ''}`}>
+                  <Num className="text-[12px] font-medium">{kd.kdCode}</Num>
+                  <span className="text-xs text-fg-3">{kd.targetSymbol ?? '전체'} · {kd.targetField ?? '전체'}</span>
+                  <Num className="text-right text-[12px]">{kd.valueType === 'ABS' ? '±' : '비율 '}{kd.allowValue}</Num>
+                  <Num className="text-[11px] text-fg-3">{kd.apldStrtDt} ~ {open ? '현행' : kd.apldEndDt}</Num>
+                  <span className="max-w-xs truncate text-xs text-fg-3">{kd.reason}</span>
+                  <span>
+                    {kd.useYn
+                      ? (open ? <Badge variant="ok">활성</Badge> : <Badge variant="muted">마감</Badge>)
+                      : <Badge variant="muted">비활성</Badge>}
+                  </span>
+                  <span className="text-right">
                     {kd.useYn && (
                       <button
                         onClick={() => { if (confirm(`"${kd.kdCode}" KD를 비활성화하시겠습니까?`)) deactivateMutation.mutate(kd.id) }}
-                        className="rounded-lg border border-gray-700 px-2 py-1 text-xs text-gray-500 hover:border-red-700 hover:text-red-400 transition-colors"
+                        className="border border-line px-2 py-1 text-xs text-fg-faint transition-colors hover:border-danger hover:text-danger"
                       >
                         비활성화
                       </button>
                     )}
-                  </td>
-                </tr>
+                  </span>
+                </div>
               )
             })}
-          </tbody>
-        </table>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -384,19 +401,21 @@ export default function ReconPage() {
   if (!api) return null
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">대사·검증</h1>
-        <p className="mt-1 text-sm text-gray-400">브로커 데이터와 내부 기록의 정합성을 검사합니다</p>
-      </div>
+    <div className="border border-line-card bg-surface">
+      <PageHeader
+        className="px-5 pt-5 sm:px-7"
+        title="대사 · 검증"
+        meta="기관 원장 대비 내부 기록 정합성 검사"
+      />
 
-      <div className="flex gap-1 border-b border-gray-800">
+      <div className="flex gap-1 border-b border-line px-5 sm:px-7">
         {([['runs', '실행·결과'], ['kds', '알려진 차이 (KD)']] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`px-4 py-2 text-sm transition-colors ${
-              tab === key ? 'border-b-2 border-blue-500 font-medium text-white' : 'text-gray-500 hover:text-gray-300'
+            aria-pressed={tab === key}
+            className={`-mb-px border-b-2 px-4 py-2.5 text-[13px] transition-colors ${
+              tab === key ? 'border-ink font-medium text-ink' : 'border-transparent text-fg-faint hover:text-ink'
             }`}
           >
             {label}
@@ -404,7 +423,9 @@ export default function ReconPage() {
         ))}
       </div>
 
-      {tab === 'runs' ? <RunsTab api={api} /> : <KdTab api={api} />}
+      <div className="px-5 py-5 pb-10 sm:px-7">
+        {tab === 'runs' ? <RunsTab api={api} /> : <KdTab api={api} />}
+      </div>
     </div>
   )
 }

@@ -5,13 +5,17 @@ import Link from 'next/link'
 import { useUnifiedApi } from '@/lib/useApi'
 import { useLivePrices } from '@/lib/useLivePrices'
 import NetWorthBar from '@/components/dashboard/NetWorthBar'
-import MetricCard, { EmptyMetricCard } from '@/components/dashboard/MetricCard'
+import MetricTable from '@/components/dashboard/MetricTable'
 import PositionTable from '@/components/dashboard/PositionTable'
 import AllocationBar from '@/components/dashboard/AllocationBar'
-import type { DashboardResponse } from '@/types/dashboard'
-
-const MDD_DESC = (v: number) =>
-  `최근 1년 중 가장 크게 떨어졌을 때 ${v.toFixed(1)}%였어요. 낮을수록 손실 관리가 잘 된 포트폴리오예요.`
+import PageHeader from '@/components/ui/PageHeader'
+import SectionHeader from '@/components/ui/SectionHeader'
+import Badge from '@/components/ui/Badge'
+import Num from '@/components/ui/Num'
+import DataTable, { type Column } from '@/components/ui/DataTable'
+import { EmptyState, ErrorState } from '@/components/ui/states'
+import { won } from '@/lib/format'
+import type { DashboardResponse, RealAsset } from '@/types/dashboard'
 
 // QA: 가장 최근 계좌 동기화 시각을 'N일 전'으로 표기 (실시간 가격배지와 구분)
 function lastSyncLabel(iso: string | null): { text: string; stale: boolean } | null {
@@ -26,7 +30,7 @@ export default function UnifiedDashboard() {
   const api = useUnifiedApi()
   const { connected: liveConnected } = useLivePrices()
 
-  const { data, isLoading, isError, error } = useQuery<DashboardResponse>({
+  const { data, isLoading, isError, error, refetch } = useQuery<DashboardResponse>({
     queryKey: ['dashboard'],
     queryFn:  () => api!.dashboard.get(),
     enabled:  !!api,
@@ -48,42 +52,59 @@ export default function UnifiedDashboard() {
   )
 
   if (isLoading || !api) return <PageSkeleton />
-  if (isError)   return <ErrorBox message={(error as Error).message} />
-  if (!data)     return null
+  if (isError) {
+    return (
+      <div className="border border-line-card bg-surface px-7">
+        <ErrorState message={(error as Error).message} onRetry={() => refetch()} />
+      </div>
+    )
+  }
+  if (!data) return null
 
   const { netWorth, portfolio, realAssets } = data
   const hasMetrics = Object.values(portfolio.metrics).some(Boolean)
+  const accountCount = (syncStatus ?? []).length
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">통합 자산 대시보드</h1>
-          <p className="mt-1 text-sm text-gray-400">모든 자산을 한눈에</p>
-        </div>
-        <div className="flex items-center gap-3">
-          {/* 실시간 = 시세 스트림 연결 상태 (계좌 동기화 시각과 별개) */}
-          <span className="flex items-center gap-1.5 text-xs text-gray-500" title="실시간 시세 스트림 연결 상태">
-            <span className={`h-2 w-2 rounded-full ${liveConnected ? 'bg-emerald-400 animate-pulse' : 'bg-gray-600'}`} />
-            {liveConnected ? '시세 실시간' : '시세 연결 중'}
-          </span>
-          {lastSync && (
-            <span className={`text-xs ${lastSync.stale ? 'text-amber-500' : 'text-gray-500'}`}
-              title="계좌 마지막 동기화 시각">
-              마지막 동기화: {lastSync.text}
+    <div className="border border-line-card bg-surface">
+      <PageHeader
+        className="px-5 pt-5 sm:px-7"
+        title="통합 자산 · 원장 요약"
+        meta={
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {accountCount > 0 && <span>계좌 {accountCount}</span>}
+            <span>포지션 {portfolio.positions.length}</span>
+            {lastSync && (
+              <span className={lastSync.stale ? 'text-warn' : undefined} title="계좌 마지막 동기화 시각">
+                최종 동기화 {lastSync.text}
+              </span>
+            )}
+            {/* 실시간 = 시세 스트림 연결 상태 (계좌 동기화 시각과 별개) */}
+            <span className="flex items-center gap-1.5" title="실시간 시세 스트림 연결 상태">
+              <span className={`block h-[5px] w-[5px] ${liveConnected ? 'bg-ok' : 'bg-fg-ghost'}`} />
+              {liveConnected ? '시세 연결됨' : '시세 연결 중'}
             </span>
-          )}
-          <Link
-            href="/unified/accounts"
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-500 transition-colors"
-          >
-            계좌 관리
-          </Link>
-        </div>
-      </div>
+          </span>
+        }
+        actions={
+          <>
+            <Link
+              href="/unified/recon"
+              className="border border-line bg-surface px-3.5 py-2 text-[12.5px] text-fg-2 transition-colors hover:border-ink hover:text-ink"
+            >
+              대사 내역
+            </Link>
+            <Link
+              href="/unified/accounts"
+              className="border border-ink bg-ink px-3.5 py-2 text-[12.5px] text-white transition-colors hover:bg-fg-2"
+            >
+              계좌 관리
+            </Link>
+          </>
+        }
+      />
 
-      {/* 순자산 바 */}
+      {/* 순자산 요약 밴드 */}
       <NetWorthBar
         total={netWorth.total}
         liquid={netWorth.liquid}
@@ -93,167 +114,101 @@ export default function UnifiedDashboard() {
         changeRate30d={netWorth.changeRate30d}
       />
 
-      {/* 섹션 1: 투자 포트폴리오 */}
-      <section>
-        <div className="mb-4 flex items-center gap-2">
-          <span className="h-4 w-1 rounded-full bg-blue-500" />
-          <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">
-            투자 포트폴리오
-          </h2>
-          <span className="text-xs text-gray-600">
-            ₩{portfolio.totalValue.toLocaleString('ko-KR')}
-          </span>
-        </div>
+      {/* 수익률·리스크 + 자산군 배분 */}
+      <div className="grid grid-cols-1 border-b border-line lg:grid-cols-2">
+        <section className="border-b border-line px-5 py-5 sm:px-7 lg:border-b-0 lg:border-r">
+          <SectionHeader label="수익률 · 리스크 지표" note="코스피 대비" />
+          {hasMetrics ? (
+            <MetricTable metrics={portfolio.metrics} />
+          ) : (
+            <EmptyState
+              title="수익률 지표 없음"
+              description="자산을 sync하면 수익률 지표가 표시됩니다"
+            />
+          )}
+        </section>
 
-        {/* 지표 카드 */}
-        {hasMetrics ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
-            {/* null = 커버리지 미달 — 카드를 숨기지 않고 '데이터 부족'으로 명시 (QA 후속 #3) */}
-            {portfolio.metrics.returnYtd ? (
-              <MetricCard
-                label="연간 수익률 (YTD)"
-                metric={portfolio.metrics.returnYtd}
-                benchmarkLabel="코스피 대비"
-              />
-            ) : (
-              <EmptyMetricCard label="연간 수익률 (YTD)" note="연초부터의 스냅샷이 쌓이면 표시됩니다" />
-            )}
-            {portfolio.metrics.return1m ? (
-              <MetricCard
-                label="1개월 수익률"
-                metric={portfolio.metrics.return1m}
-              />
-            ) : (
-              <EmptyMetricCard label="1개월 수익률" note="30일 이상 스냅샷이 쌓이면 표시됩니다" />
-            )}
-            {portfolio.metrics.return3m ? (
-              <MetricCard
-                label="3개월 수익률"
-                metric={portfolio.metrics.return3m}
-              />
-            ) : (
-              <EmptyMetricCard label="3개월 수익률" note="90일 이상 스냅샷이 쌓이면 표시됩니다" />
-            )}
-            {portfolio.metrics.mdd && (
-              <MetricCard
-                label="최대 낙폭 (MDD)"
-                metric={portfolio.metrics.mdd}
-                description={MDD_DESC(portfolio.metrics.mdd.value)}
-              />
-            )}
-          </div>
-        ) : (
-          <div className="mb-6 rounded-xl border border-gray-800 bg-gray-900/50 py-8 text-center text-sm text-gray-500">
-            자산을 sync하면 수익률 지표가 표시됩니다
-          </div>
-        )}
-
-        {/* 리스크 지표 카드 (Phase 3) */}
-        {(portfolio.metrics.sharpe || portfolio.metrics.var95 || portfolio.metrics.volatility) && (
-          <div className="mt-4 mb-6">
-            <div className="mb-3 flex items-center gap-2">
-              <span className="h-3 w-1 rounded-full bg-red-500" />
-              <p className="text-xs font-medium uppercase tracking-wider text-gray-500">리스크 분석</p>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-3">
-              {portfolio.metrics.sharpe && (
-                <MetricCard
-                  label="샤프 지수 (Sharpe)"
-                  metric={portfolio.metrics.sharpe}
-                  formatValue={(v) => v.toFixed(2)}
-                  description="1.0 이상이면 리스크 대비 수익이 양호해요. (무위험수익률 3.5% 기준)"
-                />
-              )}
-              {portfolio.metrics.var95 && (
-                <MetricCard
-                  label="VaR 95%"
-                  metric={portfolio.metrics.var95}
-                  formatValue={(v) => `₩${Math.abs(v).toLocaleString('ko-KR')}`}
-                  description="최악의 날 (5% 확률) 예상 최대 손실액이에요."
-                />
-              )}
-              {portfolio.metrics.volatility && (
-                <MetricCard
-                  label="연간 변동성"
-                  metric={portfolio.metrics.volatility}
-                  description="포트폴리오의 가격 변동 폭이에요. 낮을수록 안정적이에요."
-                />
-              )}
-            </div>
-          </div>
-        )}
-
-        {portfolio.allocation.length > 0 && (
-          <div className="mb-6">
+        <section className="px-5 py-5 sm:px-7">
+          <SectionHeader label="자산군 배분 · 집중도" />
+          {portfolio.allocation.length > 0 ? (
             <AllocationBar allocation={portfolio.allocation} />
-          </div>
-        )}
-        <PositionTable positions={portfolio.positions} />
-      </section>
+          ) : (
+            <EmptyState title="배분 데이터 없음" description="자산을 sync하면 자산군 배분이 표시됩니다" />
+          )}
+        </section>
+      </div>
 
-      {/* 섹션 2: 실물·고정 자산 */}
+      {/* 실물·고정 자산 */}
       {realAssets.length > 0 && (
-        <section>
-          <div className="mb-4 flex items-center gap-2">
-            <span className="h-4 w-1 rounded-full bg-yellow-500" />
-            <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">
-              실물·고정 자산
-            </h2>
-          </div>
-          <div className="space-y-3">
-            {realAssets.map((a) => {
-              const days = a.daysUntilMaturity
-              const urgent = days != null && days <= 7
-              const warn   = days != null && days <= 30 && !urgent
-              return (
-                <div
-                  key={a.id}
-                  className={`rounded-xl border bg-gray-900 px-5 py-4 flex items-center justify-between
-                    ${urgent ? 'border-red-700' : warn ? 'border-yellow-700' : 'border-gray-700'}`}
-                >
-                  <div>
-                    <p className="font-medium text-gray-100">{a.name}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">{a.type}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-yellow-400 tabular-nums">
-                      ₩{a.value.toLocaleString('ko-KR')}
-                    </p>
-                    {days != null && (
-                      <p className={`text-xs mt-0.5 ${urgent ? 'text-red-400 font-semibold' : warn ? 'text-yellow-400' : 'text-gray-500'}`}>
-                        만기 D-{days}
-                        {urgent && <span className="ml-1 rounded bg-red-900 px-1 py-0.5 text-xs">만기 임박</span>}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+        <section className="border-b border-line px-5 py-5 sm:px-7">
+          <SectionHeader label="실물·고정 자산" />
+          <RealAssetTable assets={realAssets} />
         </section>
       )}
+
+      {/* 포지션 명세 */}
+      <section className="px-5 py-5 pb-10 sm:px-7">
+        <PositionTable positions={portfolio.positions} />
+      </section>
     </div>
   )
+}
+
+function RealAssetTable({ assets }: { assets: RealAsset[] }) {
+  const columns: Column<RealAsset>[] = [
+    {
+      key: 'name',
+      header: '자산',
+      width: '1.8fr',
+      cell: (a) => <span className="text-[13.5px]">{a.name}</span>,
+    },
+    {
+      key: 'type',
+      header: '구분',
+      width: '1fr',
+      cell: (a) => <span className="text-[12.5px] text-fg-3">{a.type}</span>,
+    },
+    {
+      key: 'value',
+      header: '평가액',
+      width: '1.2fr',
+      align: 'right',
+      cell: (a) => <Num className="text-[12.5px]">{won(a.value)}</Num>,
+    },
+    {
+      key: 'due',
+      header: '만기',
+      width: '1fr',
+      align: 'right',
+      cell: (a) => {
+        const days = a.daysUntilMaturity
+        if (days == null) return <span className="text-xs text-fg-faint">—</span>
+        const urgent = days <= 7
+        const warn = days <= 30 && !urgent
+        return (
+          <span className="inline-flex items-baseline gap-2">
+            {urgent && <Badge variant="danger">만기 임박</Badge>}
+            <Num className={`text-xs ${urgent ? 'text-danger' : warn ? 'text-warn' : 'text-fg-3'}`}>
+              D-{days}
+            </Num>
+          </span>
+        )
+      },
+    },
+  ]
+  return <DataTable columns={columns} rows={assets} rowKey={(a) => a.id} minWidth={520} />
 }
 
 function PageSkeleton() {
   return (
-    <div className="space-y-8">
-      <div className="h-8 w-48 animate-pulse rounded bg-gray-800" />
-      <div className="h-28 animate-pulse rounded-xl bg-gray-800" />
-      <div className="grid gap-4 sm:grid-cols-4">
-        {[1,2,3,4].map(i => <div key={i} className="h-36 animate-pulse rounded-xl bg-gray-800" />)}
+    <div className="border border-line-card bg-surface px-5 py-5 sm:px-7" role="status" aria-label="불러오는 중">
+      <div className="h-7 w-56 animate-pulse bg-line-soft" />
+      <div className="mt-6 h-28 animate-pulse bg-line-hair" />
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <div className="h-44 animate-pulse bg-line-hair" />
+        <div className="h-44 animate-pulse bg-line-hair" />
       </div>
-      <div className="h-48 animate-pulse rounded-xl bg-gray-800" />
-    </div>
-  )
-}
-
-function ErrorBox({ message }: { message: string }) {
-  return (
-    <div className="rounded-xl border border-red-800 bg-red-950 p-6">
-      <p className="text-sm font-medium text-red-400">오류 발생</p>
-      <p className="mt-1 text-sm text-red-500">{message}</p>
+      <div className="mt-6 h-56 animate-pulse bg-line-hair" />
     </div>
   )
 }
