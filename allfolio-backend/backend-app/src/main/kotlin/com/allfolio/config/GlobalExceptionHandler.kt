@@ -3,6 +3,7 @@ package com.allfolio.config
 import com.allfolio.common.crypto.SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE
 import com.allfolio.common.crypto.SensitiveDataReconnectionRequiredException
 import com.allfolio.common.crypto.requiresSensitiveDataReconnection
+import com.fasterxml.jackson.databind.exc.MismatchedInputException
 import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
@@ -49,9 +50,16 @@ class GlobalExceptionHandler {
         MissingRequestHeaderException::class,
         DateTimeParseException::class,
     )
-    fun handleUnparseable(e: Exception): ResponseEntity<Map<String, String>> =
-        ResponseEntity.status(HttpStatus.BAD_REQUEST)
-            .body(mapOf("error" to "요청 형식이 올바르지 않습니다. 입력값을 확인해주세요."))
+    fun handleUnparseable(e: Exception): ResponseEntity<Map<String, String>> {
+        // 역직렬화 실패도 가능하면 어느 필드가 문제인지 알려준다 (QA 후속 #5)
+        val field = ((e as? HttpMessageNotReadableException)?.cause as? MismatchedInputException)
+            ?.path?.mapNotNull { it.fieldName }?.joinToString(".")?.takeIf { it.isNotBlank() }
+        val message =
+            if (field != null) "'$field' 값이 없거나 형식이 올바르지 않습니다. 입력값을 확인해주세요."
+            else "요청 형식이 올바르지 않습니다. 입력값을 확인해주세요."
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            .body(mapOf("error" to message))
+    }
 
     /** @Valid 검증 실패 — 422 + 필드별 사유 */
     @ExceptionHandler(MethodArgumentNotValidException::class)
