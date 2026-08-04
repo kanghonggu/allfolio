@@ -61,7 +61,7 @@ class GetDashboardUseCase(
 
         // 수익률 (QA P1 #6/#7) — 단순 NAV 비율 대신 입출금을 차감한 flow-aware TWR로 통일.
         // 계좌 연동 초기 편입(자동 DEPOSIT flow, P1 #8)이 수익으로 오인되지 않는다.
-        // 반환 스케일은 percent(0~100) — ReturnsCalculator(ratio)에 ×100은 여기 한 곳뿐.
+        // 반환 스케일은 percent(0~100) — ReturnsCalculator.periodTwrPercent가 보장.
         val ytdStart   = LocalDate.of(today.year, 1, 1)
         val navSeries  = performanceRepo
             .findByIdPortfolioIdAndIdDateBetween(userId, EARLIEST, today)
@@ -71,17 +71,14 @@ class GetDashboardUseCase(
             .map { Flow(it.flowDate, it.signedKrw()) }
         val dataDays = navSeries.count { it.date >= ytdStart }
 
-        // 윈도우 시작 이전의 마지막 관측을 기저로 사용 — 윈도우 중간에 시계열이 시작해
-        // 부분 스냅샷이 기저가 되는 왜곡(+2060%)을 막는다.
-        fun periodTwrPercent(from: LocalDate): BigDecimal? {
-            val anchorDate = navSeries.lastOrNull { it.date <= from }?.date ?: from
-            return ReturnsCalculator.calculate(navSeries, flows, anchorDate, today).twr
-                ?.multiply(BigDecimal(100))
-        }
+        // 기간 수익률은 performance 리포트와 같은 공용 엔진 사용 (QA 후속 #3) —
+        // 커버리지 미달 기간은 부분 시계열로 왜곡된 값을 만들지 않고 null(FE '데이터 부족').
+        fun periodTwrPercent(cutoff: LocalDate): BigDecimal? =
+            ReturnsCalculator.periodTwrPercent(navSeries, flows, cutoff, today)
 
         val returnYtd = periodTwrPercent(ytdStart)
-        val return1m  = periodTwrPercent(today.minusDays(29))
-        val return3m  = periodTwrPercent(today.minusDays(89))
+        val return1m  = periodTwrPercent(today.minusDays(30))
+        val return3m  = periodTwrPercent(today.minusDays(90))
 
         // MDD
         val latestRisk = riskRepo.findTopByIdPortfolioIdOrderByIdDateDesc(userId)
@@ -187,15 +184,16 @@ class GetDashboardUseCase(
             .sortedByDescending { it.currentValueInKrw(fx) }
             .map { a ->
                 PositionDto(
-                    id           = a.id,
-                    name         = a.name,
-                    symbol       = a.symbol,
-                    type         = a.type.name,
-                    currentValue = a.currentValue,
-                    returnRate   = a.returnRate().setScale(2, RoundingMode.HALF_UP),
-                    weight       = MetricsCalculator.weightOf(a.currentValueInKrw(fx), totalLiquid)
+                    id              = a.id,
+                    name            = a.name,
+                    symbol          = a.symbol,
+                    type            = a.type.name,
+                    currentValue    = a.currentValue,
+                    currentValueKrw = a.currentValueInKrw(fx).setScale(0, RoundingMode.HALF_UP),
+                    returnRate      = a.returnRate().setScale(2, RoundingMode.HALF_UP),
+                    weight          = MetricsCalculator.weightOf(a.currentValueInKrw(fx), totalLiquid)
                         .setScale(4, RoundingMode.HALF_UP),
-                    currency     = a.currency,
+                    currency        = a.currency,
                 )
             }
 

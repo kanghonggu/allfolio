@@ -60,6 +60,27 @@ object ReturnsCalculator {
         )
     }
 
+    /**
+     * 기간 수익률(percent, 0~100 스케일) — 대시보드·performance 리포트 공용 (QA 후속 #3).
+     * 시계열 첫 관측이 cutoff 이후면(커버리지 미달) null — 부분 시계열로 전체 기간
+     * 수익률을 만들어내는 왜곡(+2060%) 대신 FE가 '데이터 부족'으로 표시하게 한다.
+     * 기저는 cutoff 이전(포함) 마지막 관측일.
+     */
+    fun periodTwrPercent(
+        navSeries: List<NavPoint>,
+        flows: List<Flow>,
+        cutoff: LocalDate,
+        asOf: LocalDate,
+    ): BigDecimal? {
+        if (navSeries.size < 2) return null
+        val sorted = navSeries.sortedBy { it.date }
+        if (sorted.first().date.isAfter(cutoff)) return null
+        val anchor = sorted.last { !it.date.isAfter(cutoff) }.date
+        return calculate(sorted, flows, anchor, asOf).twr
+            ?.multiply(BigDecimal(100))
+            ?.setScale(2, RoundingMode.HALF_UP)
+    }
+
     /** 구간별 r_i = (NAV_i − NAV_{i−1} − 순플로우_i) / (NAV_{i−1} + 입금_i) 체인링킹 */
     private fun twr(series: List<NavPoint>, flows: List<Flow>): BigDecimal {
         var product = BigDecimal.ONE

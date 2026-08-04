@@ -35,10 +35,10 @@ function presetRange(preset: Preset): { from: string; to: string } {
   return { from: iso(d), to }
 }
 
+// BE가 percent(0~100) 단위로 내려보낸다 (QA 후속 #1 — dashboard와 단위 통일, ×100 금지)
 function fmtPct(n: number | null | undefined): string {
   if (n === null || n === undefined) return '—'
-  const pct = n * 100
-  return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
+  return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
 }
 
 function fmtKrw(n: number | null | undefined): string {
@@ -51,11 +51,11 @@ function pctColor(n: number | null | undefined): string {
   return n >= 0 ? 'text-emerald-400' : 'text-red-400'
 }
 
-/** TWR vs MWR 규칙 기반 해석 문구 (SCR-RPT-04 ③) */
+/** TWR vs MWR 규칙 기반 해석 문구 (SCR-RPT-04 ③) — 입력은 percent(0~100) 단위 */
 function interpret(twr: number | null, mwr: number | null): string {
   if (twr === null || mwr === null) return '데이터가 부족해 두 수익률을 비교할 수 없습니다.'
   const diff = mwr - twr
-  if (Math.abs(diff) < 0.005) return '입출금 타이밍이 수익률에 미친 영향이 크지 않았습니다.'
+  if (Math.abs(diff) < 0.5) return '입출금 타이밍이 수익률에 미친 영향이 크지 않았습니다.'
   if (diff < 0) return '상승 이후에 입금한 비중이 컸습니다 — 타이밍 비용으로 체감 수익률(MWR)이 운용 수익률(TWR)보다 낮습니다.'
   return '하락 구간에서 추가 매수한 효과가 있습니다 — 체감 수익률(MWR)이 운용 수익률(TWR)보다 높습니다.'
 }
@@ -194,10 +194,10 @@ export default function ReturnsReportPage() {
         </div>
         {preset === '직접' && (
           <div className="flex items-center gap-2 text-sm">
-            <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)}
+            <input type="date" aria-label="조회 시작일" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)}
               className="rounded-md border border-gray-700 bg-gray-900 px-2 py-1.5 text-gray-200" />
             <span className="text-gray-500">~</span>
-            <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)}
+            <input type="date" aria-label="조회 종료일" value={customTo} onChange={(e) => setCustomTo(e.target.value)}
               className="rounded-md border border-gray-700 bg-gray-900 px-2 py-1.5 text-gray-200" />
           </div>
         )}
@@ -269,7 +269,7 @@ export default function ReturnsReportPage() {
                   <p className={`mt-1 text-2xl font-bold ${pctColor(analysis.benchmark.excessReturn)}`}>
                     {analysis.benchmark.excessReturn === null
                       ? '—'
-                      : `${analysis.benchmark.excessReturn >= 0 ? '+' : ''}${(analysis.benchmark.excessReturn * 100).toFixed(2)}%p`}
+                      : `${analysis.benchmark.excessReturn >= 0 ? '+' : ''}${analysis.benchmark.excessReturn.toFixed(2)}%p`}
                   </p>
                 </div>
               </>
@@ -499,10 +499,10 @@ function RecordFlowModal({
               </button>
             ))}
           </div>
-          <input type="date" value={flowDate} onChange={(e) => setFlowDate(e.target.value)}
+          <input type="date" aria-label="입출금 일자" value={flowDate} onChange={(e) => setFlowDate(e.target.value)}
             className="w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200" />
           <div className="flex gap-2">
-            <input type="number" placeholder="금액" value={amount} onChange={(e) => setAmount(e.target.value)}
+            <input type="number" aria-label="금액" placeholder="금액" value={amount} onChange={(e) => setAmount(e.target.value)}
               className="flex-1 rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200" />
             <select value={currency} onChange={(e) => setCurrency(e.target.value)}
               aria-label="통화"
@@ -510,7 +510,7 @@ function RecordFlowModal({
               {SUPPORTED_CURRENCIES.map((c) => <option key={c}>{c}</option>)}
             </select>
           </div>
-          <input placeholder="메모 (선택)" value={memo} onChange={(e) => setMemo(e.target.value)}
+          <input aria-label="메모" placeholder="메모 (선택)" value={memo} onChange={(e) => setMemo(e.target.value)}
             className="w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200" />
           {error && <p className="text-xs text-red-400">{error}</p>}
         </div>

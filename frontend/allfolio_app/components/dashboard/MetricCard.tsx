@@ -34,6 +34,20 @@ function Stars({ count }: { count: number }) {
   )
 }
 
+/**
+ * 커버리지 미달로 지표를 계산할 수 없을 때의 명시적 표시 (QA 후속 #3) —
+ * 카드를 숨기면 '없는 지표'처럼 보이므로 '데이터 부족'을 드러낸다.
+ */
+export function EmptyMetricCard({ label, note }: { label: string; note?: string }) {
+  return (
+    <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-5">
+      <p className="mb-3 text-xs font-medium uppercase tracking-wider text-gray-500">{label}</p>
+      <p className="text-2xl font-bold text-gray-600">데이터 부족</p>
+      <p className="mt-2 text-xs text-gray-600">{note ?? '스냅샷이 기간을 채우면 자동 표시됩니다'}</p>
+    </div>
+  )
+}
+
 export default function MetricCard({
   label, metric, formatValue, benchmarkLabel, description,
 }: MetricCardProps) {

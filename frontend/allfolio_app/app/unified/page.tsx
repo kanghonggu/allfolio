@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useUnifiedApi } from '@/lib/useApi'
 import { useLivePrices } from '@/lib/useLivePrices'
 import NetWorthBar from '@/components/dashboard/NetWorthBar'
-import MetricCard from '@/components/dashboard/MetricCard'
+import MetricCard, { EmptyMetricCard } from '@/components/dashboard/MetricCard'
 import PositionTable from '@/components/dashboard/PositionTable'
 import AllocationBar from '@/components/dashboard/AllocationBar'
 import type { DashboardResponse } from '@/types/dashboard'
@@ -108,24 +108,31 @@ export default function UnifiedDashboard() {
         {/* 지표 카드 */}
         {hasMetrics ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
-            {portfolio.metrics.returnYtd && (
+            {/* null = 커버리지 미달 — 카드를 숨기지 않고 '데이터 부족'으로 명시 (QA 후속 #3) */}
+            {portfolio.metrics.returnYtd ? (
               <MetricCard
                 label="연간 수익률 (YTD)"
                 metric={portfolio.metrics.returnYtd}
                 benchmarkLabel="코스피 대비"
               />
+            ) : (
+              <EmptyMetricCard label="연간 수익률 (YTD)" note="연초부터의 스냅샷이 쌓이면 표시됩니다" />
             )}
-            {portfolio.metrics.return1m && (
+            {portfolio.metrics.return1m ? (
               <MetricCard
                 label="1개월 수익률"
                 metric={portfolio.metrics.return1m}
               />
+            ) : (
+              <EmptyMetricCard label="1개월 수익률" note="30일 이상 스냅샷이 쌓이면 표시됩니다" />
             )}
-            {portfolio.metrics.return3m && (
+            {portfolio.metrics.return3m ? (
               <MetricCard
                 label="3개월 수익률"
                 metric={portfolio.metrics.return3m}
               />
+            ) : (
+              <EmptyMetricCard label="3개월 수익률" note="90일 이상 스냅샷이 쌓이면 표시됩니다" />
             )}
             {portfolio.metrics.mdd && (
               <MetricCard

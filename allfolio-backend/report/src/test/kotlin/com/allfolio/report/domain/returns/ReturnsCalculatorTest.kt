@@ -106,6 +106,55 @@ class ReturnsCalculatorTest {
         assertClose("0.1", result.mwr, eps = "0.001")
     }
 
+    // ── periodTwrPercent (대시보드·performance 공용, QA 후속 #3) ──
+
+    @Test
+    fun `periodTwrPercent - percent 스케일로 반환한다`() {
+        val result = ReturnsCalculator.periodTwrPercent(
+            navSeries = listOf(NavPoint(d(1), bd("1000")), NavPoint(d(30), bd("1100"))),
+            flows = emptyList(),
+            cutoff = d(1), asOf = d(30),
+        )
+        assertClose("10.00", result, eps = "0.01")
+    }
+
+    @Test
+    fun `periodTwrPercent - 시계열 첫 관측이 cutoff 이후면 커버리지 미달 null`() {
+        // 부분 시계열로 전체 기간 수익률을 만들어내는 왜곡(+2060%) 방지
+        val result = ReturnsCalculator.periodTwrPercent(
+            navSeries = listOf(NavPoint(d(10), bd("1000")), NavPoint(d(30), bd("1100"))),
+            flows = emptyList(),
+            cutoff = d(5), asOf = d(30),
+        )
+        assertNull(result)
+    }
+
+    @Test
+    fun `periodTwrPercent - cutoff 이전 마지막 관측을 기저로 쓴다`() {
+        val result = ReturnsCalculator.periodTwrPercent(
+            navSeries = listOf(
+                NavPoint(d(1), bd("1000")),
+                NavPoint(d(3), bd("1000")),
+                NavPoint(d(30), bd("1200")),
+            ),
+            flows = emptyList(),
+            cutoff = d(5), asOf = d(30),
+        )
+        // 기저 = 6/3 관측(1000) → +20%
+        assertClose("20.00", result, eps = "0.01")
+    }
+
+    @Test
+    fun `periodTwrPercent - 관측 2건 미만이면 null`() {
+        assertNull(
+            ReturnsCalculator.periodTwrPercent(
+                navSeries = listOf(NavPoint(d(1), bd("1000"))),
+                flows = emptyList(),
+                cutoff = d(1), asOf = d(30),
+            )
+        )
+    }
+
     @Test
     fun `decomposition identity holds`() {
         val result = ReturnsCalculator.calculate(
