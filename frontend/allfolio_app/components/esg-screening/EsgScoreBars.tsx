@@ -1,16 +1,18 @@
 // components/esg-screening/EsgScoreBars.tsx
+import Num from '@/components/ui/Num'
+import SectionHeader from '@/components/ui/SectionHeader'
 import type { EsgScores } from '@/types/esg-screening'
 
 export function EsgScoreBars({ esg }: { esg: EsgScores }) {
   return (
-    <section className="space-y-3 break-inside-avoid">
-      <h2 className="text-lg font-semibold">E·S·G 점수</h2>
-      <div className="space-y-4 rounded-xl border border-gray-700 bg-gray-900 p-5">
-        <ScoreBar label="환경 (E)" score={esg.environmental} color="bg-emerald-500" />
-        <ScoreBar label="사회 (S)" score={esg.social} color="bg-sky-500" />
-        <ScoreBar label="지배구조 (G)" score={esg.governance} color="bg-violet-500" />
-        <div className="border-t border-gray-800 pt-3">
-          <ScoreBar label="종합" score={esg.totalScore} color="bg-amber-500" />
+    <section className="break-inside-avoid">
+      <SectionHeader label="E·S·G 점수" />
+      <div className="space-y-4 border-t-[1.5px] border-ink pt-4">
+        <ScoreBar label="환경 (E)" score={esg.environmental} color="bg-ink" />
+        <ScoreBar label="사회 (S)" score={esg.social} color="bg-fg-muted" />
+        <ScoreBar label="지배구조 (G)" score={esg.governance} color="bg-fg-ghost" />
+        <div className="border-t border-line pt-3">
+          <ScoreBar label="종합" score={esg.totalScore} color="bg-ink" />
         </div>
       </div>
     </section>
@@ -21,12 +23,12 @@ function ScoreBar({ label, score, color }: { label: string; score: number; color
   const pct = Math.min(100, Math.max(0, score))
   return (
     <div>
-      <div className="mb-1 flex justify-between text-sm">
-        <span className="text-gray-300">{label}</span>
-        <span className="tabular-nums font-medium text-gray-100">{score.toFixed(1)}점</span>
+      <div className="mb-1 flex items-baseline justify-between text-[13px]">
+        <span className="text-fg-2">{label}</span>
+        <Num className="text-[12.5px] font-medium text-ink">{score.toFixed(1)}점</Num>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-gray-800">
-        <div className={`h-2 rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      <div className="h-1.5 bg-line-hair">
+        <div className={`h-1.5 ${color}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
   )

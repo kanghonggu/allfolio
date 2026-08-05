@@ -3,6 +3,11 @@
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useReportApi } from '@/lib/useApi'
+import PageHeader from '@/components/ui/PageHeader'
+import SectionHeader from '@/components/ui/SectionHeader'
+import Label from '@/components/ui/Label'
+import Num from '@/components/ui/Num'
+import { EmptyState, ErrorState, LoadingState } from '@/components/ui/states'
 import type { NetWorthBreakdown, NetWorthPoint } from '@/types/report'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -13,10 +18,16 @@ const TYPE_KO: Record<string, string> = {
   STOCK: '주식', CRYPTO: '암호화폐', REAL_ESTATE: '부동산',
   VEHICLE: '자동차', GOLD: '금', CASH: '현금', ETC: '기타',
 }
-const TYPE_COLORS: Record<string, string> = {
-  STOCK: '#3b82f6', CRYPTO: '#f59e0b', REAL_ESTATE: '#10b981',
-  VEHICLE: '#8b5cf6', GOLD: '#eab308', CASH: '#6b7280', ETC: '#ec4899',
-}
+// 토큰 기반 그레이스케일 램프 — 유형 순서대로 진한 → 옅은
+const TONES = ['var(--c-ink)', 'var(--c-fg-muted)', 'var(--c-fg-ghost)', 'var(--c-line)']
+
+const TICK = { fontSize: 10, fill: 'var(--c-fg-faint)', fontFamily: 'var(--font-mono), monospace' } as const
+const TOOLTIP_STYLE = {
+  background: 'var(--c-surface)',
+  border: '1px solid var(--c-line-card)',
+  borderRadius: 0,
+  color: 'var(--c-ink)',
+} as const
 
 function fmt(n: number, currency = 'KRW') {
   return new Intl.NumberFormat('ko-KR', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n)
@@ -38,7 +49,6 @@ export default function NetWorthPage() {
   if (isLoading) return <Skeleton />
   if (isError || !data) return <Err />
 
-  const pnlColor = data.netWorth >= 0 ? 'text-emerald-400' : 'text-red-400'
   const loanRatio = data.totalAssets > 0
     ? ((data.totalLoan / data.totalAssets) * 100).toFixed(1)
     : '0.0'
@@ -48,129 +58,168 @@ export default function NetWorthPage() {
     nav: Number(p.nav),
   }))
 
+  const toneByType = new Map(data.byType.map((b: NetWorthBreakdown, i: number) => [b.type, TONES[i % TONES.length]]))
+
   return (
-    <div className="space-y-8">
-      <div className="flex items-center gap-3">
-        <Link href="/unified/reports" className="text-sm text-gray-500 hover:text-gray-300">← 보고서</Link>
-        <h1 className="text-2xl font-bold">순자산 추이</h1>
+    <div className="border border-line-card bg-surface">
+      <div className="px-5 pt-5 sm:px-7">
+        <Link
+          href="/unified/reports"
+          className="font-mono text-[10px] uppercase tracking-label text-fg-muted transition-colors hover:text-ink"
+        >
+          ← 보고서
+        </Link>
       </div>
-      <p className="text-xs text-gray-500">생성: {new Date(data.generatedAt).toLocaleString('ko-KR')}</p>
+      <PageHeader
+        className="px-5 pt-2 sm:px-7"
+        title="순자산 추이"
+        meta={<span>B-07 · 생성 {new Date(data.generatedAt).toLocaleString('ko-KR')}</span>}
+      />
 
-      {/* 핵심 KPI */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-xl border border-gray-700 bg-gray-900 p-5">
-          <p className="text-xs text-gray-500">총 자산</p>
-          <p className="mt-2 text-2xl font-bold tabular-nums">{fmt(data.totalAssets)}</p>
+      <div className="px-5 py-5 pb-10 sm:px-7">
+        {/* 핵심 KPI */}
+        <div className="grid grid-cols-1 gap-px border border-line-soft bg-line-soft sm:grid-cols-3">
+          <div className="bg-surface px-3.5 py-3">
+            <Label size="sm" tone="faint">총 자산</Label>
+            <Num className="mt-1 block text-[20px]">{fmt(data.totalAssets)}</Num>
+          </div>
+          <div className="bg-surface px-3.5 py-3">
+            <Label size="sm" tone="faint">총 부채</Label>
+            <Num tone={data.totalLoan > 0 ? 'loss' : 'flat'} className="mt-1 block text-[20px]">
+              {data.totalLoan > 0 ? `-${fmt(data.totalLoan)}` : '—'}
+            </Num>
+            {data.totalLoan > 0 && (
+              <p className="mt-0.5 text-[11px] text-fg-faint">자산 대비 {loanRatio}%</p>
+            )}
+          </div>
+          <div className="bg-surface px-3.5 py-3">
+            <Label size="sm" tone="faint">순자산 (NAV - 부채)</Label>
+            <Num className={`mt-1 block text-[20px] ${data.netWorth >= 0 ? '' : 'text-loss'}`}>
+              {fmt(data.netWorth)}
+            </Num>
+          </div>
         </div>
-        <div className="rounded-xl border border-red-900 bg-gray-900 p-5">
-          <p className="text-xs text-gray-500">총 부채</p>
-          <p className="mt-2 text-2xl font-bold tabular-nums text-red-400">
-            {data.totalLoan > 0 ? `-${fmt(data.totalLoan)}` : '—'}
-          </p>
-          {data.totalLoan > 0 && (
-            <p className="mt-0.5 text-xs text-red-600">자산 대비 {loanRatio}%</p>
+
+        {/* 순자산 추이 차트 */}
+        <section className="mt-8">
+          <SectionHeader label="총 자산(NAV) 추이" />
+          {chartData.length >= 2 ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <AreaChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--c-line)" />
+                <XAxis dataKey="date" tick={TICK} tickLine={false} axisLine={{ stroke: 'var(--c-line)' }} />
+                <YAxis
+                  tickFormatter={(v) => `₩${fmtShort(v)}`}
+                  tick={TICK}
+                  tickLine={false}
+                  axisLine={false}
+                  width={70}
+                />
+                <Tooltip
+                  formatter={(v: number) => [fmt(v), '총 자산']}
+                  contentStyle={TOOLTIP_STYLE}
+                  labelStyle={{ color: 'var(--c-fg-3)' }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="nav"
+                  name="총 자산"
+                  stroke="var(--c-ink)"
+                  strokeWidth={1.5}
+                  fill="var(--c-ink)"
+                  fillOpacity={0.06}
+                  dot={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <EmptyState
+              title="자산 이력이 부족합니다"
+              description="매일 Sync를 실행하면 추이 그래프가 채워집니다."
+            />
           )}
-        </div>
-        <div className={`rounded-xl border bg-gray-900 p-5 ${data.netWorth >= 0 ? 'border-emerald-800' : 'border-red-800'}`}>
-          <p className="text-xs text-gray-500">순자산 (NAV - 부채)</p>
-          <p className={`mt-2 text-2xl font-bold tabular-nums ${pnlColor}`}>{fmt(data.netWorth)}</p>
-        </div>
-      </div>
+        </section>
 
-      {/* 순자산 추이 차트 */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
-        <h2 className="mb-4 text-sm font-semibold text-gray-300">총 자산(NAV) 추이</h2>
-        {chartData.length >= 2 ? (
-          <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-              <defs>
-                <linearGradient id="navGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-              <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6b7280' }} tickLine={false} />
-              <YAxis
-                tickFormatter={(v) => `₩${fmtShort(v)}`}
-                tick={{ fontSize: 11, fill: '#6b7280' }}
-                tickLine={false}
-                axisLine={false}
-                width={70}
+        {/* 유형별 순자산 */}
+        <section className="mt-8">
+          <SectionHeader label="유형별 순자산" />
+          <div className="overflow-x-auto">
+            <div className="min-w-[560px] border-t-[1.5px] border-ink">
+              <div className="grid grid-cols-[14px_1.2fr_1fr_1fr_1.2fr_0.7fr] items-baseline gap-2.5 border-b border-line py-2">
+                <span />
+                <Label size="sm" tone="faint">유형</Label>
+                <Label size="sm" tone="faint" className="text-right">자산</Label>
+                <Label size="sm" tone="faint" className="text-right">부채</Label>
+                <Label size="sm" tone="faint" className="text-right">순자산</Label>
+                <Label size="sm" tone="faint" className="text-right">비중</Label>
+              </div>
+              {data.byType.map((b: NetWorthBreakdown) => {
+                const nw = Number(b.netWorth)
+                const isPos = nw >= 0
+                return (
+                  <div
+                    key={b.type}
+                    className="grid grid-cols-[14px_1.2fr_1fr_1fr_1.2fr_0.7fr] items-center gap-2.5 border-b border-line-hair py-2.5 hover:bg-surface-muted"
+                    aria-label={TYPE_KO[b.type] ?? b.type}
+                  >
+                    <span
+                      className="block h-[7px] w-[7px] shrink-0"
+                      aria-hidden="true"
+                      style={{ background: toneByType.get(b.type) }}
+                    />
+                    <span className="text-[13px]">{TYPE_KO[b.type] ?? b.type}</span>
+                    <Num className="text-right text-xs text-fg-3">{fmt(Number(b.assets))}</Num>
+                    <span className="text-right">
+                      {Number(b.loan) > 0 ? (
+                        <Num tone="loss" className="text-xs">-{fmt(Number(b.loan))}</Num>
+                      ) : (
+                        <span className="text-xs text-fg-ghost">—</span>
+                      )}
+                    </span>
+                    <Num className={`text-right text-[12.5px] font-medium ${isPos ? '' : 'text-loss'}`}>
+                      {fmt(nw)}
+                    </Num>
+                    <Num className="text-right text-xs text-fg-faint">{Number(b.pct).toFixed(1)}%</Num>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* 비중 바 */}
+          <div className="mt-4 flex h-2 bg-surface-muted">
+            {data.byType.filter(b => Number(b.netWorth) > 0).map((b: NetWorthBreakdown) => (
+              <div
+                key={b.type}
+                style={{ width: `${Number(b.pct)}%`, background: toneByType.get(b.type) }}
+                title={`${TYPE_KO[b.type] ?? b.type}: ${Number(b.pct).toFixed(1)}%`}
               />
-              <Tooltip
-                formatter={(v: number) => [fmt(v), '총 자산']}
-                contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
-                labelStyle={{ color: '#d1d5db' }}
-              />
-              <Area
-                type="monotone"
-                dataKey="nav"
-                name="총 자산"
-                stroke="#3b82f6"
-                strokeWidth={2}
-                fill="url(#navGrad)"
-                dot={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        ) : (
-          <div className="flex h-48 flex-col items-center justify-center gap-2 text-center text-sm text-gray-500">
-            <p>자산 이력이 부족합니다.</p>
-            <p className="text-xs text-gray-600">매일 Sync를 실행하면 추이 그래프가 채워집니다.</p>
+            ))}
+          </div>
+        </section>
+
+        {/* 부채 안내 */}
+        {data.totalLoan > 0 && (
+          <div className="mt-8 border border-warn-line bg-warn-bg px-3.5 py-2.5 text-xs leading-relaxed text-warn">
+            부채 비율 {loanRatio}% — 일반적으로 자산 대비 부채 비율 40% 이하를 권장합니다.
           </div>
         )}
       </div>
-
-      {/* 유형별 순자산 */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
-        <h2 className="mb-4 text-sm font-semibold text-gray-300">유형별 순자산</h2>
-        <div className="space-y-3">
-          {data.byType.map((b: NetWorthBreakdown) => {
-            const nw = Number(b.netWorth)
-            const isPos = nw >= 0
-            return (
-              <div key={b.type} className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-4" aria-label={TYPE_KO[b.type] ?? b.type}>
-                <span
-                  className="h-3 w-3 shrink-0 rounded-full"
-                  aria-hidden="true"
-                  style={{ background: TYPE_COLORS[b.type] ?? '#6b7280' }}
-                />
-                <span className="text-sm text-gray-300">{TYPE_KO[b.type] ?? b.type}</span>
-                <span className="text-xs text-gray-500 tabular-nums">{fmt(Number(b.assets))}</span>
-                {Number(b.loan) > 0 && (
-                  <span className="text-xs text-red-400 tabular-nums">-{fmt(Number(b.loan))}</span>
-                )}
-                <span className={`text-sm font-semibold tabular-nums ${isPos ? 'text-white' : 'text-red-400'}`}>
-                  {fmt(nw)}
-                  <span className="ml-1 text-xs font-normal text-gray-500">({Number(b.pct).toFixed(1)}%)</span>
-                </span>
-              </div>
-            )
-          })}
-        </div>
-
-        {/* 비중 바 */}
-        <div className="mt-4 flex h-3 overflow-hidden rounded-full bg-gray-800">
-          {data.byType.filter(b => Number(b.netWorth) > 0).map((b: NetWorthBreakdown) => (
-            <div
-              key={b.type}
-              style={{ width: `${Number(b.pct)}%`, background: TYPE_COLORS[b.type] ?? '#6b7280' }}
-              title={`${TYPE_KO[b.type] ?? b.type}: ${Number(b.pct).toFixed(1)}%`}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* 부채 안내 */}
-      {data.totalLoan > 0 && (
-        <div className="rounded-xl border border-amber-800 bg-amber-950/30 p-4 text-xs text-amber-400">
-          부채 비율 {loanRatio}% — 일반적으로 자산 대비 부채 비율 40% 이하를 권장합니다.
-        </div>
-      )}
     </div>
   )
 }
 
-function Skeleton() { return <div className="h-96 animate-pulse rounded-xl bg-gray-800" /> }
-function Err() { return <div className="rounded-xl border border-red-800 bg-red-950 p-6 text-sm text-red-400">보고서를 불러올 수 없습니다.</div> }
+function Skeleton() {
+  return (
+    <div className="border border-line-card bg-surface px-5 sm:px-7">
+      <LoadingState label="보고서 불러오는 중" />
+    </div>
+  )
+}
+function Err() {
+  return (
+    <div className="border border-line-card bg-surface px-5 sm:px-7">
+      <ErrorState message="보고서를 불러올 수 없습니다." />
+    </div>
+  )
+}

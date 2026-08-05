@@ -10,6 +10,12 @@ import {
   ResponsiveContainer, ReferenceLine, Legend,
   BarChart, Bar, Cell,
 } from 'recharts'
+import PageHeader from '@/components/ui/PageHeader'
+import SectionHeader from '@/components/ui/SectionHeader'
+import Label from '@/components/ui/Label'
+import Num from '@/components/ui/Num'
+import { LoadingState, ErrorState, EmptyState } from '@/components/ui/states'
+import { dirTone, toneText } from '@/lib/format'
 
 const PERIODS = ['1W', '1M', '3M', 'YTD', '1Y'] as const
 type Period = typeof PERIODS[number]
@@ -17,6 +23,14 @@ type Period = typeof PERIODS[number]
 const PERIOD_KO: Record<string, string> = {
   '1W': '1주', '1M': '1개월', '3M': '3개월', 'YTD': '연초 이후', '1Y': '1년',
 }
+
+const TOOLTIP_STYLE = {
+  background: 'var(--c-surface)',
+  border: '1px solid var(--c-line-card)',
+  borderRadius: 0,
+  color: 'var(--c-ink)',
+} as const
+const TICK_STYLE = { fontSize: 10, fill: 'var(--c-fg-faint)', fontFamily: 'monospace' } as const
 
 function fmtPct(n: number) {
   return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
@@ -35,14 +49,13 @@ export default function BenchmarkPage() {
   if (isLoading) return <Skeleton />
   if (isError || !data) return <Err />
 
-  const portfolioReturnColor = Number(data.portfolioReturn) >= 0 ? 'text-emerald-400' : 'text-red-400'
-
   const barData = [
-    { name: '내 포트폴리오', value: Number(data.portfolioReturn), color: '#3b82f6' },
+    { name: '내 포트폴리오', value: Number(data.portfolioReturn), color: 'var(--c-ink)' },
     ...data.benchmarks.map((b: BenchmarkItem) => ({
       name: b.name,
       value: Number(b.benchmarkReturn),
-      color: Number(b.benchmarkReturn) >= 0 ? '#10b981' : '#ef4444',
+      // 한국 관례: 상승 빨강(gain) / 하락 파랑(loss)
+      color: Number(b.benchmarkReturn) >= 0 ? 'var(--c-gain)' : 'var(--c-loss)',
     })),
   ]
 
@@ -55,135 +68,160 @@ export default function BenchmarkPage() {
   }))
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center gap-3">
-        <Link href="/unified/reports" className="text-sm text-gray-500 hover:text-gray-300">← 보고서</Link>
-        <h1 className="text-2xl font-bold">벤치마크 비교</h1>
+    <div className="border border-line-card bg-surface">
+      <div className="px-5 pt-4 sm:px-7">
+        <Link
+          href="/unified/reports"
+          className="font-mono text-[10px] tracking-label text-fg-faint transition-colors hover:text-ink"
+        >
+          ← 보고서
+        </Link>
       </div>
+      <PageHeader
+        className="px-5 pt-2 sm:px-7"
+        title="벤치마크 비교"
+        meta="B-06 · 스냅샷 기반 자동 산출"
+      />
 
-      {/* Period selector */}
-      <div className="flex gap-2">
-        {PERIODS.map((p) => (
-          <button
-            key={p}
-            onClick={() => setPeriod(p)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              period === p ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            {PERIOD_KO[p]}
-          </button>
-        ))}
-      </div>
-
-      {/* Portfolio return */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
-        <p className="text-sm text-gray-400">내 포트폴리오 수익률 ({PERIOD_KO[period]})</p>
-        <p className={`mt-2 text-4xl font-bold tabular-nums ${portfolioReturnColor}`}>
-          {fmtPct(Number(data.portfolioReturn))}
-        </p>
-      </div>
-
-      {/* Alpha Cards — 지수 데이터 없으면 명시적 빈 상태 (합성값 표시 금지) */}
-      {data.benchmarks.length === 0 && (
-        <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 text-sm text-gray-500">
-          벤치마크 지수 데이터가 아직 수집되지 않았습니다. 지수 시세는 매일 새벽 자동
-          동기화되며, 수집되는 대로 실제 지수 기준 비교가 표시됩니다.
+      <div className="px-5 py-5 pb-10 sm:px-7">
+        {/* Period selector */}
+        <div className="flex flex-wrap gap-2">
+          {PERIODS.map((p) => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              className={`border px-3.5 py-1.5 font-mono text-[10px] tracking-label transition-colors ${
+                period === p
+                  ? 'border-ink bg-ink text-white'
+                  : 'border-line bg-surface text-fg-3 hover:border-ink hover:text-ink'
+              }`}
+            >
+              {PERIOD_KO[p]}
+            </button>
+          ))}
         </div>
-      )}
-      <div className="grid gap-4 sm:grid-cols-3">
-        {data.benchmarks.map((b: BenchmarkItem) => {
-          const alpha = Number(b.alpha)
-          const alphaColor = alpha >= 0 ? 'text-emerald-400' : 'text-red-400'
-          const benchColor = Number(b.benchmarkReturn) >= 0 ? 'text-emerald-400' : 'text-red-400'
-          return (
-            <div key={b.name} className="rounded-xl border border-gray-700 bg-gray-900 p-5">
-              <p className="text-xs text-gray-500">{b.name}</p>
-              <p className={`mt-2 text-2xl font-bold tabular-nums ${benchColor}`}>
-                {fmtPct(Number(b.benchmarkReturn))}
-              </p>
-              <div className="mt-3 pt-3 border-t border-gray-800">
-                <p className="text-xs text-gray-500">알파 (초과 수익)</p>
-                <p className={`mt-1 text-lg font-bold tabular-nums ${alphaColor}`}>
-                  {fmtPct(alpha)}
-                </p>
-              </div>
-            </div>
-          )
-        })}
-      </div>
 
-      {/* Bar Chart Comparison */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
-        <h2 className="mb-4 text-sm font-semibold text-gray-300">수익률 비교 ({PERIOD_KO[period]})</h2>
-        <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={barData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
-            <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-            <YAxis
-              tickFormatter={(v) => `${v.toFixed(0)}%`}
-              tick={{ fontSize: 11, fill: '#6b7280' }}
-              axisLine={false}
-              tickLine={false}
-            />
-            <Tooltip
-              formatter={(v: number) => [`${v.toFixed(2)}%`, '수익률']}
-              contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
-              labelStyle={{ color: '#d1d5db' }}
-            />
-            <ReferenceLine y={0} stroke="#374151" />
-            <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-              {barData.map((entry, index) => (
-                <Cell key={index} fill={entry.color} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+        {/* Portfolio return */}
+        <div className="mt-6 border border-line-soft bg-surface px-4 py-4">
+          <Label size="sm" tone="faint">내 포트폴리오 수익률 ({PERIOD_KO[period]})</Label>
+          <Num tone={dirTone(Number(data.portfolioReturn))} className="mt-1.5 block text-[26px]">
+            {fmtPct(Number(data.portfolioReturn))}
+          </Num>
+        </div>
 
-      {/* Cumulative Return Chart */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
-        <h2 className="mb-4 text-sm font-semibold text-gray-300">누적 수익률 비교</h2>
-        {chartData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={360}>
-            <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 10, fill: '#6b7280' }}
-                tickLine={false}
-                interval="preserveStartEnd"
-              />
+        {/* Alpha Cards — 지수 데이터 없으면 명시적 빈 상태 (합성값 표시 금지) */}
+        {data.benchmarks.length === 0 && (
+          <p className="mt-3 border border-line-soft bg-surface-muted px-4 py-4 text-[12.5px] leading-relaxed text-fg-3">
+            벤치마크 지수 데이터가 아직 수집되지 않았습니다. 지수 시세는 매일 새벽 자동
+            동기화되며, 수집되는 대로 실제 지수 기준 비교가 표시됩니다.
+          </p>
+        )}
+        {data.benchmarks.length > 0 && (
+          <div className="mt-3 grid gap-px border border-line-soft bg-line-soft sm:grid-cols-3">
+            {data.benchmarks.map((b: BenchmarkItem) => {
+              const alpha = Number(b.alpha)
+              const alphaClass = toneText[dirTone(alpha)]
+              const benchClass = toneText[dirTone(Number(b.benchmarkReturn))]
+              return (
+                <div key={b.name} className="bg-surface px-3.5 py-3">
+                  <Label size="sm" tone="faint">{b.name}</Label>
+                  <Num className={`mt-1 block text-[16px] ${benchClass}`}>
+                    {fmtPct(Number(b.benchmarkReturn))}
+                  </Num>
+                  <div className="mt-3 border-t border-line-hair pt-3">
+                    <Label size="sm" tone="faint">알파 (초과 수익)</Label>
+                    <Num className={`mt-1 block text-[14px] ${alphaClass}`}>{fmtPct(alpha)}</Num>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Bar Chart Comparison */}
+        <section className="mt-8">
+          <SectionHeader label={`수익률 비교 (${PERIOD_KO[period]})`} />
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={barData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--c-line)" vertical={false} />
+              <XAxis dataKey="name" tick={TICK_STYLE} axisLine={false} tickLine={false} />
               <YAxis
                 tickFormatter={(v) => `${v.toFixed(0)}%`}
-                tick={{ fontSize: 11, fill: '#6b7280' }}
+                tick={TICK_STYLE}
                 axisLine={false}
                 tickLine={false}
               />
               <Tooltip
-                formatter={(v: number, name) => [`${v.toFixed(2)}%`, name]}
-                contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
-                labelStyle={{ color: '#d1d5db' }}
+                formatter={(v: number) => [`${v.toFixed(2)}%`, '수익률']}
+                contentStyle={TOOLTIP_STYLE}
+                labelStyle={{ color: 'var(--c-fg-muted)' }}
               />
-              <ReferenceLine y={0} stroke="#374151" strokeDasharray="4 4" />
-              <Legend formatter={(v) => <span className="text-xs text-gray-300">{v}</span>} />
-              <Line type="monotone" dataKey="portfolio" name="내 포트폴리오" stroke="#3b82f6" strokeWidth={2.5} dot={false} />
-              <Line type="monotone" dataKey="S&P 500" stroke="#10b981" strokeWidth={1.5} dot={false} strokeDasharray="5 5" connectNulls />
-              <Line type="monotone" dataKey="BTC" stroke="#f59e0b" strokeWidth={1.5} dot={false} strokeDasharray="5 5" connectNulls />
-              <Line type="monotone" dataKey="KOSPI" stroke="#8b5cf6" strokeWidth={1.5} dot={false} strokeDasharray="5 5" connectNulls />
-            </LineChart>
+              <ReferenceLine y={0} stroke="var(--c-line)" />
+              <Bar dataKey="value">
+                {barData.map((entry, index) => (
+                  <Cell key={index} fill={entry.color} />
+                ))}
+              </Bar>
+            </BarChart>
           </ResponsiveContainer>
-        ) : (
-          <div className="flex h-48 items-center justify-center text-sm text-gray-500">데이터 없음</div>
-        )}
-      </div>
+        </section>
 
-      <p className="text-xs text-gray-600">
-        * S&P 500, BTC, KOSPI는 일별 종가 기준 실제 지수 데이터입니다. 데이터가 없는 날짜는 표시되지 않습니다.
-      </p>
+        {/* Cumulative Return Chart */}
+        <section className="mt-8">
+          <SectionHeader label="누적 수익률 비교" />
+          {chartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={360}>
+              <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--c-line)" />
+                <XAxis
+                  dataKey="date"
+                  tick={TICK_STYLE}
+                  tickLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  tickFormatter={(v) => `${v.toFixed(0)}%`}
+                  tick={TICK_STYLE}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip
+                  formatter={(v: number, name) => [`${v.toFixed(2)}%`, name]}
+                  contentStyle={TOOLTIP_STYLE}
+                  labelStyle={{ color: 'var(--c-fg-muted)' }}
+                />
+                <ReferenceLine y={0} stroke="var(--c-line)" strokeDasharray="4 4" />
+                <Legend formatter={(v) => <span className="font-mono text-[10px] text-fg-3">{v}</span>} />
+                <Line type="monotone" dataKey="portfolio" name="내 포트폴리오" stroke="var(--c-ink)" strokeWidth={2.5} dot={false} />
+                <Line type="monotone" dataKey="S&P 500" stroke="var(--c-fg-muted)" strokeWidth={1.5} dot={false} strokeDasharray="5 5" connectNulls />
+                <Line type="monotone" dataKey="BTC" stroke="var(--c-fg-ghost)" strokeWidth={1.5} dot={false} strokeDasharray="5 5" connectNulls />
+                <Line type="monotone" dataKey="KOSPI" stroke="var(--c-line)" strokeWidth={1.5} dot={false} strokeDasharray="5 5" connectNulls />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <EmptyState title="데이터 없음" />
+          )}
+        </section>
+
+        <p className="mt-4 text-[11.5px] leading-relaxed text-fg-faint">
+          * S&amp;P 500, BTC, KOSPI는 일별 종가 기준 실제 지수 데이터입니다. 데이터가 없는 날짜는 표시되지 않습니다.
+        </p>
+      </div>
     </div>
   )
 }
 
-function Skeleton() { return <div className="h-96 animate-pulse rounded-xl bg-gray-800" /> }
-function Err() { return <div className="rounded-xl border border-red-800 bg-red-950 p-6 text-sm text-red-400">보고서를 불러올 수 없습니다.</div> }
+function Skeleton() {
+  return (
+    <div className="border border-line-card bg-surface px-5 sm:px-7">
+      <LoadingState />
+    </div>
+  )
+}
+function Err() {
+  return (
+    <div className="border border-line-card bg-surface px-5 sm:px-7">
+      <ErrorState message="보고서를 불러올 수 없습니다." />
+    </div>
+  )
+}

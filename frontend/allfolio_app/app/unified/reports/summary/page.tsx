@@ -5,15 +5,30 @@ import Link from 'next/link'
 import { useReportApi } from '@/lib/useApi'
 import type { TypeBreakdown, TopHolding } from '@/types/report'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+import PageHeader from '@/components/ui/PageHeader'
+import SectionHeader from '@/components/ui/SectionHeader'
+import Label from '@/components/ui/Label'
+import Num from '@/components/ui/Num'
+import { LoadingState, ErrorState, EmptyState } from '@/components/ui/states'
+import { dirTone, toneText } from '@/lib/format'
 
+// 모노크롬 시리즈 램프 — 차트 계열색은 CSS 변수만 사용
+const SERIES = ['var(--c-ink)', 'var(--c-fg-muted)', 'var(--c-fg-ghost)', 'var(--c-line)']
 const TYPE_COLORS: Record<string, string> = {
-  CRYPTO: '#f59e0b', STOCK: '#3b82f6', REAL_ESTATE: '#10b981',
-  VEHICLE: '#8b5cf6', GOLD: '#eab308', CASH: '#6b7280', ETC: '#ec4899',
+  CRYPTO: SERIES[0], STOCK: SERIES[1], REAL_ESTATE: SERIES[2],
+  VEHICLE: SERIES[3], GOLD: SERIES[0], CASH: SERIES[1], ETC: SERIES[2],
 }
 const TYPE_KO: Record<string, string> = {
   CRYPTO: '암호화폐', STOCK: '주식', REAL_ESTATE: '부동산',
   VEHICLE: '자동차', GOLD: '금', CASH: '현금', ETC: '기타',
 }
+
+const TOOLTIP_STYLE = {
+  background: 'var(--c-surface)',
+  border: '1px solid var(--c-line-card)',
+  borderRadius: 0,
+  color: 'var(--c-ink)',
+} as const
 
 function fmt(n: number, currency = 'KRW') {
   return new Intl.NumberFormat('ko-KR', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n)
@@ -34,133 +49,150 @@ export default function SummaryReportPage() {
   const pieData = data.byType.map((t: TypeBreakdown) => ({
     name:  TYPE_KO[t.type] ?? t.type,
     value: t.value,
-    color: TYPE_COLORS[t.type] ?? '#6b7280',
+    color: TYPE_COLORS[t.type] ?? 'var(--c-fg-muted)',
     pct:   t.pct,
   }))
 
-  const pnlColor = data.unrealizedPnl >= 0 ? 'text-emerald-400' : 'text-red-400'
+  const pnlClass = toneText[dirTone(data.unrealizedPnl)]
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center gap-3">
-        <Link href="/unified/reports" className="text-sm text-gray-500 hover:text-gray-300">← 보고서</Link>
-        <h1 className="text-2xl font-bold">포트폴리오 요약</h1>
+    <div className="border border-line-card bg-surface">
+      <div className="px-5 pt-4 sm:px-7">
+        <Link
+          href="/unified/reports"
+          className="font-mono text-[10px] tracking-label text-fg-faint transition-colors hover:text-ink"
+        >
+          ← 보고서
+        </Link>
       </div>
-      <p className="text-xs text-gray-500">생성: {new Date(data.generatedAt).toLocaleString('ko-KR')}</p>
+      <PageHeader
+        className="px-5 pt-2 sm:px-7"
+        title="포트폴리오 요약"
+        meta={`B-01 · 스냅샷 기반 자동 산출 · 생성 ${new Date(data.generatedAt).toLocaleString('ko-KR')}`}
+      />
 
-      {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard label="총 자산 (NAV)" value={fmt(data.nav)} />
-        <KpiCard label="총 매입 원가" value={fmt(data.totalPurchaseCost)} />
-        <KpiCard label="미실현 손익" value={fmt(data.unrealizedPnl)} valueClass={pnlColor} />
-        <KpiCard label="수익률" value={fmtPct(data.unrealizedPnlPct)} valueClass={pnlColor} />
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <KpiCard label="보유 자산 수" value={`${data.assetCount}개`} />
-        <KpiCard label="연결 계좌 수" value={`${data.accountCount}개`} />
-      </div>
-
-      {/* Pie + Type table */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
-          <h2 className="mb-4 text-sm font-semibold text-gray-300">자산 유형별 비중</h2>
-          {pieData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={260}>
-              <PieChart>
-                <Pie data={pieData} dataKey="value" cx="50%" cy="50%" innerRadius={60} outerRadius={110} paddingAngle={2}>
-                  {pieData.map((e, i) => <Cell key={i} fill={e.color} />)}
-                </Pie>
-                <Tooltip
-                  formatter={(v: number) => [fmt(v), '가치']}
-                  contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
-                />
-                <Legend formatter={(v) => <span className="text-xs text-gray-300">{v}</span>} />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : <Empty />}
+      <div className="px-5 py-5 pb-10 sm:px-7">
+        {/* KPI 타일 */}
+        <div className="grid grid-cols-2 gap-px border border-line-soft bg-line-soft lg:grid-cols-4">
+          <KpiCard label="총 자산 (NAV)" value={fmt(data.nav)} />
+          <KpiCard label="총 매입 원가" value={fmt(data.totalPurchaseCost)} />
+          <KpiCard label="미실현 손익" value={fmt(data.unrealizedPnl)} valueClass={pnlClass} />
+          <KpiCard label="수익률" value={fmtPct(data.unrealizedPnlPct)} valueClass={pnlClass} />
         </div>
 
-        <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
-          <h2 className="mb-4 text-sm font-semibold text-gray-300">유형별 상세</h2>
-          <div className="space-y-3">
-            {data.byType.map((t: TypeBreakdown) => (
-              <div key={t.type} className="flex items-center gap-3" aria-label={TYPE_KO[t.type] ?? t.type}>
-                <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: TYPE_COLORS[t.type] ?? '#6b7280' }} />
-                <span className="flex-1 text-sm text-gray-300">{TYPE_KO[t.type] ?? t.type}</span>
-                <div className="flex-1 h-2 rounded-full bg-gray-800 overflow-hidden">
-                  <div className="h-full rounded-full" style={{ width: `${t.pct}%`, background: TYPE_COLORS[t.type] ?? '#6b7280' }} />
+        <div className="mt-3 grid grid-cols-2 gap-px border border-line-soft bg-line-soft">
+          <KpiCard label="보유 자산 수" value={`${data.assetCount}개`} />
+          <KpiCard label="연결 계좌 수" value={`${data.accountCount}개`} />
+        </div>
+
+        {/* Pie + Type table */}
+        <div className="mt-8 grid gap-8 lg:grid-cols-2">
+          <section>
+            <SectionHeader label="자산 유형별 비중" />
+            {pieData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={260}>
+                <PieChart>
+                  <Pie data={pieData} dataKey="value" cx="50%" cy="50%" innerRadius={60} outerRadius={110} paddingAngle={2}>
+                    {pieData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                  </Pie>
+                  <Tooltip
+                    formatter={(v: number) => [fmt(v), '가치']}
+                    contentStyle={TOOLTIP_STYLE}
+                  />
+                  <Legend formatter={(v) => <span className="font-mono text-[10px] text-fg-3">{v}</span>} />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : <Empty />}
+          </section>
+
+          <section>
+            <SectionHeader label="유형별 상세" />
+            <div className="space-y-3 border-t-[1.5px] border-ink pt-3">
+              {data.byType.map((t: TypeBreakdown) => (
+                <div key={t.type} className="flex items-center gap-3" aria-label={TYPE_KO[t.type] ?? t.type}>
+                  <span className="h-2.5 w-2.5 shrink-0" style={{ background: TYPE_COLORS[t.type] ?? 'var(--c-fg-muted)' }} />
+                  <span className="flex-1 text-[13px] text-fg-2">{TYPE_KO[t.type] ?? t.type}</span>
+                  <div className="h-[6px] flex-1 overflow-hidden bg-line-soft">
+                    <div className="h-full" style={{ width: `${t.pct}%`, background: TYPE_COLORS[t.type] ?? 'var(--c-fg-muted)' }} />
+                  </div>
+                  <Num className="w-14 text-right text-[12px] text-fg-3">{t.pct.toFixed(1)}%</Num>
+                  <Num className="w-24 text-right text-[11px] text-fg-faint">{t.count}종</Num>
                 </div>
-                <span className="w-14 text-right text-sm tabular-nums text-gray-400">{t.pct.toFixed(1)}%</span>
-                <span className="w-24 text-right text-xs text-gray-500">{t.count}종</span>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        {/* Currency Breakdown */}
+        <section className="mt-8">
+          <SectionHeader label="통화별 비중" />
+          <div className="grid grid-cols-2 gap-px border border-line-soft bg-line-soft sm:grid-cols-3 lg:grid-cols-4">
+            {data.byCurrency.map((c) => (
+              <div key={c.currency} className="bg-surface px-3.5 py-3">
+                <Label size="sm" tone="faint">{c.currency}</Label>
+                {/* c.value는 백엔드에서 KRW로 환산된 통화별 기여액 → KRW로 표시(원통화 심볼 금지) */}
+                <Num className="mt-1 block text-[14px]">{fmt(c.value)}</Num>
+                <Num className="mt-0.5 block text-[11px] text-fg-faint">{c.pct.toFixed(1)}%</Num>
               </div>
             ))}
           </div>
-        </div>
-      </div>
+        </section>
 
-      {/* Currency Breakdown */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
-        <h2 className="mb-4 text-sm font-semibold text-gray-300">통화별 비중</h2>
-        <div className="flex flex-wrap gap-4">
-          {data.byCurrency.map((c) => (
-            <div key={c.currency} className="flex-1 min-w-[120px] rounded-lg border border-gray-700 p-4 text-center">
-              <div className="text-lg font-bold text-gray-200">{c.currency}</div>
-              {/* c.value는 백엔드에서 KRW로 환산된 통화별 기여액 → KRW로 표시(원통화 심볼 금지) */}
-              <div className="text-sm text-gray-400 tabular-nums">{fmt(c.value)}</div>
-              <div className="text-xs text-gray-500 mt-0.5">{c.pct.toFixed(1)}%</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Top Holdings */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
-          <h2 className="text-sm font-semibold text-gray-300">상위 보유 자산</h2>
-        </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-gray-500 border-b border-gray-800">
-              <th className="px-6 py-3">#</th>
-              <th className="px-4 py-3">자산명</th>
-              <th className="px-4 py-3">유형</th>
-              <th className="px-4 py-3 text-right">현재 가치</th>
-              <th className="px-4 py-3 text-right">비중</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-800">
-            {data.topHoldings.map((h: TopHolding, i) => (
-              <tr key={i} className="hover:bg-gray-800/50">
-                <td className="px-6 py-3 text-gray-500 text-xs">{i + 1}</td>
-                <td className="px-4 py-3">
-                  <div className="font-medium text-gray-200">{h.name}</div>
-                  {h.symbol && <div className="text-xs text-gray-500">{h.symbol}</div>}
-                </td>
-                <td className="px-4 py-3">
-                  <span className="rounded-full px-2 py-0.5 text-xs" style={{ background: `${TYPE_COLORS[h.type]}25`, color: TYPE_COLORS[h.type] ?? '#9ca3af' }}>
-                    {TYPE_KO[h.type] ?? h.type}
+        {/* Top Holdings */}
+        <section className="mt-8">
+          <SectionHeader label="상위 보유 자산" />
+          <div className="overflow-x-auto">
+            <div className="min-w-[560px] border-t-[1.5px] border-ink">
+              <div className="grid grid-cols-[32px_1.8fr_1fr_1.2fr_0.7fr] gap-3 border-b border-line py-2">
+                <Label size="sm" tone="faint">#</Label>
+                <Label size="sm" tone="faint">자산명</Label>
+                <Label size="sm" tone="faint">유형</Label>
+                <Label size="sm" tone="faint" className="text-right">현재 가치</Label>
+                <Label size="sm" tone="faint" className="text-right">비중</Label>
+              </div>
+              {data.topHoldings.map((h: TopHolding, i) => (
+                <div
+                  key={i}
+                  className="grid grid-cols-[32px_1.8fr_1fr_1.2fr_0.7fr] items-baseline gap-3 border-b border-line-hair py-2.5 hover:bg-surface-muted"
+                >
+                  <Num className="text-[11px] text-fg-ghost">{i + 1}</Num>
+                  <span className="min-w-0">
+                    <span className="block text-[13.5px]">{h.name}</span>
+                    {h.symbol && <span className="block font-mono text-[10.5px] text-fg-faint">{h.symbol}</span>}
                   </span>
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums text-gray-300">{fmt(h.value)}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-gray-400">{h.pct.toFixed(1)}%</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  <span className="text-[12.5px] text-fg-3">{TYPE_KO[h.type] ?? h.type}</span>
+                  <Num className="text-right text-[12.5px]">{fmt(h.value)}</Num>
+                  <Num className="text-right text-[12.5px] text-fg-muted">{h.pct.toFixed(1)}%</Num>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   )
 }
 
-function KpiCard({ label, value, valueClass = 'text-white' }: { label: string; value: string; valueClass?: string }) {
+function KpiCard({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
   return (
-    <div className="rounded-xl border border-gray-700 bg-gray-900 p-5">
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className={`mt-2 text-2xl font-bold tabular-nums ${valueClass}`}>{value}</p>
+    <div className="bg-surface px-3.5 py-3">
+      <Label size="sm" tone="faint">{label}</Label>
+      <Num className={`mt-1 block text-[16px] ${valueClass ?? ''}`}>{value}</Num>
     </div>
   )
 }
-function Skeleton() { return <div className="h-96 animate-pulse rounded-xl bg-gray-800" /> }
-function Err() { return <div className="rounded-xl border border-red-800 bg-red-950 p-6 text-sm text-red-400">보고서를 불러올 수 없습니다.</div> }
-function Empty() { return <div className="flex h-48 items-center justify-center text-sm text-gray-500">데이터 없음</div> }
+function Skeleton() {
+  return (
+    <div className="border border-line-card bg-surface px-5 sm:px-7">
+      <LoadingState />
+    </div>
+  )
+}
+function Err() {
+  return (
+    <div className="border border-line-card bg-surface px-5 sm:px-7">
+      <ErrorState message="보고서를 불러올 수 없습니다." />
+    </div>
+  )
+}
+function Empty() { return <EmptyState title="데이터 없음" /> }

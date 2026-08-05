@@ -8,10 +8,20 @@ import { useRouter } from 'next/navigation'
 import { useReportArchiveApi } from '@/lib/useApi'
 import { CASHFLOW } from '@/lib/report-archive-api'
 import type { ArchiveMeta } from '@/types/report-archive'
+import PageHeader from '@/components/ui/PageHeader'
+import SectionHeader from '@/components/ui/SectionHeader'
+import Badge from '@/components/ui/Badge'
+import Button from '@/components/ui/Button'
+import Label from '@/components/ui/Label'
+import Num from '@/components/ui/Num'
+import Field, { Select } from '@/components/ui/Field'
+import { EmptyState, LoadingState } from '@/components/ui/states'
 
 const NOW = new Date()
 const YEARS = Array.from({ length: 6 }, (_, i) => NOW.getFullYear() - i)
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
+
+const ROW_GRID = 'grid grid-cols-[1.1fr_0.9fr_0.7fr_1.3fr] gap-3'
 
 export default function CashflowReportListPage() {
   const api = useReportArchiveApi(CASHFLOW)
@@ -43,79 +53,88 @@ export default function CashflowReportListPage() {
   })
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center gap-3">
-        <Link href="/unified/reports" className="text-sm text-gray-500 hover:text-gray-300">← 보고서</Link>
-        <h1 className="text-2xl font-bold">현금흐름 보고서</h1>
-      </div>
-
-      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-700 bg-gray-900 p-4">
-        <label className="text-sm text-gray-400">
-          연도
-          <select value={year} onChange={(e) => setYear(Number(e.target.value))}
-            className="ml-2 rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200">
-            {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
-        </label>
-        <label className="text-sm text-gray-400">
-          월
-          <select value={month} onChange={(e) => setMonth(Number(e.target.value))}
-            className="ml-2 rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200">
-            {MONTHS.map((mm) => <option key={mm} value={mm}>{mm}</option>)}
-          </select>
-        </label>
-        <button
-          onClick={() => { setError(null); gen.mutate() }}
-          disabled={gen.isPending || !api}
-          className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
+    <div className="border border-line-card bg-surface">
+      <div className="px-5 pt-4 sm:px-7">
+        <Link
+          href="/unified/reports"
+          className="font-mono text-[10px] tracking-label text-fg-faint transition-colors hover:text-ink"
         >
-          {gen.isPending ? '생성 중…' : '보고서 생성'}
-        </button>
+          ← 보고서
+        </Link>
       </div>
+      <PageHeader
+        className="px-5 pt-3 sm:px-7"
+        title="현금흐름 보고서"
+        meta="R-06 · 월말 확정 후 재산출 · PDF 출력"
+      />
 
-      {error && (
-        <div className="rounded-xl border border-red-800 bg-red-950 p-4 text-sm text-red-400">{error}</div>
-      )}
+      <div className="px-5 py-5 pb-10 sm:px-7">
+        <div className="mb-6 flex flex-wrap items-end gap-3 border border-ink bg-surface-muted p-4">
+          <Field id="cf-year" label="연도" className="w-28">
+            <Select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+              {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+            </Select>
+          </Field>
+          <Field id="cf-month" label="월" className="w-20">
+            <Select value={month} onChange={(e) => setMonth(Number(e.target.value))}>
+              {MONTHS.map((mm) => <option key={mm} value={mm}>{mm}</option>)}
+            </Select>
+          </Field>
+          <Button
+            variant="primary"
+            onClick={() => { setError(null); gen.mutate() }}
+            disabled={gen.isPending || !api}
+          >
+            {gen.isPending ? '생성 중…' : '보고서 생성'}
+          </Button>
+        </div>
 
-      <div className="space-y-3">
-        <h2 className="text-lg font-semibold">생성 이력</h2>
+        {error && (
+          <div role="alert" className="mb-6 flex items-center gap-3 border border-warn-line bg-warn-bg px-4 py-2.5">
+            <Label size="sm" className="text-warn">주의</Label>
+            <span className="text-[12.5px] text-fg-2">{error}</span>
+          </div>
+        )}
+
+        <SectionHeader label="생성 이력" note={list ? `${list.length}건` : undefined} />
         {!api || isLoading ? (
-          <div className="h-32 animate-pulse rounded-xl bg-gray-800" />
+          <LoadingState label="이력 불러오는 중" />
         ) : !list || list.length === 0 ? (
-          <p className="rounded-xl border border-gray-800 bg-gray-900 p-6 text-center text-sm text-gray-500">
-            아직 생성된 현금흐름 보고서가 없습니다. 위에서 연·월을 골라 생성하세요.
-          </p>
+          <EmptyState
+            title="아직 생성된 현금흐름 보고서가 없습니다"
+            description="위에서 연·월을 골라 생성하세요"
+          />
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-gray-700 bg-gray-900">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-800 text-left text-xs text-gray-500">
-                  <th className="p-3">기간</th><th className="p-3">기준일</th>
-                  <th className="p-3">상태</th><th className="p-3">생성일시</th>
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((r: ArchiveMeta) => (
-                  <tr
-                    key={r.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => router.push(`/unified/reports/cashflow-report/${r.id}`)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') router.push(`/unified/reports/cashflow-report/${r.id}`) }}
-                    className="cursor-pointer border-b border-gray-800 last:border-b-0 hover:bg-gray-800/50 focus:bg-gray-800/50 focus:outline-none"
-                  >
-                    <td className="p-3 font-medium text-gray-100">
-                      {r.periodStart.slice(0, 4)}년 {Number(r.periodStart.slice(5, 7))}월
-                    </td>
-                    <td className="p-3 text-gray-400">{r.asOfDate}</td>
-                    <td className="p-3">
-                      <span className={r.status === 'WARNING' ? 'text-yellow-400' : 'text-emerald-400'}>{r.status}</span>
-                    </td>
-                    <td className="p-3 text-gray-400">{new Date(r.createdAt).toLocaleString('ko-KR')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="overflow-x-auto">
+            <div className="min-w-[560px] border-t-[1.5px] border-ink">
+              <div className={`${ROW_GRID} border-b border-line py-2`}>
+                <Label size="sm" tone="faint">기간</Label>
+                <Label size="sm" tone="faint">기준일</Label>
+                <Label size="sm" tone="faint">상태</Label>
+                <Label size="sm" tone="faint">생성일시</Label>
+              </div>
+              {list.map((r: ArchiveMeta) => (
+                <div
+                  key={r.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => router.push(`/unified/reports/cashflow-report/${r.id}`)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') router.push(`/unified/reports/cashflow-report/${r.id}`) }}
+                  className={`${ROW_GRID} cursor-pointer items-baseline border-b border-line-hair py-2.5 transition-colors hover:bg-surface-muted focus:bg-surface-muted focus:outline-none`}
+                >
+                  <span className="text-[13px] font-medium text-ink">
+                    {r.periodStart.slice(0, 4)}년 {Number(r.periodStart.slice(5, 7))}월
+                  </span>
+                  <Num className="text-[12px] text-fg-3">{r.asOfDate}</Num>
+                  <span>
+                    {r.status === 'WARNING'
+                      ? <Badge variant="warn">잠정/경고</Badge>
+                      : <Badge variant="ok">확정</Badge>}
+                  </span>
+                  <Num className="text-[11px] text-fg-faint">{new Date(r.createdAt).toLocaleString('ko-KR')}</Num>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
