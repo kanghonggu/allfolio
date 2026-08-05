@@ -7,11 +7,25 @@ import { useReportApi } from '@/lib/useApi'
 import type { DailyPerf } from '@/types/report'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceLine, Legend,
+  ResponsiveContainer, ReferenceLine,
 } from 'recharts'
+import PageHeader from '@/components/ui/PageHeader'
+import SectionHeader from '@/components/ui/SectionHeader'
+import Label from '@/components/ui/Label'
+import Num from '@/components/ui/Num'
+import { LoadingState, ErrorState, EmptyState } from '@/components/ui/states'
+import { dirTone } from '@/lib/format'
 
 const PERIODS = ['1W', '1M', '3M', 'YTD', '1Y'] as const
 type Period = typeof PERIODS[number]
+
+const TOOLTIP_STYLE = {
+  background: 'var(--c-surface)',
+  border: '1px solid var(--c-line-card)',
+  borderRadius: 0,
+  color: 'var(--c-ink)',
+} as const
+const TICK_STYLE = { fontSize: 10, fill: 'var(--c-fg-faint)', fontFamily: 'monospace' } as const
 
 function fmtPct(n: number | null) {
   if (n === null || n === undefined) return '—'
@@ -47,136 +61,159 @@ export default function PerformancePage() {
     nav: Number(d.nav),
   }))
 
-  const totalReturnColor = Number(data.totalReturn) >= 0 ? 'text-emerald-400' : 'text-red-400'
-
   return (
-    <div className="space-y-8">
-      <div className="flex items-center gap-3">
-        <Link href="/unified/reports" className="text-sm text-gray-500 hover:text-gray-300">← 보고서</Link>
-        <h1 className="text-2xl font-bold">수익률 분석</h1>
+    <div className="border border-line-card bg-surface">
+      <div className="px-5 pt-4 sm:px-7">
+        <Link
+          href="/unified/reports"
+          className="font-mono text-[10px] tracking-label text-fg-faint transition-colors hover:text-ink"
+        >
+          ← 보고서
+        </Link>
       </div>
+      <PageHeader
+        className="px-5 pt-2 sm:px-7"
+        title="수익률 분석"
+        meta="B-02 · 스냅샷 기반 자동 산출"
+      />
 
-      {/* Period Selector */}
-      <div className="flex gap-2">
-        {PERIODS.map((p) => {
-          const insufficient = coverageDays > 0 && coverageDays < periodDays[p]
-          return (
-            <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              disabled={insufficient}
-              title={insufficient ? `데이터 부족 (${coverageDays}일)` : undefined}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                period === p
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-              } disabled:cursor-not-allowed disabled:opacity-40`}
-            >
-              {periodLabels[p]}
-            </button>
-          )
-        })}
-      </div>
+      <div className="px-5 py-5 pb-10 sm:px-7">
+        {/* Period Selector */}
+        <div className="flex flex-wrap gap-2">
+          {PERIODS.map((p) => {
+            const insufficient = coverageDays > 0 && coverageDays < periodDays[p]
+            return (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                disabled={insufficient}
+                title={insufficient ? `데이터 부족 (${coverageDays}일)` : undefined}
+                className={`border px-3.5 py-1.5 font-mono text-[10px] tracking-label transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                  period === p
+                    ? 'border-ink bg-ink text-white'
+                    : 'border-line bg-surface text-fg-3 hover:border-ink hover:text-ink'
+                }`}
+              >
+                {periodLabels[p]}
+              </button>
+            )
+          })}
+        </div>
 
-      {/* Total Return */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
-        <p className="text-sm text-gray-400">전체 수익률 (매입 원가 기준)</p>
-        <p className={`mt-2 text-4xl font-bold tabular-nums ${totalReturnColor}`}>
-          {fmtPct(Number(data.totalReturn))}
-        </p>
-        {data.twr !== null && (
-          <p className="mt-1 text-sm text-gray-500">TWR: {fmtPct(Number(data.twr))}</p>
-        )}
-      </div>
+        {/* Total Return */}
+        <div className="mt-6 border border-line-soft bg-surface px-4 py-4">
+          <Label size="sm" tone="faint">전체 수익률 (매입 원가 기준)</Label>
+          <Num tone={dirTone(Number(data.totalReturn))} className="mt-1.5 block text-[26px]">
+            {fmtPct(Number(data.totalReturn))}
+          </Num>
+          {data.twr !== null && (
+            <Num className="mt-0.5 block text-[11.5px] text-fg-faint">TWR: {fmtPct(Number(data.twr))}</Num>
+          )}
+        </div>
 
-      {/* Period Returns Grid */}
-      <div className="grid gap-3 grid-cols-2 sm:grid-cols-5">
-        {PERIODS.map((p) => {
-          const val = data.periodReturns[p]
-          const n = val !== null && val !== undefined ? Number(val) : null
-          return (
-            <div key={p} className={`rounded-xl border bg-gray-900 p-4 ${period === p ? 'border-blue-600' : 'border-gray-700'}`}>
-              <p className="text-xs text-gray-500">{periodLabels[p]}</p>
-              <p className={`mt-1 font-bold tabular-nums ${
-                n === null ? 'text-sm text-gray-600' : `text-xl ${n >= 0 ? 'text-emerald-400' : 'text-red-400'}`
-              }`}>
+        {/* Period Returns Grid */}
+        <div className="mt-3 grid grid-cols-2 gap-px border border-line-soft bg-line-soft sm:grid-cols-5">
+          {PERIODS.map((p) => {
+            const val = data.periodReturns[p]
+            const n = val !== null && val !== undefined ? Number(val) : null
+            return (
+              <div key={p} className="bg-surface px-3.5 py-3">
+                <Label size="sm" tone={period === p ? 'ink' : 'faint'}>{periodLabels[p]}</Label>
                 {/* 커버리지 미달 기간은 왜곡 수치 대신 명시 표기 (QA P2) */}
-                {n === null ? `데이터 부족 (${coverageDays}일)` : fmtPct(n)}
-              </p>
-            </div>
-          )
-        })}
-      </div>
+                {n === null ? (
+                  <span className="mt-1 block font-mono text-[10px] tracking-label text-fg-faint">
+                    데이터 부족 ({coverageDays}일)
+                  </span>
+                ) : (
+                  <Num tone={dirTone(n)} className="mt-1 block text-[16px]">{fmtPct(n)}</Num>
+                )}
+              </div>
+            )
+          })}
+        </div>
 
-      {/* Cumulative Return Chart */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
-        <h2 className="mb-4 text-sm font-semibold text-gray-300">누적 수익률 시계열</h2>
-        {chartData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={320}>
-            <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-              <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6b7280' }} tickLine={false} />
-              <YAxis
-                tickFormatter={(v) => `${v.toFixed(1)}%`}
-                tick={{ fontSize: 11, fill: '#6b7280' }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <Tooltip
-                formatter={(v: number) => [`${v.toFixed(2)}%`]}
-                contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
-                labelStyle={{ color: '#d1d5db' }}
-              />
-              <ReferenceLine y={0} stroke="#374151" strokeDasharray="4 4" />
-              <Line
-                type="monotone" dataKey="cumReturn" name="누적 수익률"
-                stroke="#3b82f6" strokeWidth={2} dot={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        ) : (
-          <Empty message="성과 이력이 없습니다. 자산을 추가하고 sync 해주세요." />
+        {/* Cumulative Return Chart */}
+        <section className="mt-8">
+          <SectionHeader label="누적 수익률 시계열" />
+          {chartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={320}>
+              <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--c-line)" />
+                <XAxis dataKey="date" tick={TICK_STYLE} tickLine={false} />
+                <YAxis
+                  tickFormatter={(v) => `${v.toFixed(1)}%`}
+                  tick={TICK_STYLE}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <Tooltip
+                  formatter={(v: number) => [`${v.toFixed(2)}%`]}
+                  contentStyle={TOOLTIP_STYLE}
+                  labelStyle={{ color: 'var(--c-fg-muted)' }}
+                />
+                <ReferenceLine y={0} stroke="var(--c-line)" strokeDasharray="4 4" />
+                <Line
+                  type="monotone" dataKey="cumReturn" name="누적 수익률"
+                  stroke="var(--c-ink)" strokeWidth={2} dot={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <Empty message="성과 이력이 없습니다. 자산을 추가하고 sync 해주세요." />
+          )}
+        </section>
+
+        {/* Daily NAV Chart */}
+        {chartData.length > 0 && (
+          <section className="mt-8">
+            <SectionHeader label="일별 NAV" />
+            <ResponsiveContainer width="100%" height={240}>
+              <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--c-line)" />
+                <XAxis dataKey="date" tick={TICK_STYLE} tickLine={false} />
+                <YAxis
+                  tickFormatter={(v) => `₩${(v / 1_000_000).toFixed(0)}M`}
+                  tick={TICK_STYLE}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <Tooltip
+                  formatter={(v: number) => [new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 }).format(v)]}
+                  contentStyle={TOOLTIP_STYLE}
+                />
+                <Line type="monotone" dataKey="nav" name="NAV" stroke="var(--c-ink)" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </section>
+        )}
+
+        {data.benchmarkAlpha !== null && (
+          <div className="mt-8 border border-line-soft bg-surface px-4 py-4">
+            <Label size="sm" tone="faint">벤치마크 대비 알파</Label>
+            <Num tone={dirTone(Number(data.benchmarkAlpha))} className="mt-1 block text-[18px]">
+              {fmtPct(Number(data.benchmarkAlpha))}
+            </Num>
+          </div>
         )}
       </div>
-
-      {/* Daily NAV Chart */}
-      {chartData.length > 0 && (
-        <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
-          <h2 className="mb-4 text-sm font-semibold text-gray-300">일별 NAV</h2>
-          <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-              <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6b7280' }} tickLine={false} />
-              <YAxis
-                tickFormatter={(v) => `₩${(v / 1_000_000).toFixed(0)}M`}
-                tick={{ fontSize: 11, fill: '#6b7280' }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <Tooltip
-                formatter={(v: number) => [new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 }).format(v)]}
-                contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
-              />
-              <Line type="monotone" dataKey="nav" name="NAV" stroke="#10b981" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {data.benchmarkAlpha !== null && (
-        <div className="rounded-xl border border-gray-700 bg-gray-900 p-4">
-          <p className="text-xs text-gray-500">벤치마크 대비 알파</p>
-          <p className={`mt-1 text-xl font-bold ${Number(data.benchmarkAlpha) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-            {fmtPct(Number(data.benchmarkAlpha))}
-          </p>
-        </div>
-      )}
     </div>
   )
 }
 
-function Skeleton() { return <div className="h-96 animate-pulse rounded-xl bg-gray-800" /> }
-function Err() { return <div className="rounded-xl border border-red-800 bg-red-950 p-6 text-sm text-red-400">보고서를 불러올 수 없습니다.</div> }
+function Skeleton() {
+  return (
+    <div className="border border-line-card bg-surface px-5 sm:px-7">
+      <LoadingState />
+    </div>
+  )
+}
+function Err() {
+  return (
+    <div className="border border-line-card bg-surface px-5 sm:px-7">
+      <ErrorState message="보고서를 불러올 수 없습니다." />
+    </div>
+  )
+}
 function Empty({ message }: { message: string }) {
-  return <div className="flex h-48 items-center justify-center text-sm text-gray-500">{message}</div>
+  return <EmptyState title="데이터 없음" description={message} />
 }

@@ -5,11 +5,12 @@ import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useReportApi } from '@/lib/useApi'
 import type { PositionRow } from '@/types/report'
+import PageHeader from '@/components/ui/PageHeader'
+import Label from '@/components/ui/Label'
+import Num from '@/components/ui/Num'
+import { LoadingState, ErrorState } from '@/components/ui/states'
+import { dirTone, toneText } from '@/lib/format'
 
-const TYPE_COLORS: Record<string, string> = {
-  CRYPTO: '#f59e0b', STOCK: '#3b82f6', REAL_ESTATE: '#10b981',
-  VEHICLE: '#8b5cf6', GOLD: '#eab308', CASH: '#6b7280', ETC: '#ec4899',
-}
 const TYPE_KO: Record<string, string> = {
   CRYPTO: '암호화폐', STOCK: '주식', REAL_ESTATE: '부동산',
   VEHICLE: '자동차', GOLD: '금', CASH: '현금', ETC: '기타',
@@ -24,6 +25,8 @@ function fmt(n: number, currency = 'KRW') {
 }
 
 type SortKey = 'currentValue' | 'unrealizedPnl' | 'unrealizedPnlPct' | 'purchaseCost'
+
+const TABLE_GRID = 'grid grid-cols-[1.6fr_0.9fr_0.7fr_0.8fr_1fr_1.1fr_1.2fr_1.1fr_0.8fr] gap-3'
 
 export default function PositionsPage() {
   const reportApi = useReportApi()
@@ -59,153 +62,169 @@ export default function PositionsPage() {
 
   const sortIcon = (key: SortKey) => sortKey === key ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''
 
-  const totalPnlColor = Number(data.totalUnrealizedPnl) >= 0 ? 'text-emerald-400' : 'text-red-400'
-  const totalRetColor = Number(data.totalReturnPct) >= 0 ? 'text-emerald-400' : 'text-red-400'
+  const totalPnlClass = toneText[dirTone(Number(data.totalUnrealizedPnl))]
+  const totalRetClass = toneText[dirTone(Number(data.totalReturnPct))]
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center gap-3">
-        <Link href="/unified/reports" className="text-sm text-gray-500 hover:text-gray-300">← 보고서</Link>
-        <h1 className="text-2xl font-bold">포지션 & 손익</h1>
+    <div className="border border-line-card bg-surface">
+      <div className="px-5 pt-4 sm:px-7">
+        <Link
+          href="/unified/reports"
+          className="font-mono text-[10px] tracking-label text-fg-faint transition-colors hover:text-ink"
+        >
+          ← 보고서
+        </Link>
       </div>
-      <p className="text-xs text-gray-500">생성: {new Date(data.generatedAt).toLocaleString('ko-KR')}</p>
+      <PageHeader
+        className="px-5 pt-2 sm:px-7"
+        title="포지션 & 손익"
+        meta={`B-05 · 스냅샷 기반 자동 산출 · 생성 ${new Date(data.generatedAt).toLocaleString('ko-KR')}`}
+      />
 
-      {/* Summary KPIs */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard label="총 현재 가치" value={fmt(Number(data.totalCurrentValue))} />
-        <KpiCard label="총 매입 원가" value={fmt(Number(data.totalPurchaseCost))} />
-        <KpiCard
-          label="미실현 총 손익"
-          value={`${Number(data.totalUnrealizedPnl) >= 0 ? '+' : ''}${fmt(Number(data.totalUnrealizedPnl))}`}
-          valueClass={totalPnlColor}
-        />
-        <KpiCard
-          label="전체 수익률"
-          value={`${Number(data.totalReturnPct) >= 0 ? '+' : ''}${Number(data.totalReturnPct).toFixed(2)}%`}
-          valueClass={totalRetColor}
-        />
-      </div>
+      <div className="px-5 py-5 pb-10 sm:px-7">
+        {/* Summary KPIs */}
+        <div className="grid grid-cols-2 gap-px border border-line-soft bg-line-soft lg:grid-cols-4">
+          <KpiCard label="총 현재 가치" value={fmt(Number(data.totalCurrentValue))} />
+          <KpiCard label="총 매입 원가" value={fmt(Number(data.totalPurchaseCost))} />
+          <KpiCard
+            label="미실현 총 손익"
+            value={`${Number(data.totalUnrealizedPnl) >= 0 ? '+' : ''}${fmt(Number(data.totalUnrealizedPnl))}`}
+            valueClass={totalPnlClass}
+          />
+          <KpiCard
+            label="전체 수익률"
+            value={`${Number(data.totalReturnPct) >= 0 ? '+' : ''}${Number(data.totalReturnPct).toFixed(2)}%`}
+            valueClass={totalRetClass}
+          />
+        </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-2">
-        {types.map((t) => (
-          <button
-            key={t}
-            onClick={() => setFilterType(t)}
-            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-              filterType === t ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            {t === 'ALL' ? '전체' : (TYPE_KO[t] ?? t)}
-          </button>
-        ))}
-      </div>
+        {/* Filters */}
+        <div className="mt-6 flex flex-wrap gap-2">
+          {types.map((t) => (
+            <button
+              key={t}
+              onClick={() => setFilterType(t)}
+              className={`border px-3.5 py-1.5 font-mono text-[10px] tracking-label transition-colors ${
+                filterType === t
+                  ? 'border-ink bg-ink text-white'
+                  : 'border-line bg-surface text-fg-3 hover:border-ink hover:text-ink'
+              }`}
+            >
+              {t === 'ALL' ? '전체' : (TYPE_KO[t] ?? t)}
+            </button>
+          ))}
+        </div>
 
-      {/* Position Table */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-gray-500 border-b border-gray-800">
-              <th className="px-6 py-3 font-medium">자산명</th>
-              <th className="px-4 py-3 font-medium">계좌</th>
-              <th className="px-4 py-3 font-medium">유형</th>
-              <th className="px-4 py-3 text-right font-medium">수량</th>
-              <th className="px-4 py-3 text-right font-medium">평균 매입가</th>
-              <th
-                className="px-4 py-3 text-right font-medium cursor-pointer hover:text-gray-300"
+        {/* Position Table */}
+        <div className="mt-4 overflow-x-auto">
+          <div className="min-w-[980px] border-t-[1.5px] border-ink">
+            <div className={`${TABLE_GRID} border-b border-line py-2`}>
+              <Label size="sm" tone="faint">자산명</Label>
+              <Label size="sm" tone="faint">계좌</Label>
+              <Label size="sm" tone="faint">유형</Label>
+              <Label size="sm" tone="faint" className="text-right">수량</Label>
+              <Label size="sm" tone="faint" className="text-right">평균 매입가</Label>
+              <button
+                type="button"
                 onClick={() => toggleSort('purchaseCost')}
+                className="text-right font-mono text-[9px] uppercase tracking-label text-fg-faint transition-colors hover:text-ink"
               >
                 매입 원가{sortIcon('purchaseCost')}
-              </th>
-              <th
-                className="px-4 py-3 text-right font-medium cursor-pointer hover:text-gray-300"
+              </button>
+              <button
+                type="button"
                 onClick={() => toggleSort('currentValue')}
+                className="text-right font-mono text-[9px] uppercase tracking-label text-fg-faint transition-colors hover:text-ink"
               >
                 현재 가치{sortIcon('currentValue')}
-              </th>
-              <th
-                className="px-4 py-3 text-right font-medium cursor-pointer hover:text-gray-300"
+              </button>
+              <button
+                type="button"
                 onClick={() => toggleSort('unrealizedPnl')}
+                className="text-right font-mono text-[9px] uppercase tracking-label text-fg-faint transition-colors hover:text-ink"
               >
                 미실현 손익{sortIcon('unrealizedPnl')}
-              </th>
-              <th
-                className="px-4 py-3 text-right font-medium cursor-pointer hover:text-gray-300"
+              </button>
+              <button
+                type="button"
                 onClick={() => toggleSort('unrealizedPnlPct')}
+                className="text-right font-mono text-[9px] uppercase tracking-label text-fg-faint transition-colors hover:text-ink"
               >
                 수익률{sortIcon('unrealizedPnlPct')}
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-800">
+              </button>
+            </div>
+
             {filtered.length === 0 && (
-              <tr>
-                <td colSpan={9} className="py-12 text-center text-sm text-gray-500">포지션 없음</td>
-              </tr>
+              <div className="py-12 text-center text-[13px] text-fg-faint">포지션 없음</div>
             )}
             {filtered.map((p: PositionRow, i) => {
               const pnl = Number(p.unrealizedPnl)
               const ret = Number(p.unrealizedPnlPct)
-              const pnlColor = pnl >= 0 ? 'text-emerald-400' : 'text-red-400'
+              const pnlClass = toneText[dirTone(pnl)]
               return (
-                <tr key={i} className="hover:bg-gray-800/50 transition-colors">
-                  <td className="px-6 py-3">
-                    <div className="font-medium text-gray-200">{p.name}</div>
-                    {p.symbol && <div className="text-xs text-gray-500">{p.symbol}</div>}
-                    <div className="text-xs text-gray-600 mt-0.5">{p.confidenceLevel}</div>
-                  </td>
-                  <td className="px-4 py-3 text-gray-400 text-xs">{p.accountName}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className="rounded-full px-2 py-0.5 text-xs"
-                      style={{ background: `${TYPE_COLORS[p.type]}25`, color: TYPE_COLORS[p.type] ?? '#9ca3af' }}
-                    >
-                      {TYPE_KO[p.type] ?? p.type}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-gray-300 text-xs">
+                <div key={i} className={`${TABLE_GRID} items-baseline border-b border-line-hair py-2.5 hover:bg-surface-muted`}>
+                  <span className="min-w-0">
+                    <span className="block text-[13.5px]">{p.name}</span>
+                    {p.symbol && <span className="block font-mono text-[10.5px] text-fg-faint">{p.symbol}</span>}
+                    <span className="mt-0.5 block font-mono text-[9.5px] tracking-label text-fg-ghost">{p.confidenceLevel}</span>
+                  </span>
+                  <span className="text-[11.5px] text-fg-3">{p.accountName}</span>
+                  <span className="text-[12px] text-fg-3">{TYPE_KO[p.type] ?? p.type}</span>
+                  <Num className="text-right text-[12px] text-fg-2">
                     {Number(p.quantity).toLocaleString('ko-KR', { maximumFractionDigits: 8 })}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-gray-400 text-xs">
+                  </Num>
+                  <Num className="text-right text-[12px] text-fg-3">
                     {fmt(Number(p.avgCost), p.currency)}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-gray-300">
+                  </Num>
+                  <Num className="text-right text-[12.5px] text-fg-2">
                     {fmt(Number(p.purchaseCost), p.currency)}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-gray-200">
+                  </Num>
+                  <span className="text-right">
                     {/* 표시 통화는 KRW로 통일, 원통화 값은 보조 표기 (QA P2) */}
-                    {fmt(Number(p.currentValueKrw))}
+                    <Num className="text-[12.5px]">{fmt(Number(p.currentValueKrw))}</Num>
                     {p.currency !== 'KRW' && (
-                      <div className="text-xs text-gray-500">{fmt(Number(p.currentValue), p.currency)}</div>
+                      <Num className="block text-[10.5px] text-fg-faint">{fmt(Number(p.currentValue), p.currency)}</Num>
                     )}
-                  </td>
-                  <td className={`px-4 py-3 text-right tabular-nums ${pnlColor}`}>
+                  </span>
+                  <Num className={`text-right text-[12.5px] ${pnlClass}`}>
                     {pnl >= 0 ? '+' : ''}{fmt(pnl, p.currency)}
-                  </td>
-                  <td className={`px-4 py-3 text-right tabular-nums font-medium ${pnlColor}`}>
+                  </Num>
+                  <Num className={`text-right text-[12.5px] font-medium ${pnlClass}`}>
                     {ret >= 0 ? '+' : ''}{ret.toFixed(2)}%
-                  </td>
-                </tr>
+                  </Num>
+                </div>
               )
             })}
-          </tbody>
-        </table>
+          </div>
+        </div>
+
+        <p className="mt-4 text-[11.5px] leading-relaxed text-fg-faint">
+          * 평균 매입가는 입력된 매입가 기준이며, FIFO 실현 손익은 거래 이력이 쌓이면 자동 계산됩니다.
+        </p>
       </div>
-
-      <p className="text-xs text-gray-600">
-        * 평균 매입가는 입력된 매입가 기준이며, FIFO 실현 손익은 거래 이력이 쌓이면 자동 계산됩니다.
-      </p>
     </div>
   )
 }
 
-function KpiCard({ label, value, valueClass = 'text-white' }: { label: string; value: string; valueClass?: string }) {
+function KpiCard({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
   return (
-    <div className="rounded-xl border border-gray-700 bg-gray-900 p-5">
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className={`mt-2 text-xl font-bold tabular-nums ${valueClass}`}>{value}</p>
+    <div className="bg-surface px-3.5 py-3">
+      <Label size="sm" tone="faint">{label}</Label>
+      <Num className={`mt-1 block text-[15px] ${valueClass ?? ''}`}>{value}</Num>
     </div>
   )
 }
-function Skeleton() { return <div className="h-96 animate-pulse rounded-xl bg-gray-800" /> }
-function Err() { return <div className="rounded-xl border border-red-800 bg-red-950 p-6 text-sm text-red-400">보고서를 불러올 수 없습니다.</div> }
+function Skeleton() {
+  return (
+    <div className="border border-line-card bg-surface px-5 sm:px-7">
+      <LoadingState />
+    </div>
+  )
+}
+function Err() {
+  return (
+    <div className="border border-line-card bg-surface px-5 sm:px-7">
+      <ErrorState message="보고서를 불러올 수 없습니다." />
+    </div>
+  )
+}

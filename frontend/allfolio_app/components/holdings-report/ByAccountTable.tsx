@@ -1,31 +1,37 @@
 // components/holdings-report/ByAccountTable.tsx
+import Label from '@/components/ui/Label'
+import Num from '@/components/ui/Num'
+import SectionHeader from '@/components/ui/SectionHeader'
 import type { HoldingByAccount } from '@/types/holdings-report'
 import { fmtKrw } from '@/lib/report-format'
 
 export function ByAccountTable({ rows }: { rows: HoldingByAccount[] }) {
   return (
-    <section className="space-y-3 break-inside-avoid">
-      <h2 className="text-lg font-semibold">계좌별 소계</h2>
-      <div className="overflow-x-auto rounded-xl border border-gray-700 bg-gray-900">
-        <table className="w-full text-sm">
+    <section className="break-inside-avoid">
+      <SectionHeader label="계좌별 소계" />
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[560px] border-t-[1.5px] border-ink text-[13px]">
           <thead>
-            <tr className="border-b border-gray-800 text-left text-xs text-gray-500">
-              <th className="p-3">계좌</th><th className="p-3">증권사</th>
-              <th className="p-3 text-right">평가액</th><th className="p-3 text-right">비중</th><th className="p-3 text-right">종목수</th>
+            <tr className="border-b border-line text-left">
+              <th className="py-2 pr-2 font-normal"><Label size="sm" tone="faint">계좌</Label></th>
+              <th className="px-2 py-2 font-normal"><Label size="sm" tone="faint">증권사</Label></th>
+              <th className="px-2 py-2 text-right font-normal"><Label size="sm" tone="faint">평가액</Label></th>
+              <th className="px-2 py-2 text-right font-normal"><Label size="sm" tone="faint">비중</Label></th>
+              <th className="py-2 pl-2 text-right font-normal"><Label size="sm" tone="faint">종목수</Label></th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={`${r.provider}-${r.account}`} className="border-b border-gray-800 last:border-b-0">
-                <td className="p-3 font-medium text-gray-100">{r.account}</td>
-                <td className="p-3 text-gray-400">{r.provider}</td>
-                <td className="p-3 text-right tabular-nums">{fmtKrw(r.valueKrw)}</td>
-                <td className="p-3 text-right tabular-nums text-gray-300">{r.weight.toFixed(2)}%</td>
-                <td className="p-3 text-right tabular-nums text-gray-300">{r.holdingCount}</td>
+              <tr key={`${r.provider}-${r.account}`} className="border-b border-line-hair">
+                <td className="py-2.5 pr-2 font-medium text-ink">{r.account}</td>
+                <td className="px-2 py-2.5 text-fg-3">{r.provider}</td>
+                <td className="px-2 py-2.5 text-right"><Num className="text-[12.5px]">{fmtKrw(r.valueKrw)}</Num></td>
+                <td className="px-2 py-2.5 text-right"><Num className="text-[12.5px] text-fg-3">{r.weight.toFixed(2)}%</Num></td>
+                <td className="py-2.5 pl-2 text-right"><Num className="text-[12.5px] text-fg-3">{r.holdingCount}</Num></td>
               </tr>
             ))}
             {rows.length === 0 && (
-              <tr><td colSpan={5} className="p-4 text-center text-gray-500">데이터가 없습니다.</td></tr>
+              <tr><td colSpan={5} className="py-6 text-center text-[12px] text-fg-faint">데이터가 없습니다.</td></tr>
             )}
           </tbody>
         </table>

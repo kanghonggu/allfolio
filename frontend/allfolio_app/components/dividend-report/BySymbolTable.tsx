@@ -1,35 +1,40 @@
 // components/dividend-report/BySymbolTable.tsx
+import Label from '@/components/ui/Label'
+import Num from '@/components/ui/Num'
+import SectionHeader from '@/components/ui/SectionHeader'
 import type { DividendBySymbol } from '@/types/dividend-report'
 import { fmtKrw } from '@/lib/report-format'
 
 export function BySymbolTable({ rows }: { rows: DividendBySymbol[] }) {
   return (
-    <section className="space-y-3 break-inside-avoid">
-      <h2 className="text-lg font-semibold">종목별 집계</h2>
-      <div className="overflow-x-auto rounded-xl border border-gray-700 bg-gray-900">
-        <table className="w-full text-sm">
+    <section className="break-inside-avoid">
+      <SectionHeader label="종목별 집계" />
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[560px] border-t-[1.5px] border-ink text-[13px]">
           <thead>
-            <tr className="border-b border-gray-800 text-left text-xs text-gray-500">
-              <th className="p-3">종목</th><th className="p-3 text-right">세전</th>
-              <th className="p-3 text-right">원천징수</th><th className="p-3 text-right">세후</th>
-              <th className="p-3 text-right">비중</th>
+            <tr className="border-b border-line text-left">
+              <th className="py-2 pr-2 font-normal"><Label size="sm" tone="faint">종목</Label></th>
+              <th className="px-2 py-2 text-right font-normal"><Label size="sm" tone="faint">세전</Label></th>
+              <th className="px-2 py-2 text-right font-normal"><Label size="sm" tone="faint">원천징수</Label></th>
+              <th className="px-2 py-2 text-right font-normal"><Label size="sm" tone="faint">세후</Label></th>
+              <th className="py-2 pl-2 text-right font-normal"><Label size="sm" tone="faint">비중</Label></th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={`${r.symbol}-${r.stockName}-${i}`} className="border-b border-gray-800 last:border-b-0">
-                <td className="p-3">
-                  <span className="font-medium text-gray-100">{r.stockName}</span>
-                  {r.symbol && <span className="ml-2 text-xs text-gray-500">{r.symbol}</span>}
+              <tr key={`${r.symbol}-${r.stockName}-${i}`} className="border-b border-line-hair">
+                <td className="py-2.5 pr-2">
+                  <span className="font-medium text-ink">{r.stockName}</span>
+                  {r.symbol && <span className="ml-2 font-mono text-[10px] text-fg-faint">{r.symbol}</span>}
                 </td>
-                <td className="p-3 text-right tabular-nums">{fmtKrw(r.gross)}</td>
-                <td className="p-3 text-right tabular-nums text-gray-300">{fmtKrw(r.tax)}</td>
-                <td className="p-3 text-right tabular-nums">{fmtKrw(r.net)}</td>
-                <td className="p-3 text-right tabular-nums text-gray-300">{r.weight.toFixed(2)}%</td>
+                <td className="px-2 py-2.5 text-right"><Num className="text-[12.5px]">{fmtKrw(r.gross)}</Num></td>
+                <td className="px-2 py-2.5 text-right"><Num className="text-[12.5px] text-fg-3">{fmtKrw(r.tax)}</Num></td>
+                <td className="px-2 py-2.5 text-right"><Num className="text-[12.5px]">{fmtKrw(r.net)}</Num></td>
+                <td className="py-2.5 pl-2 text-right"><Num className="text-[12.5px] text-fg-3">{r.weight.toFixed(2)}%</Num></td>
               </tr>
             ))}
             {rows.length === 0 && (
-              <tr><td colSpan={5} className="p-4 text-center text-gray-500">종목이 없습니다.</td></tr>
+              <tr><td colSpan={5} className="py-6 text-center text-[12px] text-fg-faint">종목이 없습니다.</td></tr>
             )}
           </tbody>
         </table>

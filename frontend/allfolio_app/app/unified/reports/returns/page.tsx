@@ -6,6 +6,13 @@ import Link from 'next/link'
 import axios from 'axios'
 import { useBenchmarkApi, useCashFlowApi, useReportApi } from '@/lib/useApi'
 import { SUPPORTED_CURRENCIES } from '@/lib/currencies'
+import PageHeader from '@/components/ui/PageHeader'
+import SectionHeader from '@/components/ui/SectionHeader'
+import Label from '@/components/ui/Label'
+import Num from '@/components/ui/Num'
+import Button from '@/components/ui/Button'
+import Field, { Input, Select } from '@/components/ui/Field'
+import { LoadingState } from '@/components/ui/states'
 import type { BenchmarkType, CashFlowItem, FlowType, RecordCashFlowRequest } from '@/types/returns'
 import {
   Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ReferenceDot,
@@ -14,6 +21,14 @@ import {
 
 const PRESETS = ['1M', '3M', '6M', 'YTD', '1Y', 'SI', '직접'] as const
 type Preset = typeof PRESETS[number]
+
+const TICK = { fontSize: 10, fill: 'var(--c-fg-faint)', fontFamily: 'var(--font-mono), monospace' } as const
+const TOOLTIP_STYLE = {
+  background: 'var(--c-surface)',
+  border: '1px solid var(--c-line-card)',
+  borderRadius: 0,
+  color: 'var(--c-ink)',
+} as const
 
 function iso(d: Date): string {
   return d.toISOString().slice(0, 10)
@@ -46,9 +61,10 @@ function fmtKrw(n: number | null | undefined): string {
   return `${n >= 0 ? '' : '-'}₩${Math.abs(Math.round(n)).toLocaleString()}`
 }
 
+// 손익 방향 색 — 한국 관례: 양수 빨강(gain) / 음수 파랑(loss)
 function pctColor(n: number | null | undefined): string {
-  if (n === null || n === undefined) return 'text-gray-400'
-  return n >= 0 ? 'text-emerald-400' : 'text-red-400'
+  if (n === null || n === undefined) return 'text-fg-3'
+  return n >= 0 ? 'text-gain' : 'text-loss'
 }
 
 /** TWR vs MWR 규칙 기반 해석 문구 (SCR-RPT-04 ③) — 입력은 percent(0~100) 단위 */
@@ -141,6 +157,7 @@ export default function ReturnsReportPage() {
   }, [flows])
 
   // 워터폴: 투명 베이스 스택 — [기초, +입금, −출금, ±투자손익, 기말]
+  // 색 규약: 증가=gain, 감소=loss, 합계(기초·기말)=ink
   const waterfall = useMemo(() => {
     if (!analysis?.summary) return []
     const s = analysis.summary
@@ -149,293 +166,298 @@ export default function ReturnsReportPage() {
     const withdrawals = flows.filter((f) => f.flowType === 'WITHDRAWAL').reduce((a, f) => a + f.amountKrw, 0)
     let running = s.startNav
     const steps = [
-      { name: '기초 자산', base: 0, value: s.startNav, color: '#6b7280' },
+      { name: '기초 자산', base: 0, value: s.startNav, color: 'var(--c-ink)' },
     ]
-    steps.push({ name: '입금', base: running, value: deposits, color: '#10b981' })
+    steps.push({ name: '입금', base: running, value: deposits, color: 'var(--c-gain)' })
     running += deposits
-    steps.push({ name: '출금', base: running - withdrawals, value: withdrawals, color: '#ef4444' })
+    steps.push({ name: '출금', base: running - withdrawals, value: withdrawals, color: 'var(--c-loss)' })
     running -= withdrawals
     steps.push({
       name: '투자손익',
       base: s.investmentPnl >= 0 ? running : running + s.investmentPnl,
       value: Math.abs(s.investmentPnl),
-      color: s.investmentPnl >= 0 ? '#34d399' : '#f87171',
+      color: s.investmentPnl >= 0 ? 'var(--c-gain)' : 'var(--c-loss)',
     })
-    steps.push({ name: '기말 자산', base: 0, value: s.endNav, color: '#3b82f6' })
+    steps.push({ name: '기말 자산', base: 0, value: s.endNav, color: 'var(--c-ink)' })
     return steps
   }, [analysis, flows])
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center gap-3">
-        <Link href="/unified/reports" className="text-sm text-gray-500 hover:text-gray-300">← 보고서</Link>
-        <h1 className="text-2xl font-bold">수익률 보고서 (TWR·MWR)</h1>
-        {analysis && (
-          <span className="rounded bg-gray-800 px-2 py-0.5 text-xs text-gray-400">
-            기준일 {analysis.asOfDate}
-          </span>
-        )}
-      </div>
-
-      {/* ① 기간 선택바 */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex rounded-lg border border-gray-700 bg-gray-900 p-1">
-          {PRESETS.map((p) => (
-            <button
-              key={p}
-              onClick={() => setPreset(p)}
-              className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
-                preset === p ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200'
-              }`}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
-        {preset === '직접' && (
-          <div className="flex items-center gap-2 text-sm">
-            <input type="date" aria-label="조회 시작일" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)}
-              className="rounded-md border border-gray-700 bg-gray-900 px-2 py-1.5 text-gray-200" />
-            <span className="text-gray-500">~</span>
-            <input type="date" aria-label="조회 종료일" value={customTo} onChange={(e) => setCustomTo(e.target.value)}
-              className="rounded-md border border-gray-700 bg-gray-900 px-2 py-1.5 text-gray-200" />
-          </div>
-        )}
-        <select
-          value={benchmarkConfigQuery.data?.indexType ?? ''}
-          onChange={(e) => setBenchmark.mutate((e.target.value || null) as BenchmarkType | null)}
-          disabled={!benchmarkConfigQuery.data || setBenchmark.isPending}
-          className="rounded-lg border border-gray-700 bg-gray-900 px-2 py-2 text-sm text-gray-300"
-          title="벤치마크 설정"
+    <div className="border border-line-card bg-surface">
+      <div className="px-5 pt-5 sm:px-7">
+        <Link
+          href="/unified/reports"
+          className="font-mono text-[10px] uppercase tracking-label text-fg-muted transition-colors hover:text-ink"
         >
-          <option value="">BM 미설정</option>
-          {(benchmarkConfigQuery.data?.available ?? []).map((o) => (
-            <option key={o.type} value={o.type}>vs {o.label}</option>
-          ))}
-        </select>
-        <button
-          onClick={() => setShowModal(true)}
-          className="ml-auto rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600"
-        >
-          + 입출금 기록
-        </button>
+          ← 보고서
+        </Link>
       </div>
+      <PageHeader
+        className="px-5 pt-2 sm:px-7"
+        title="수익률 보고서 (TWR·MWR)"
+        meta={<span>R-02{analysis ? ` · 기준일 ${analysis.asOfDate}` : ''}</span>}
+      />
 
-      {insufficientData && (
-        <div className="rounded-xl border border-amber-800 bg-amber-950/40 p-5 text-sm text-amber-300">
-          이 기간에는 일별 NAV 스냅샷이 2건 미만이라 수익률을 계산할 수 없습니다.
-          계좌를 연동하면 매일 자정 스냅샷이 쌓입니다. 입출금 기록은 지금도 남길 수 있고, 스냅샷이 쌓이면 자동 반영됩니다.
-        </div>
-      )}
-
-      {analysisQuery.isLoading && <div className="text-sm text-gray-500">불러오는 중…</div>}
-
-      {analysis && (
-        <>
-          {/* ② 요약 카드 */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-              <p className="text-xs text-gray-500">기간 수익률 (TWR)</p>
-              <p className={`mt-1 text-2xl font-bold ${pctColor(analysis.summary.twr)}`}>
-                {fmtPct(analysis.summary.twr)}
-              </p>
-            </div>
-            <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-              <p className="text-xs text-gray-500">체감 수익률 (MWR·XIRR)</p>
-              <p className={`mt-1 text-2xl font-bold ${pctColor(analysis.summary.mwr)}`}>
-                {fmtPct(analysis.summary.mwr)}
-              </p>
-            </div>
-            <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-              <p className="text-xs text-gray-500">기간 손익금액</p>
-              <p className={`mt-1 text-2xl font-bold ${pctColor(analysis.summary.investmentPnl)}`}>
-                {fmtKrw(analysis.summary.investmentPnl)}
-              </p>
-            </div>
-            <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-              <p className="text-xs text-gray-500">순입출금</p>
-              <p className="mt-1 text-2xl font-bold text-gray-200">{fmtKrw(analysis.summary.netFlow)}</p>
-            </div>
-            {analysis.benchmark && (
-              <>
-                <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-                  <p className="text-xs text-gray-500">BM 수익률 ({analysis.benchmark.label})</p>
-                  <p className={`mt-1 text-2xl font-bold ${pctColor(analysis.benchmark.periodReturn)}`}>
-                    {fmtPct(analysis.benchmark.periodReturn)}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-                  <p className="text-xs text-gray-500">초과수익 (TWR − BM)</p>
-                  <p className={`mt-1 text-2xl font-bold ${pctColor(analysis.benchmark.excessReturn)}`}>
-                    {analysis.benchmark.excessReturn === null
-                      ? '—'
-                      : `${analysis.benchmark.excessReturn >= 0 ? '+' : ''}${analysis.benchmark.excessReturn.toFixed(2)}%p`}
-                  </p>
-                </div>
-              </>
-            )}
+      <div className="px-5 py-5 pb-10 sm:px-7">
+        {/* ① 기간 선택바 */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex border border-line bg-surface">
+            {PRESETS.map((p) => (
+              <button
+                key={p}
+                onClick={() => setPreset(p)}
+                className={`px-3 py-1.5 font-mono text-xs transition-colors ${
+                  preset === p ? 'bg-ink text-white' : 'text-fg-3 hover:text-ink'
+                }`}
+              >
+                {p}
+              </button>
+            ))}
           </div>
-
-          {/* ③ TWR vs MWR 해석 */}
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-            <h2 className="text-sm font-semibold text-gray-300">TWR vs MWR — 무엇이 다른가</h2>
-            <div className="mt-3 grid gap-4 sm:grid-cols-2">
-              <div>
-                <p className="text-xs text-gray-500">TWR — &quot;투자 실력&quot;</p>
-                <p className="text-sm text-gray-400">입출금 타이밍의 영향을 제거한 순수 운용 성과</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">MWR — &quot;내 돈 기준 체감&quot;</p>
-                <p className="text-sm text-gray-400">모든 입출금 현금흐름을 반영한 XIRR</p>
-              </div>
-            </div>
-            <p className="mt-3 border-t border-gray-800 pt-3 text-sm text-cyan-300">
-              {interpret(analysis.summary.twr, analysis.summary.mwr)}
-            </p>
-          </div>
-
-          {/* ④ NAV 곡선 + 입출금 마커 */}
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-            <h2 className="mb-4 text-sm font-semibold text-gray-300">
-              자산 추이 (NAV) — ▲입금 ▼출금
-              {analysis.benchmark && (
-                <span className="ml-2 text-xs font-normal text-gray-500">
-                  회색 점선 = {analysis.benchmark.label} (기초 자산 기준 정규화)
-                </span>
-              )}
-            </h2>
-            <ResponsiveContainer width="100%" height={320}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                <XAxis dataKey="date" stroke="#6b7280" fontSize={11} minTickGap={40} />
-                <YAxis stroke="#6b7280" fontSize={11} tickFormatter={(v: number) => `${(v / 1_000_000).toFixed(0)}M`} width={48} />
-                <Tooltip
-                  contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
-                  labelStyle={{ color: '#9ca3af' }}
-                  formatter={(value: number, name: string) => [fmtKrw(value), name === 'bm' ? 'BM' : 'NAV']}
-                />
-                <Line type="monotone" dataKey="nav" stroke="#34d399" dot={false} strokeWidth={2} />
-                {analysis.benchmark && (
-                  <Line
-                    type="monotone"
-                    dataKey="bm"
-                    stroke="#9ca3af"
-                    strokeDasharray="5 4"
-                    dot={false}
-                    strokeWidth={1.5}
-                    connectNulls
-                  />
-                )}
-                {chartData
-                  .filter((p) => flowByDate.has(p.date))
-                  .map((p) => {
-                    const dayFlows = flowByDate.get(p.date)!
-                    const isDeposit = dayFlows.some((f) => f.flowType === 'DEPOSIT')
-                    return (
-                      <ReferenceDot
-                        key={p.date}
-                        x={p.date}
-                        y={p.nav}
-                        r={5}
-                        fill={isDeposit ? '#10b981' : '#ef4444'}
-                        stroke="#0f172a"
-                      />
-                    )
-                  })}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* ⑥ 워터폴 */}
-          {waterfall.length > 0 && (
-            <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-              <h2 className="mb-1 text-sm font-semibold text-gray-300">입출금 효과 분해</h2>
-              <p className="mb-4 text-xs text-gray-500">
-                자산 증가가 입금 때문인지 수익 때문인지 — 투자손익은 요약 카드와 동일 값
-              </p>
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={waterfall}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                  <XAxis dataKey="name" stroke="#6b7280" fontSize={12} />
-                  <YAxis stroke="#6b7280" fontSize={11} tickFormatter={(v: number) => `${(v / 1_000_000).toFixed(0)}M`} width={48} />
-                  <Tooltip
-                    contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
-                    formatter={(value: number, name: string) => (name === 'value' ? [fmtKrw(value), '금액'] : [null, null])}
-                  />
-                  <Bar dataKey="base" stackId="wf" fill="transparent" />
-                  <Bar dataKey="value" stackId="wf" radius={[4, 4, 0, 0]}>
-                    {waterfall.map((s) => (
-                      <Cell key={s.name} fill={s.color} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+          {preset === '직접' && (
+            <div className="flex items-center gap-2 text-sm">
+              <input type="date" aria-label="조회 시작일" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)}
+                className="border border-line bg-surface px-2 py-1.5 text-sm text-fg-2 focus:border-ink focus:outline-none" />
+              <span className="text-fg-faint">~</span>
+              <input type="date" aria-label="조회 종료일" value={customTo} onChange={(e) => setCustomTo(e.target.value)}
+                className="border border-line bg-surface px-2 py-1.5 text-sm text-fg-2 focus:border-ink focus:outline-none" />
             </div>
           )}
-        </>
-      )}
+          <select
+            value={benchmarkConfigQuery.data?.indexType ?? ''}
+            onChange={(e) => setBenchmark.mutate((e.target.value || null) as BenchmarkType | null)}
+            disabled={!benchmarkConfigQuery.data || setBenchmark.isPending}
+            className="border border-line bg-surface px-2 py-2 text-sm text-fg-2 focus:border-ink focus:outline-none disabled:bg-surface-muted disabled:text-fg-faint"
+            title="벤치마크 설정"
+          >
+            <option value="">BM 미설정</option>
+            {(benchmarkConfigQuery.data?.available ?? []).map((o) => (
+              <option key={o.type} value={o.type}>vs {o.label}</option>
+            ))}
+          </select>
+          <Button variant="primary" className="ml-auto" onClick={() => setShowModal(true)}>
+            + 입출금 기록
+          </Button>
+        </div>
 
-      {/* 입출금 내역 그리드 — 분석 실패(스냅샷 부족)여도 표시 */}
-      <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-        <h2 className="mb-4 text-sm font-semibold text-gray-300">입출금 내역 ({flows.length}건)</h2>
-        {flows.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            기간 내 입출금 기록이 없습니다. 입출금을 기록하면 TWR에서 입금이 수익으로 잡히는 왜곡이 제거됩니다.
-          </p>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-800 text-left text-xs text-gray-500">
-                <th className="pb-2">일자</th>
-                <th className="pb-2">유형</th>
-                <th className="pb-2 text-right">금액</th>
-                <th className="pb-2 text-right">KRW 환산</th>
-                <th className="pb-2">메모</th>
-                <th className="pb-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {flows.map((f) => (
-                <tr key={f.id} className="border-b border-gray-800/50 text-gray-300">
-                  <td className="py-2">{f.flowDate}</td>
-                  <td className={`py-2 ${f.flowType === 'DEPOSIT' ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {f.flowType === 'DEPOSIT' ? '입금' : '출금'}
-                  </td>
-                  <td className="py-2 text-right">
-                    {f.amount.toLocaleString()} {f.currency}
-                  </td>
-                  <td className="py-2 text-right">{fmtKrw(f.amountKrw)}</td>
-                  <td className="py-2 text-gray-500">{f.memo ?? ''}</td>
-                  <td className="py-2 text-right">
-                    <button
-                      onClick={() => {
-                        // QA P2: 금융 데이터 삭제는 확인 후 실행
-                        if (confirm(`${f.flowDate} ${fmtKrw(f.amountKrw)} 기록을 삭제하시겠습니까?`))
-                          removeFlow.mutate(f.id)
-                      }}
-                      className="text-xs text-gray-600 hover:text-red-400"
-                    >
-                      삭제
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {insufficientData && (
+          <div className="mt-6 border border-warn-line bg-warn-bg px-4 py-3.5 text-[13px] leading-relaxed text-warn">
+            이 기간에는 일별 NAV 스냅샷이 2건 미만이라 수익률을 계산할 수 없습니다.
+            계좌를 연동하면 매일 자정 스냅샷이 쌓입니다. 입출금 기록은 지금도 남길 수 있고, 스냅샷이 쌓이면 자동 반영됩니다.
+          </div>
+        )}
+
+        {analysisQuery.isLoading && <LoadingState label="불러오는 중" className="mt-6" />}
+
+        {analysis && (
+          <>
+            {/* ② 요약 카드 */}
+            <div className="mt-8 grid grid-cols-1 gap-px border border-line-soft bg-line-soft sm:grid-cols-2 lg:grid-cols-4">
+              <div className="bg-surface px-3.5 py-3">
+                <Label size="sm" tone="faint">기간 수익률 (TWR)</Label>
+                <Num className={`mt-1 block text-[20px] ${pctColor(analysis.summary.twr)}`}>
+                  {fmtPct(analysis.summary.twr)}
+                </Num>
+              </div>
+              <div className="bg-surface px-3.5 py-3">
+                <Label size="sm" tone="faint">체감 수익률 (MWR·XIRR)</Label>
+                <Num className={`mt-1 block text-[20px] ${pctColor(analysis.summary.mwr)}`}>
+                  {fmtPct(analysis.summary.mwr)}
+                </Num>
+              </div>
+              <div className="bg-surface px-3.5 py-3">
+                <Label size="sm" tone="faint">기간 손익금액</Label>
+                <Num className={`mt-1 block text-[20px] ${pctColor(analysis.summary.investmentPnl)}`}>
+                  {fmtKrw(analysis.summary.investmentPnl)}
+                </Num>
+              </div>
+              <div className="bg-surface px-3.5 py-3">
+                <Label size="sm" tone="faint">순입출금</Label>
+                <Num className="mt-1 block text-[20px]">{fmtKrw(analysis.summary.netFlow)}</Num>
+              </div>
+              {analysis.benchmark && (
+                <>
+                  <div className="bg-surface px-3.5 py-3 lg:col-span-2">
+                    <Label size="sm" tone="faint">BM 수익률 ({analysis.benchmark.label})</Label>
+                    <Num className={`mt-1 block text-[20px] ${pctColor(analysis.benchmark.periodReturn)}`}>
+                      {fmtPct(analysis.benchmark.periodReturn)}
+                    </Num>
+                  </div>
+                  <div className="bg-surface px-3.5 py-3 lg:col-span-2">
+                    <Label size="sm" tone="faint">초과수익 (TWR − BM)</Label>
+                    <Num className={`mt-1 block text-[20px] ${pctColor(analysis.benchmark.excessReturn)}`}>
+                      {analysis.benchmark.excessReturn === null
+                        ? '—'
+                        : `${analysis.benchmark.excessReturn >= 0 ? '+' : ''}${analysis.benchmark.excessReturn.toFixed(2)}%p`}
+                    </Num>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* ③ TWR vs MWR 해석 */}
+            <section className="mt-8 border border-line-card bg-surface-muted p-5">
+              <SectionHeader label="TWR vs MWR — 무엇이 다른가" />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <Label size="sm" tone="faint">TWR — &quot;투자 실력&quot;</Label>
+                  <p className="mt-1 text-[13px] text-fg-3">입출금 타이밍의 영향을 제거한 순수 운용 성과</p>
+                </div>
+                <div>
+                  <Label size="sm" tone="faint">MWR — &quot;내 돈 기준 체감&quot;</Label>
+                  <p className="mt-1 text-[13px] text-fg-3">모든 입출금 현금흐름을 반영한 XIRR</p>
+                </div>
+              </div>
+              <p className="mt-3 border-t border-line pt-3 text-[13px] font-medium text-ink">
+                {interpret(analysis.summary.twr, analysis.summary.mwr)}
+              </p>
+            </section>
+
+            {/* ④ NAV 곡선 + 입출금 마커 */}
+            <section className="mt-8">
+              <SectionHeader
+                label="자산 추이 (NAV) — ▲입금 ▼출금"
+                note={
+                  analysis.benchmark
+                    ? `회색 점선 = ${analysis.benchmark.label} (기초 자산 기준 정규화)`
+                    : undefined
+                }
+              />
+              <ResponsiveContainer width="100%" height={320}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--c-line)" />
+                  <XAxis dataKey="date" stroke="var(--c-line)" tick={TICK} tickLine={false} minTickGap={40} />
+                  <YAxis stroke="var(--c-line)" tick={TICK} tickLine={false} tickFormatter={(v: number) => `${(v / 1_000_000).toFixed(0)}M`} width={48} />
+                  <Tooltip
+                    contentStyle={TOOLTIP_STYLE}
+                    labelStyle={{ color: 'var(--c-fg-3)' }}
+                    formatter={(value: number, name: string) => [fmtKrw(value), name === 'bm' ? 'BM' : 'NAV']}
+                  />
+                  <Line type="monotone" dataKey="nav" stroke="var(--c-ink)" dot={false} strokeWidth={1.5} />
+                  {analysis.benchmark && (
+                    <Line
+                      type="monotone"
+                      dataKey="bm"
+                      stroke="var(--c-fg-muted)"
+                      strokeDasharray="5 4"
+                      dot={false}
+                      strokeWidth={1.5}
+                      connectNulls
+                    />
+                  )}
+                  {chartData
+                    .filter((p) => flowByDate.has(p.date))
+                    .map((p) => {
+                      const dayFlows = flowByDate.get(p.date)!
+                      const isDeposit = dayFlows.some((f) => f.flowType === 'DEPOSIT')
+                      return (
+                        <ReferenceDot
+                          key={p.date}
+                          x={p.date}
+                          y={p.nav}
+                          r={5}
+                          fill={isDeposit ? 'var(--c-gain)' : 'var(--c-loss)'}
+                          stroke="var(--c-surface)"
+                        />
+                      )
+                    })}
+                </LineChart>
+              </ResponsiveContainer>
+            </section>
+
+            {/* ⑥ 워터폴 */}
+            {waterfall.length > 0 && (
+              <section className="mt-8">
+                <SectionHeader label="입출금 효과 분해" />
+                <p className="mb-4 mt-[-6px] text-xs text-fg-faint">
+                  자산 증가가 입금 때문인지 수익 때문인지 — 투자손익은 요약 카드와 동일 값
+                </p>
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={waterfall}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--c-line)" />
+                    <XAxis dataKey="name" stroke="var(--c-line)" tick={TICK} tickLine={false} />
+                    <YAxis stroke="var(--c-line)" tick={TICK} tickLine={false} tickFormatter={(v: number) => `${(v / 1_000_000).toFixed(0)}M`} width={48} />
+                    <Tooltip
+                      contentStyle={TOOLTIP_STYLE}
+                      formatter={(value: number, name: string) => (name === 'value' ? [fmtKrw(value), '금액'] : [null, null])}
+                    />
+                    <Bar dataKey="base" stackId="wf" fill="transparent" />
+                    <Bar dataKey="value" stackId="wf">
+                      {waterfall.map((s) => (
+                        <Cell key={s.name} fill={s.color} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </section>
+            )}
+          </>
+        )}
+
+        {/* 입출금 내역 그리드 — 분석 실패(스냅샷 부족)여도 표시 */}
+        <section className="mt-8">
+          <SectionHeader label="입출금 내역" note={`${flows.length}건`} />
+          {flows.length === 0 ? (
+            <p className="text-[13px] leading-relaxed text-fg-faint">
+              기간 내 입출금 기록이 없습니다. 입출금을 기록하면 TWR에서 입금이 수익으로 잡히는 왜곡이 제거됩니다.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] border-t-[1.5px] border-ink text-sm">
+                <thead>
+                  <tr className="border-b border-line text-left">
+                    <th className="py-2 font-normal"><Label size="sm" tone="faint">일자</Label></th>
+                    <th className="py-2 font-normal"><Label size="sm" tone="faint">유형</Label></th>
+                    <th className="py-2 text-right font-normal"><Label size="sm" tone="faint">금액</Label></th>
+                    <th className="py-2 text-right font-normal"><Label size="sm" tone="faint">KRW 환산</Label></th>
+                    <th className="py-2 font-normal"><Label size="sm" tone="faint">메모</Label></th>
+                    <th className="py-2 font-normal" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {flows.map((f) => (
+                    <tr key={f.id} className="border-b border-line-hair hover:bg-surface-muted">
+                      <td className="py-2.5"><Num className="text-[11.5px] text-fg-3">{f.flowDate}</Num></td>
+                      <td className={`py-2.5 font-mono text-[10px] tracking-label ${f.flowType === 'DEPOSIT' ? 'text-gain' : 'text-loss'}`}>
+                        {f.flowType === 'DEPOSIT' ? '입금' : '출금'}
+                      </td>
+                      <td className="py-2.5 text-right">
+                        <Num className="text-[12.5px] text-fg-2">{f.amount.toLocaleString()} {f.currency}</Num>
+                      </td>
+                      <td className="py-2.5 text-right"><Num className="text-[12.5px]">{fmtKrw(f.amountKrw)}</Num></td>
+                      <td className="py-2.5 text-xs text-fg-faint">{f.memo ?? ''}</td>
+                      <td className="py-2.5 text-right">
+                        <button
+                          onClick={() => {
+                            // QA P2: 금융 데이터 삭제는 확인 후 실행
+                            if (confirm(`${f.flowDate} ${fmtKrw(f.amountKrw)} 기록을 삭제하시겠습니까?`))
+                              removeFlow.mutate(f.id)
+                          }}
+                          className="font-mono text-[10px] tracking-label text-fg-ghost transition-colors hover:text-danger"
+                        >
+                          삭제
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        {showModal && cashFlowApi && (
+          <RecordFlowModal
+            onClose={() => setShowModal(false)}
+            onSaved={() => {
+              setShowModal(false)
+              queryClient.invalidateQueries({ queryKey: ['cashflows'] })
+              queryClient.invalidateQueries({ queryKey: ['report', 'returns'] })
+            }}
+            record={(req) => cashFlowApi.record(req)}
+          />
         )}
       </div>
-
-      {showModal && cashFlowApi && (
-        <RecordFlowModal
-          onClose={() => setShowModal(false)}
-          onSaved={() => {
-            setShowModal(false)
-            queryClient.invalidateQueries({ queryKey: ['cashflows'] })
-            queryClient.invalidateQueries({ queryKey: ['report', 'returns'] })
-          }}
-          record={(req) => cashFlowApi.record(req)}
-        />
-      )}
     </div>
   )
 }
@@ -475,55 +497,52 @@ function RecordFlowModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/25 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-sm rounded-xl border border-gray-700 bg-gray-900 p-6"
+        className="w-full max-w-sm border border-ink bg-surface p-6"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-base font-semibold text-gray-100">입출금 기록</h3>
-        <p className="mt-1 text-xs text-gray-500">환율은 기록 시점 기준으로 고정 환산됩니다</p>
+        <h3 className="m-0 text-[15px] font-semibold">입출금 기록</h3>
+        <p className="mt-1 text-xs text-fg-faint">환율은 기록 시점 기준으로 고정 환산됩니다</p>
 
-        <div className="mt-4 space-y-3 text-sm">
-          <div className="flex rounded-lg border border-gray-700 p-1">
+        <div className="mt-4 space-y-3.5">
+          <div className="flex border border-line">
             {(['DEPOSIT', 'WITHDRAWAL'] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setFlowType(t)}
-                className={`flex-1 rounded-md py-1.5 transition-colors ${
-                  flowType === t
-                    ? t === 'DEPOSIT' ? 'bg-emerald-800 text-white' : 'bg-red-900 text-white'
-                    : 'text-gray-400'
+                className={`flex-1 py-1.5 font-mono text-xs transition-colors ${
+                  flowType === t ? 'bg-ink text-white' : 'text-fg-3 hover:text-ink'
                 }`}
               >
                 {t === 'DEPOSIT' ? '입금' : '출금'}
               </button>
             ))}
           </div>
-          <input type="date" aria-label="입출금 일자" value={flowDate} onChange={(e) => setFlowDate(e.target.value)}
-            className="w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200" />
-          <div className="flex gap-2">
-            <input type="number" aria-label="금액" placeholder="금액" value={amount} onChange={(e) => setAmount(e.target.value)}
-              className="flex-1 rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200" />
-            <select value={currency} onChange={(e) => setCurrency(e.target.value)}
-              aria-label="통화"
-              className="rounded-md border border-gray-700 bg-gray-950 px-2 py-2 text-gray-200">
-              {SUPPORTED_CURRENCIES.map((c) => <option key={c}>{c}</option>)}
-            </select>
+          <Field id="rf-date" label="일자">
+            <Input type="date" aria-label="입출금 일자" value={flowDate} onChange={(e) => setFlowDate(e.target.value)} />
+          </Field>
+          <div className="flex gap-3">
+            <Field id="rf-amount" label="금액" className="flex-1">
+              <Input type="number" aria-label="금액" placeholder="금액" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            </Field>
+            <Field id="rf-currency" label="통화" className="w-24">
+              <Select aria-label="통화" value={currency} onChange={(e) => setCurrency(e.target.value)}>
+                {SUPPORTED_CURRENCIES.map((c) => <option key={c}>{c}</option>)}
+              </Select>
+            </Field>
           </div>
-          <input aria-label="메모" placeholder="메모 (선택)" value={memo} onChange={(e) => setMemo(e.target.value)}
-            className="w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-200" />
-          {error && <p className="text-xs text-red-400">{error}</p>}
+          <Field id="rf-memo" label="메모">
+            <Input aria-label="메모" placeholder="메모 (선택)" value={memo} onChange={(e) => setMemo(e.target.value)} />
+          </Field>
+          {error && <p role="alert" className="m-0 text-xs text-danger">{error}</p>}
         </div>
 
-        <div className="mt-5 flex justify-end gap-2 text-sm">
-          <button onClick={onClose} className="rounded-lg px-4 py-2 text-gray-400 hover:text-gray-200">취소</button>
-          <button
-            onClick={submit}
-            disabled={saving}
-            className="rounded-lg bg-emerald-700 px-4 py-2 font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
-          >
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose}>취소</Button>
+          <Button variant="primary" onClick={submit} disabled={saving}>
             {saving ? '저장 중…' : '저장'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

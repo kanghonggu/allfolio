@@ -6,6 +6,10 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useReportArchiveApi } from '@/lib/useApi'
 import { parseMonthlyReportBody, MONTHLY_REPORT } from '@/lib/report-archive-api'
+import Badge from '@/components/ui/Badge'
+import Button from '@/components/ui/Button'
+import Label from '@/components/ui/Label'
+import { ErrorState, LoadingState } from '@/components/ui/states'
 import { PerformanceSummary } from '@/components/monthly-report/PerformanceSummary'
 import { FlowWaterfall } from '@/components/monthly-report/FlowWaterfall'
 import { TopHoldingsTable } from '@/components/monthly-report/TopHoldingsTable'
@@ -25,14 +29,25 @@ export default function MonthlyReportDetailPage() {
     retry: false,
   })
 
-  if (!api || isLoading) return <div className="h-96 animate-pulse rounded-xl bg-gray-800" />
+  if (!api || isLoading) {
+    return (
+      <div className="border border-line-card bg-surface px-5 py-5 sm:px-7">
+        <LoadingState label="보고서 불러오는 중" />
+      </div>
+    )
+  }
   if (isError || !data) {
     return (
-      <div className="space-y-4">
-        <div className="rounded-xl border border-red-800 bg-red-950 p-6 text-sm text-red-400">
-          보고서를 찾을 수 없습니다.
+      <div className="border border-line-card bg-surface px-5 py-5 pb-10 sm:px-7">
+        <ErrorState message="보고서를 찾을 수 없습니다." />
+        <div className="mt-4 text-center">
+          <Link
+            href="/unified/reports/monthly-report"
+            className="font-mono text-[10px] tracking-label text-fg-faint transition-colors hover:text-ink"
+          >
+            ← 목록
+          </Link>
         </div>
-        <Link href="/unified/reports/monthly-report" className="text-sm text-gray-400 hover:text-gray-200">← 목록</Link>
       </div>
     )
   }
@@ -42,40 +57,56 @@ export default function MonthlyReportDetailPage() {
   const [y, m] = [meta.periodStart.slice(0, 4), meta.periodStart.slice(5, 7)]
 
   return (
-    <div className="space-y-8 print-invert">
-      <div className="flex items-center justify-between gap-3 no-print">
-        <div className="flex items-center gap-3">
-          <Link href="/unified/reports/monthly-report" className="text-sm text-gray-500 hover:text-gray-300">← 목록</Link>
-          <h1 className="text-2xl font-bold">{y}년 {Number(m)}월 운용보고서</h1>
-        </div>
-        <button
-          onClick={() => window.print()}
-          className="rounded-lg bg-gray-800 px-4 py-2 text-sm font-medium text-gray-100 hover:bg-gray-700"
+    <div className="border border-line-card bg-surface print-invert">
+      <div className="no-print flex items-center justify-between gap-3 px-5 pt-4 sm:px-7">
+        <Link
+          href="/unified/reports/monthly-report"
+          className="font-mono text-[10px] tracking-label text-fg-faint transition-colors hover:text-ink"
         >
-          🖨 인쇄 / PDF
-        </button>
+          ← 목록
+        </Link>
+        <Button variant="outline" size="sm" onClick={() => window.print()}>
+          인쇄 / PDF
+        </Button>
       </div>
 
-      <p className="text-xs text-gray-500">
-        기준일 {meta.asOfDate} · 생성 {new Date(meta.createdAt).toLocaleString('ko-KR')}
-      </p>
-
-      {meta.status === 'WARNING' && meta.warnings.length > 0 && (
-        <div className="rounded-xl border border-yellow-700 bg-yellow-950/40 p-4 text-sm text-yellow-300">
-          <p className="mb-1 font-medium">경고</p>
-          <ul className="list-inside list-disc space-y-0.5">
-            {meta.warnings.map((w) => <li key={w.code}>{w.message}</li>)}
-          </ul>
+      <div className="px-5 py-5 pb-10 sm:px-7">
+        <div className="border-b-2 border-ink pb-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <Label size="sm" tone="ghost">REPORT R-01 · 월간 운용보고서</Label>
+            {meta.status === 'WARNING'
+              ? <Badge variant="warn">잠정/경고</Badge>
+              : <Badge variant="ok">확정</Badge>}
+          </div>
+          <h1 className="m-0 mt-2 font-serif text-[22px] font-medium tracking-[-0.01em]">
+            {y}년 {Number(m)}월 운용보고서
+          </h1>
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 font-mono text-[10px] tracking-label text-fg-muted">
+            <span>기간 {meta.periodStart} ~ {meta.periodEnd}</span>
+            <span>기준일 {meta.asOfDate}</span>
+            <span>생성 {new Date(meta.createdAt).toLocaleString('ko-KR')}</span>
+          </div>
         </div>
-      )}
 
-      <PerformanceSummary perf={body.performance} />
-      <FlowWaterfall flow={body.flowDecomposition} />
-      <TopHoldingsTable holdings={body.topHoldings} />
-      <ExposureCharts exposure={body.exposure} />
-      <AccountsTable accounts={body.accounts} />
+        {meta.status === 'WARNING' && meta.warnings.length > 0 && (
+          <div className="mt-5 border border-warn-line bg-warn-bg px-4 py-3">
+            <Label size="sm" className="text-warn">경고</Label>
+            <ul className="m-0 mt-1.5 list-inside list-disc space-y-0.5 p-0 text-[12.5px] text-fg-2">
+              {meta.warnings.map((w) => <li key={w.code}>{w.message}</li>)}
+            </ul>
+          </div>
+        )}
 
-      <p className="text-xs text-gray-500">{body.note}</p>
+        <div className="mt-6 space-y-8">
+          <PerformanceSummary perf={body.performance} />
+          <FlowWaterfall flow={body.flowDecomposition} />
+          <TopHoldingsTable holdings={body.topHoldings} />
+          <ExposureCharts exposure={body.exposure} />
+          <AccountsTable accounts={body.accounts} />
+
+          <p className="m-0 text-[11.5px] leading-[1.8] text-fg-faint">{body.note}</p>
+        </div>
+      </div>
     </div>
   )
 }
