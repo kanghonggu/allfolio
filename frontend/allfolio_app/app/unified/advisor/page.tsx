@@ -4,6 +4,10 @@ import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { useAiApi } from '@/lib/useApi'
+import PageHeader from '@/components/ui/PageHeader'
+import Button from '@/components/ui/Button'
+import { Textarea } from '@/components/ui/Field'
+import { EmptyState, LoadingState } from '@/components/ui/states'
 import type { ChatMessage } from '@/types/ai'
 
 export default function AdvisorPage() {
@@ -53,92 +57,124 @@ export default function AdvisorPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-600 border-t-blue-400" />
+      <div className="border border-line-card bg-surface">
+        <PageHeader className="px-5 pt-5 sm:px-7" title="AI 금융 상담사" />
+        <div className="px-5 py-5 pb-10 sm:px-7">
+          <LoadingState label="설정 불러오는 중" />
+        </div>
       </div>
     )
   }
 
   if (!config) {
     return (
-      <div className="mx-auto max-w-xl space-y-6">
-        <div className="flex items-center gap-3">
-          <Link href="/unified/reports" className="text-gray-400 hover:text-white text-sm">← 보고서</Link>
-          <h1 className="text-xl font-bold">AI 금융 상담사</h1>
-        </div>
-        <div className="rounded-xl border border-gray-700 bg-gray-900 p-8 text-center space-y-4">
-          <div className="text-4xl">🤖</div>
-          <p className="text-gray-300">LLM API 키를 등록하면 포트폴리오 기반 상담을 받을 수 있습니다.</p>
+      <div className="border border-line-card bg-surface">
+        <div className="px-5 pt-4 sm:px-7">
           <Link
-            href="/unified/settings/ai"
-            className="inline-block rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-500"
+            href="/unified/reports"
+            className="font-mono text-[10px] tracking-label text-fg-faint transition-colors hover:text-ink"
           >
-            설정하러 가기 →
+            ← 보고서
           </Link>
+        </div>
+        <PageHeader
+          className="px-5 pt-2 sm:px-7"
+          title="AI 금융 상담사"
+          meta="포트폴리오 기반 상담"
+        />
+        <div className="px-5 py-5 pb-10 sm:px-7">
+          <EmptyState
+            title="LLM API 키가 등록되어 있지 않습니다"
+            description="LLM API 키를 등록하면 포트폴리오 기반 상담을 받을 수 있습니다."
+            action={
+              <Link
+                href="/unified/settings/ai"
+                className="border border-ink bg-ink px-4 py-2 text-sm text-white transition-colors hover:bg-fg-2"
+              >
+                설정하러 가기
+              </Link>
+            }
+          />
         </div>
       </div>
     )
   }
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col" style={{ height: 'calc(100vh - 120px)' }}>
-      <div className="flex items-center gap-3 mb-4">
-        <Link href="/unified/reports" className="text-gray-400 hover:text-white text-sm">← 보고서</Link>
-        <h1 className="text-xl font-bold">AI 금융 상담사</h1>
-        <span className="text-xs text-gray-500">{config.model}</span>
-        <Link href="/unified/settings/ai" className="ml-auto text-xs text-gray-500 hover:text-gray-300">⚙ 설정</Link>
+    <div className="border border-line-card bg-surface">
+      <div className="px-5 pt-4 sm:px-7">
+        <Link
+          href="/unified/reports"
+          className="font-mono text-[10px] tracking-label text-fg-faint transition-colors hover:text-ink"
+        >
+          ← 보고서
+        </Link>
       </div>
+      <PageHeader
+        className="px-5 pt-2 sm:px-7"
+        title="AI 금융 상담사"
+        meta={config.model}
+        actions={
+          <Link
+            href="/unified/settings/ai"
+            className="border border-line bg-surface px-3 py-1.5 text-xs text-fg-2 transition-colors hover:border-ink hover:text-ink"
+          >
+            설정
+          </Link>
+        }
+      />
 
-      <div className="flex-1 overflow-y-auto space-y-4 rounded-xl border border-gray-800 bg-gray-900 p-4">
-        {messages.length === 0 && !loading && (
-          <div className="flex h-full items-center justify-center text-sm text-gray-600">
-            포트폴리오 데이터를 분석할 준비가 되었습니다. 무엇이든 물어보세요.
-          </div>
-        )}
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div
-              className={`max-w-[80%] rounded-xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
-                msg.role === 'user'
-                  ? 'bg-blue-700 text-white'
-                  : 'bg-gray-800 text-gray-100'
-              }`}
-            >
-              {msg.content}
+      <div className="flex flex-col px-5 py-5 pb-8 sm:px-7" style={{ height: 'calc(100vh - 220px)' }}>
+        <div className="flex-1 space-y-3 overflow-y-auto border border-line bg-surface p-4">
+          {messages.length === 0 && !loading && (
+            <div className="flex h-full items-center justify-center text-center font-mono text-[10px] tracking-wideLabel text-fg-faint">
+              포트폴리오 데이터를 분석할 준비가 되었습니다. 무엇이든 물어보세요.
             </div>
-          </div>
-        ))}
-        {loading && (
-          <div className="flex justify-start">
-            <div className="rounded-xl bg-gray-800 px-4 py-2.5">
-              <div className="flex gap-1">
-                <span className="h-2 w-2 animate-bounce rounded-full bg-gray-500 [animation-delay:0ms]" />
-                <span className="h-2 w-2 animate-bounce rounded-full bg-gray-500 [animation-delay:150ms]" />
-                <span className="h-2 w-2 animate-bounce rounded-full bg-gray-500 [animation-delay:300ms]" />
+          )}
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div
+                className={`max-w-[80%] whitespace-pre-wrap px-4 py-2.5 text-sm ${
+                  msg.role === 'user'
+                    ? 'bg-ink text-white'
+                    : 'border border-line bg-surface-muted text-ink'
+                }`}
+              >
+                {msg.content}
               </div>
             </div>
-          </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
+          ))}
+          {loading && (
+            <div className="flex justify-start">
+              <div className="border border-line bg-surface-muted px-4 py-2.5">
+                <span className="animate-pulse font-mono text-[10px] tracking-wideLabel text-fg-muted">
+                  응답 생성 중 …
+                </span>
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
 
-      <div className="mt-3 flex gap-2">
-        <textarea
-          rows={1}
-          placeholder="메시지를 입력하세요... (Enter로 전송)"
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={loading}
-          className="flex-1 resize-none rounded-xl border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none disabled:opacity-50"
-        />
-        <button
-          onClick={sendMessage}
-          disabled={!input.trim() || loading}
-          className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-40"
-        >
-          전송
-        </button>
+        <div className="mt-3 flex gap-2">
+          <Textarea
+            rows={1}
+            placeholder="메시지를 입력하세요… (Enter로 전송)"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={loading}
+            aria-label="상담 메시지 입력"
+            className="flex-1 resize-none"
+          />
+          <Button
+            variant="primary"
+            onClick={sendMessage}
+            disabled={!input.trim() || loading}
+          >
+            전송
+          </Button>
+        </div>
       </div>
     </div>
   )

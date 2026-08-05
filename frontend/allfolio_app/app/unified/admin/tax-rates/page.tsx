@@ -4,10 +4,19 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRequireAdmin } from '@/lib/useRequireAdmin'
 import { createTaxRateAdminApi } from '@/lib/tax-rate-admin-api'
+import PageHeader from '@/components/ui/PageHeader'
+import SectionHeader from '@/components/ui/SectionHeader'
+import Button from '@/components/ui/Button'
+import Label from '@/components/ui/Label'
+import Num from '@/components/ui/Num'
+import Field, { Input, Select } from '@/components/ui/Field'
+import { LoadingState } from '@/components/ui/states'
 import type { IncomeType, TaxRate } from '@/types/tax-rate'
 
 const COUNTRIES = ['US', 'KR', 'JP'] as const
 const INCOME_TYPES: IncomeType[] = ['DIVIDEND', 'INTEREST', 'DISTRIBUTION']
+
+const RATE_GRID = 'grid grid-cols-[0.6fr_1fr_0.8fr_1fr_1fr_1fr] gap-3'
 
 export default function TaxRateMasterPage() {
   const { ready } = useRequireAdmin()
@@ -52,77 +61,108 @@ export default function TaxRateMasterPage() {
     }))
   }, [rates])
 
-  if (!ready) return <div className="p-6 text-gray-400">권한 확인 중…</div>
+  if (!ready) return <LoadingState label="권한 확인 중" />
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8 p-6">
-      <h1 className="text-2xl font-bold">원천징수 세율 마스터 <span className="text-sm text-gray-400">(ADMIN)</span></h1>
-      {error && <div className="rounded bg-red-900/40 px-3 py-2 text-sm text-red-300">{error}</div>}
+    <div className="border border-line-card bg-surface">
+      <PageHeader
+        className="px-5 pt-5 sm:px-7"
+        title="원천징수 세율 마스터"
+        meta={
+          <>
+            <Label size="sm" className="text-warn">ADMIN</Label>
+            <span className="ml-3">국가×소득유형 원천징수 세율 · 유효기간 버저닝</span>
+          </>
+        }
+      />
 
-      {/* 등록 폼 */}
-      <form onSubmit={submit} className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-800 p-4">
-        <label className="text-sm">국가
-          <select className="ml-2 rounded bg-gray-800 px-2 py-1" value={form.country}
-            onChange={e => setForm(f => ({ ...f, country: e.target.value }))}>
-            {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </label>
-        <label className="text-sm">유형
-          <select className="ml-2 rounded bg-gray-800 px-2 py-1" value={form.incomeType}
-            onChange={e => setForm(f => ({ ...f, incomeType: e.target.value as IncomeType }))}>
-            {INCOME_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </label>
-        <label className="text-sm">세율(%)
-          <input type="number" step="0.001" min="0" max="50" required className="ml-2 w-24 rounded bg-gray-800 px-2 py-1"
-            value={form.rate} onChange={e => setForm(f => ({ ...f, rate: e.target.value }))} />
-        </label>
-        <label className="text-sm">적용 시작일
-          <input type="date" required className="ml-2 rounded bg-gray-800 px-2 py-1"
-            value={form.effectiveStart} onChange={e => setForm(f => ({ ...f, effectiveStart: e.target.value }))} />
-        </label>
-        <button type="submit" className="rounded bg-blue-600 px-4 py-1.5 text-sm font-medium hover:bg-blue-500">저장</button>
-      </form>
+      <div className="px-5 py-5 pb-10 sm:px-7">
+        {error && (
+          <div role="alert" className="mb-4 flex items-center gap-3 border border-warn-line bg-warn-bg px-4 py-2.5">
+            <Label size="sm" className="text-warn">주의</Label>
+            <span className="text-[12.5px] text-fg-2">{error}</span>
+          </div>
+        )}
 
-      {/* 세율 목록 */}
-      <section>
-        <h2 className="mb-2 text-lg font-semibold">현행 + 이력</h2>
-        <table className="w-full text-sm">
-          <thead className="text-gray-400">
-            <tr className="border-b border-gray-800 text-left">
-              <th className="py-2">국가</th><th>유형</th><th>세율</th><th>적용 시작</th><th>적용 종료</th><th>수정일</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rates.map(r => (
-              <tr key={r.id} className={`border-b border-gray-900 ${r.effectiveEnd === null ? 'font-semibold text-white' : 'text-gray-400'}`}>
-                <td className="py-1.5">{r.country}</td><td>{r.incomeType}</td>
-                <td>{r.rate.toFixed(3)}%</td><td>{r.effectiveStart}</td>
-                <td>{r.effectiveEnd ?? '현행'}</td><td>{r.updatedAt?.slice(0, 10) ?? '-'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+        {/* 등록 폼 */}
+        <form onSubmit={submit} className="mb-8 grid grid-cols-1 items-end gap-3 border border-ink bg-surface-muted p-4 sm:grid-cols-2 lg:grid-cols-5">
+          <Field id="tax-country" label="국가">
+            <Select value={form.country} onChange={e => setForm(f => ({ ...f, country: e.target.value }))}>
+              {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </Select>
+          </Field>
+          <Field id="tax-type" label="유형">
+            <Select value={form.incomeType} onChange={e => setForm(f => ({ ...f, incomeType: e.target.value as IncomeType }))}>
+              {INCOME_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </Select>
+          </Field>
+          <Field id="tax-rate" label="세율(%)">
+            <Input type="number" step="0.001" min="0" max="50" required
+              value={form.rate} onChange={e => setForm(f => ({ ...f, rate: e.target.value }))} />
+          </Field>
+          <Field id="tax-start" label="적용 시작일">
+            <Input type="date" required
+              value={form.effectiveStart} onChange={e => setForm(f => ({ ...f, effectiveStart: e.target.value }))} />
+          </Field>
+          <div>
+            <Button type="submit" variant="primary" className="w-full">저장</Button>
+          </div>
+        </form>
 
-      {/* 국가×유형 변경 이력 */}
-      <section>
-        <h2 className="mb-2 text-lg font-semibold">변경 이력</h2>
-        <div className="space-y-3">
-          {history.map(g => (
-            <div key={g.key} className="rounded border border-gray-800 p-3">
-              <div className="mb-1 text-sm font-medium">{g.key}</div>
-              <div className="flex flex-wrap gap-2 text-xs text-gray-400">
-                {g.rows.map(r => (
-                  <span key={r.id} className="rounded bg-gray-800 px-2 py-1">
-                    {r.effectiveStart} ~ {r.effectiveEnd ?? '현행'} : {r.rate.toFixed(3)}%
-                  </span>
-                ))}
+        {/* 세율 목록 */}
+        <section>
+          <SectionHeader label="현행 + 이력" note="현행 행은 굵게 표시" />
+          <div className="overflow-x-auto">
+            <div className="min-w-[640px] border-t-[1.5px] border-ink">
+              <div className={`${RATE_GRID} border-b border-line py-2`}>
+                <Label size="sm" tone="faint">국가</Label>
+                <Label size="sm" tone="faint">유형</Label>
+                <Label size="sm" tone="faint" className="text-right">세율</Label>
+                <Label size="sm" tone="faint">적용 시작</Label>
+                <Label size="sm" tone="faint">적용 종료</Label>
+                <Label size="sm" tone="faint">수정일</Label>
               </div>
+              {rates.map(r => {
+                const current = r.effectiveEnd === null
+                return (
+                  <div
+                    key={r.id}
+                    className={`${RATE_GRID} items-baseline border-b border-line-hair py-2.5 hover:bg-surface-muted ${
+                      current ? 'font-medium' : 'text-fg-3'
+                    }`}
+                  >
+                    <Num className="text-[12px]">{r.country}</Num>
+                    <span className="text-[12.5px]">{r.incomeType}</span>
+                    <Num className="text-right text-[12.5px]">{r.rate.toFixed(3)}%</Num>
+                    <Num className="text-[12px]">{r.effectiveStart}</Num>
+                    <Num className="text-[12px]">{r.effectiveEnd ?? '현행'}</Num>
+                    <Num className="text-[12px]">{r.updatedAt?.slice(0, 10) ?? '-'}</Num>
+                  </div>
+                )
+              })}
             </div>
-          ))}
-        </div>
-      </section>
+          </div>
+        </section>
+
+        {/* 국가×유형 변경 이력 */}
+        <section className="mt-8">
+          <SectionHeader label="변경 이력" />
+          <div className="space-y-3">
+            {history.map(g => (
+              <div key={g.key} className="border border-line p-3">
+                <div className="mb-1.5 text-[13px] font-medium">{g.key}</div>
+                <div className="flex flex-wrap gap-2">
+                  {g.rows.map(r => (
+                    <span key={r.id} className="bg-surface-muted px-2 py-1 font-mono text-[10.5px] text-fg-3 tnum">
+                      {r.effectiveStart} ~ {r.effectiveEnd ?? '현행'} : {r.rate.toFixed(3)}%
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
     </div>
   )
 }

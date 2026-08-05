@@ -10,10 +10,12 @@ import {
 } from 'recharts'
 import type { Position } from '@/types/portfolio'
 
-// 자산별 색상 팔레트 (최대 10개 자산)
+// 자산별 색상 램프 — 잉크 → 라인 순의 단색 문서 톤 (순환)
 const COLORS = [
-  '#6366f1', '#22d3ee', '#f59e0b', '#10b981', '#ef4444',
-  '#a855f7', '#3b82f6', '#f97316', '#14b8a6', '#ec4899',
+  'var(--c-ink)',
+  'var(--c-fg-muted)',
+  'var(--c-fg-ghost)',
+  'var(--c-line)',
 ]
 
 type Props = {
@@ -46,11 +48,10 @@ export default function AssetAllocationChart({ positions }: Props) {
     }))
 
   return (
-    <div className="rounded-lg border border-gray-700 bg-gray-900 p-4">
-      <h3 className="mb-4 text-sm font-semibold text-gray-300">
-        자산 비중 (KRW 기준, 총{' '}
-        <span className="text-white">{formatKrw(totalKrw)}원</span>)
-      </h3>
+    <div className="border-t-[1.5px] border-ink pt-4">
+      <p className="m-0 mb-4 font-mono text-[10px] tracking-label text-fg-muted">
+        KRW 기준 · 총 <span className="text-ink tnum">{formatKrw(totalKrw)}원</span>
+      </p>
       <ResponsiveContainer width="100%" height={260}>
         <PieChart>
           <Pie
@@ -64,7 +65,7 @@ export default function AssetAllocationChart({ positions }: Props) {
             paddingAngle={2}
           >
             {data.map((_, i) => (
-              <Cell key={i} fill={COLORS[i % COLORS.length]} />
+              <Cell key={i} fill={COLORS[i % COLORS.length]} stroke="var(--c-surface)" />
             ))}
           </Pie>
           <Tooltip
@@ -73,16 +74,16 @@ export default function AssetAllocationChart({ positions }: Props) {
               name,
             ]}
             contentStyle={{
-              backgroundColor: '#1f2937',
-              border: '1px solid #374151',
-              borderRadius: '6px',
-              color: '#f9fafb',
+              background: 'var(--c-surface)',
+              border: '1px solid var(--c-line-card)',
+              borderRadius: 0,
+              color: 'var(--c-ink)',
               fontSize: '12px',
             }}
           />
           <Legend
             formatter={(value, entry: any) => (
-              <span className="text-xs text-gray-300">
+              <span className="font-mono text-[10px] tracking-label text-fg-3">
                 {value} {entry.payload?.pct}%
               </span>
             )}

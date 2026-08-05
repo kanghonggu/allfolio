@@ -4,6 +4,12 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAiApi } from '@/lib/useApi'
+import PageHeader from '@/components/ui/PageHeader'
+import SectionHeader from '@/components/ui/SectionHeader'
+import Badge from '@/components/ui/Badge'
+import Button from '@/components/ui/Button'
+import Field, { Input } from '@/components/ui/Field'
+import { LoadingState } from '@/components/ui/states'
 
 const EXAMPLES = [
   { label: 'OpenAI', url: 'https://api.openai.com/v1', model: 'gpt-4o' },
@@ -41,8 +47,11 @@ export default function AiSettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-600 border-t-blue-400" />
+      <div className="border border-line-card bg-surface">
+        <PageHeader className="px-5 pt-5 sm:px-7" title="AI 상담사 설정" />
+        <div className="px-5 py-5 pb-10 sm:px-7">
+          <LoadingState label="설정 불러오는 중" />
+        </div>
       </div>
     )
   }
@@ -50,96 +59,105 @@ export default function AiSettingsPage() {
   const canSave = baseUrl.trim() && apiKey.trim() && model.trim()
 
   return (
-    <div className="mx-auto max-w-xl space-y-8">
-      <div className="flex items-center gap-3">
-        <Link href="/unified/reports" className="text-gray-400 hover:text-white text-sm">← 설정</Link>
-        <h1 className="text-xl font-bold">AI 상담사 설정</h1>
+    <div className="border border-line-card bg-surface">
+      <div className="px-5 pt-4 sm:px-7">
+        <Link
+          href="/unified/reports"
+          className="font-mono text-[10px] tracking-label text-fg-faint transition-colors hover:text-ink"
+        >
+          ← 설정
+        </Link>
       </div>
+      <PageHeader
+        className="px-5 pt-2 sm:px-7"
+        title="AI 상담사 설정"
+        meta="LLM 연결 정보 관리"
+      />
 
-      {config && (
-        <div className="rounded-lg border border-green-700 bg-green-950/30 px-4 py-3 text-sm text-green-300">
-          연결됨: <span className="font-medium">{config.model}</span> · {config.baseUrl}
-        </div>
-      )}
-
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 space-y-4">
-        <h2 className="text-sm font-semibold text-gray-300">LLM 연결 설정</h2>
-
-        <div>
-          <label className="mb-1 block text-xs text-gray-400">Base URL</label>
-          <input
-            type="url"
-            placeholder="https://api.openai.com/v1"
-            value={baseUrl}
-            onChange={e => setBaseUrl(e.target.value)}
-            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1 block text-xs text-gray-400">API Key</label>
-          <input
-            type="password"
-            placeholder="sk-..."
-            value={apiKey}
-            onChange={e => setApiKey(e.target.value)}
-            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1 block text-xs text-gray-400">모델</label>
-          <input
-            type="text"
-            placeholder="gpt-4o"
-            value={model}
-            onChange={e => setModel(e.target.value)}
-            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
-          />
-        </div>
-
-        <div className="flex gap-2 pt-2">
-          <button
-            onClick={() => save.mutate()}
-            disabled={!canSave || save.isPending}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-40"
-          >
-            {save.isPending ? '저장 중...' : '저장'}
-          </button>
-          {config && (
-            <button
-              onClick={() => del.mutate()}
-              disabled={del.isPending}
-              className="rounded-lg border border-red-700 px-4 py-2 text-sm font-medium text-red-400 hover:border-red-500 disabled:opacity-40"
-            >
-              {del.isPending ? '삭제 중...' : '삭제'}
-            </button>
-          )}
-        </div>
-
-        {save.isSuccess && (
-          <p className="text-xs text-green-400">저장되었습니다.</p>
+      <div className="max-w-xl px-5 py-5 pb-10 sm:px-7">
+        {config && (
+          <div className="mb-6 flex flex-wrap items-baseline gap-2 border border-line-card bg-surface-muted px-4 py-3">
+            <Badge variant="ok">연결됨</Badge>
+            <span className="text-[12.5px] text-fg-2">
+              <span className="font-medium text-ink">{config.model}</span> · {config.baseUrl}
+            </span>
+          </div>
         )}
-        {save.isError && (
-          <p className="text-xs text-red-400">저장 실패. 다시 시도해 주세요.</p>
-        )}
-      </div>
 
-      <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-6 space-y-3">
-        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">예시</h2>
-        <div className="space-y-2">
-          {EXAMPLES.map(ex => (
-            <button
-              key={ex.label}
-              onClick={() => { setBaseUrl(ex.url); setModel(ex.model) }}
-              className="w-full text-left rounded-lg border border-gray-700 px-3 py-2 text-sm hover:border-gray-500 hover:bg-gray-800 transition-colors"
-            >
-              <span className="font-medium text-gray-200">{ex.label}</span>
-              <span className="ml-2 text-gray-500">{ex.url}</span>
-              <span className="ml-2 text-gray-600">/ {ex.model}</span>
-            </button>
-          ))}
-        </div>
+        <section className="border border-line-card bg-surface-muted p-5 sm:p-6">
+          <SectionHeader label="LLM 연결 설정" />
+          <div className="space-y-4">
+            <Field id="ai-base-url" label="Base URL">
+              <Input
+                type="url"
+                placeholder="https://api.openai.com/v1"
+                value={baseUrl}
+                onChange={e => setBaseUrl(e.target.value)}
+              />
+            </Field>
+
+            <Field id="ai-api-key" label="API Key">
+              <Input
+                type="password"
+                placeholder="sk-..."
+                value={apiKey}
+                onChange={e => setApiKey(e.target.value)}
+              />
+            </Field>
+
+            <Field id="ai-model" label="모델">
+              <Input
+                type="text"
+                placeholder="gpt-4o"
+                value={model}
+                onChange={e => setModel(e.target.value)}
+              />
+            </Field>
+
+            <div className="flex gap-2.5 pt-2">
+              <Button
+                variant="primary"
+                onClick={() => save.mutate()}
+                disabled={!canSave || save.isPending}
+              >
+                {save.isPending ? '저장 중…' : '저장'}
+              </Button>
+              {config && (
+                <button
+                  onClick={() => del.mutate()}
+                  disabled={del.isPending}
+                  className="border border-danger bg-surface px-3.5 py-2 text-[12.5px] text-danger transition-colors hover:bg-danger hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {del.isPending ? '삭제 중…' : '삭제'}
+                </button>
+              )}
+            </div>
+
+            {save.isSuccess && (
+              <p className="text-xs text-ok">저장되었습니다.</p>
+            )}
+            {save.isError && (
+              <p role="alert" className="text-xs text-danger">저장 실패. 다시 시도해 주세요.</p>
+            )}
+          </div>
+        </section>
+
+        <section className="mt-6">
+          <SectionHeader label="예시" />
+          <div className="border-t-[1.5px] border-ink">
+            {EXAMPLES.map(ex => (
+              <button
+                key={ex.label}
+                onClick={() => { setBaseUrl(ex.url); setModel(ex.model) }}
+                className="block w-full border-b border-line-hair px-3 py-2.5 text-left text-sm transition-colors hover:bg-surface-muted"
+              >
+                <span className="font-medium text-ink">{ex.label}</span>
+                <span className="ml-2 font-mono text-[11px] text-fg-faint">{ex.url}</span>
+                <span className="ml-2 font-mono text-[11px] text-fg-ghost">/ {ex.model}</span>
+              </button>
+            ))}
+          </div>
+        </section>
       </div>
     </div>
   )

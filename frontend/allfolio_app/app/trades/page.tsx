@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query'
 import { getTrades } from '@/lib/api'
 import { queryKeys } from '@/lib/queryClient'
 import TradeTable from '@/components/TradeTable'
+import PageHeader from '@/components/ui/PageHeader'
+import { ErrorState, LoadingState } from '@/components/ui/states'
 
 const PORTFOLIO_ID = process.env.NEXT_PUBLIC_DEFAULT_PORTFOLIO_ID ?? ''
 
@@ -15,39 +17,20 @@ export default function TradesPage() {
   })
 
   return (
-    <div className="space-y-6">
-      <header className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-bold">거래 내역</h1>
-        {data && (
-          <span className="text-sm text-gray-400">
-            최근 {data.length}건
-          </span>
-        )}
-      </header>
+    <div className="border border-line-card bg-surface">
+      <PageHeader
+        className="px-5 pt-5 sm:px-7"
+        title="거래 내역"
+        meta={data ? `최근 ${data.length}건` : undefined}
+      />
 
-      {isLoading && (
-        <div className="space-y-2">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-10 animate-pulse rounded bg-gray-800"
-              style={{ opacity: 1 - i * 0.1 }}
-            />
-          ))}
-        </div>
-      )}
+      <div className="px-5 py-5 pb-10 sm:px-7">
+        {isLoading && <LoadingState label="거래 내역 불러오는 중" />}
 
-      {isError && (
-        <div className="rounded-lg border border-red-800 bg-red-950 p-4 text-sm text-red-400">
-          API 오류: {(error as Error).message}
-        </div>
-      )}
+        {isError && <ErrorState message={`API 오류: ${(error as Error).message}`} />}
 
-      {data && (
-        <div className="rounded-lg border border-gray-700 bg-gray-900 p-4">
-          <TradeTable trades={data} />
-        </div>
-      )}
+        {data && <TradeTable trades={data} />}
+      </div>
     </div>
   )
 }

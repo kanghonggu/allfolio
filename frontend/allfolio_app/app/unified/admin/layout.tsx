@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useRequireAdmin } from '@/lib/useRequireAdmin'
+import Label from '@/components/ui/Label'
+import { LoadingState } from '@/components/ui/states'
 import { ADMIN_TOOLS } from './admin-tools'
 
 /**
@@ -15,28 +17,24 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname()
 
   if (!ready) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-600 border-t-amber-400" />
-      </div>
-    )
+    return <LoadingState label="권한 확인 중" />
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-amber-900/60 bg-amber-950/20 px-4 py-2.5">
-        <Link href="/unified/admin" className="text-sm font-semibold text-amber-400 hover:text-amber-300 transition-colors">
-          ⚙ 관리자 콘솔
+      <div className="flex flex-wrap items-center gap-x-4 border border-warn-line bg-warn-bg px-4">
+        <Link href="/unified/admin" className="py-2.5">
+          <Label size="sm" className="text-warn">관리자 콘솔</Label>
         </Link>
-        <nav className="flex flex-wrap gap-x-4 gap-y-1">
+        <nav className="flex flex-wrap gap-x-1">
           {ADMIN_TOOLS.map(tool => (
             <Link
               key={tool.href}
               href={tool.href}
-              className={`text-sm transition-colors ${
+              className={`whitespace-nowrap border-b-2 px-2.5 py-2.5 text-[13px] transition-colors ${
                 pathname?.startsWith(tool.href)
-                  ? 'text-amber-300 font-medium'
-                  : 'text-gray-400 hover:text-amber-300'
+                  ? 'border-warn text-warn'
+                  : 'border-transparent text-warn opacity-70 hover:opacity-100'
               }`}
             >
               {tool.title}
