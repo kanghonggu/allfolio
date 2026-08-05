@@ -4,9 +4,18 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRequireAdmin } from '@/lib/useRequireAdmin'
 import { useExclusionPresetAdminApi } from '@/lib/useApi'
+import PageHeader from '@/components/ui/PageHeader'
+import SectionHeader from '@/components/ui/SectionHeader'
+import Button from '@/components/ui/Button'
+import Label from '@/components/ui/Label'
+import Num from '@/components/ui/Num'
+import Field, { Input } from '@/components/ui/Field'
+import { EmptyState, ErrorState, LoadingState } from '@/components/ui/states'
 import type { ExclusionPreset, UpsertPresetRequest } from '@/types/exclusion-preset'
 
 const EMPTY_FORM: UpsertPresetRequest = { symbol: '', listName: '', reason: '' }
+
+const PRESET_GRID = 'grid grid-cols-[0.8fr_1fr_1.6fr_0.8fr_0.9fr] gap-3'
 
 export default function ExclusionPresetAdminPage() {
   const { ready } = useRequireAdmin()
@@ -51,83 +60,101 @@ export default function ExclusionPresetAdminPage() {
     setForm({ symbol: preset.symbol, listName: preset.listName, reason: preset.reason })
   }
 
-  if (!ready) return <div className="p-6 text-gray-400">권한 확인 중…</div>
+  if (!ready) return <LoadingState label="권한 확인 중" />
 
   const presets = data ?? []
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8 p-6">
-      <h1 className="text-2xl font-bold">배제 프리셋 <span className="text-sm text-gray-400">(ADMIN)</span></h1>
-      {error && <div className="rounded bg-red-900/40 px-3 py-2 text-sm text-red-300">{error}</div>}
+    <div className="border border-line-card bg-surface">
+      <PageHeader
+        className="px-5 pt-5 sm:px-7"
+        title="배제 프리셋"
+        meta={
+          <>
+            <Label size="sm" className="text-warn">ADMIN</Label>
+            <span className="ml-3">ESG 스크리닝 내장 배제 프리셋 큐레이션</span>
+          </>
+        }
+      />
 
-      {/* 추가/수정 폼 */}
-      <form onSubmit={submit} className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-800 p-4">
-        <label className="text-sm">심볼
-          <input required className="ml-2 w-32 rounded bg-gray-800 px-2 py-1"
-            value={form.symbol} onChange={e => setForm(f => ({ ...f, symbol: e.target.value }))} />
-        </label>
-        <label className="text-sm">리스트명
-          <input required className="ml-2 w-40 rounded bg-gray-800 px-2 py-1"
-            value={form.listName} onChange={e => setForm(f => ({ ...f, listName: e.target.value }))} />
-        </label>
-        <label className="text-sm">사유
-          <input required className="ml-2 w-48 rounded bg-gray-800 px-2 py-1"
-            value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} />
-        </label>
-        <button type="submit" disabled={upsertMut.isPending}
-          className="rounded bg-blue-600 px-4 py-1.5 text-sm font-medium hover:bg-blue-500 disabled:opacity-40">
-          {upsertMut.isPending ? '저장 중…' : '저장'}
-        </button>
-        {(form.symbol || form.listName || form.reason) && (
-          <button type="button" onClick={() => setForm(EMPTY_FORM)}
-            className="rounded px-3 py-1.5 text-sm text-gray-400 hover:text-gray-200">
-            취소
-          </button>
-        )}
-      </form>
-
-      {/* 프리셋 목록 */}
-      <section>
-        <h2 className="mb-2 text-lg font-semibold">프리셋 목록</h2>
-        {isLoading && <div className="h-40 animate-pulse rounded bg-gray-800" />}
-        {isError && (
-          <div className="rounded bg-red-900/40 px-3 py-2 text-sm text-red-300">
-            프리셋 목록을 불러오지 못했습니다.
+      <div className="px-5 py-5 pb-10 sm:px-7">
+        {error && (
+          <div role="alert" className="mb-4 flex items-center gap-3 border border-warn-line bg-warn-bg px-4 py-2.5">
+            <Label size="sm" className="text-warn">주의</Label>
+            <span className="text-[12.5px] text-fg-2">{error}</span>
           </div>
         )}
-        {!isLoading && !isError && (
-          <table className="w-full text-sm">
-            <thead className="text-gray-400">
-              <tr className="border-b border-gray-800 text-left">
-                <th className="py-2">심볼</th><th>리스트명</th><th>사유</th><th>수정일</th><th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {presets.map(p => (
-                <tr key={p.id} className="border-b border-gray-900 text-gray-200">
-                  <td className="py-1.5">{p.symbol}</td>
-                  <td>{p.listName}</td>
-                  <td>{p.reason}</td>
-                  <td>{p.updatedAt?.slice(0, 10) ?? '-'}</td>
-                  <td className="space-x-2 py-1.5 text-right">
-                    <button onClick={() => edit(p)}
-                      className="rounded px-2 py-1 text-xs text-gray-400 hover:text-gray-200">
-                      수정
-                    </button>
-                    <button onClick={() => deleteMut.mutate(p.id)} disabled={deleteMut.isPending}
-                      className="rounded px-2 py-1 text-xs text-red-400 hover:text-red-300 disabled:opacity-40">
-                      삭제
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {presets.length === 0 && (
-                <tr><td colSpan={5} className="py-4 text-center text-gray-500">등록된 프리셋이 없습니다.</td></tr>
-              )}
-            </tbody>
-          </table>
-        )}
-      </section>
+
+        {/* 추가/수정 폼 */}
+        <form onSubmit={submit} className="mb-8 grid grid-cols-1 items-end gap-3 border border-ink bg-surface-muted p-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Field id="preset-symbol" label="심볼">
+            <Input required value={form.symbol} onChange={e => setForm(f => ({ ...f, symbol: e.target.value }))} />
+          </Field>
+          <Field id="preset-list-name" label="리스트명">
+            <Input required value={form.listName} onChange={e => setForm(f => ({ ...f, listName: e.target.value }))} />
+          </Field>
+          <Field id="preset-reason" label="사유">
+            <Input required value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} />
+          </Field>
+          <div className="flex gap-2">
+            <Button type="submit" variant="primary" disabled={upsertMut.isPending} className="flex-1">
+              {upsertMut.isPending ? '저장 중…' : '저장'}
+            </Button>
+            {(form.symbol || form.listName || form.reason) && (
+              <Button type="button" variant="ghost" onClick={() => setForm(EMPTY_FORM)}>
+                취소
+              </Button>
+            )}
+          </div>
+        </form>
+
+        {/* 프리셋 목록 */}
+        <section>
+          <SectionHeader label="프리셋 목록" note={presets.length > 0 ? `${presets.length}건` : undefined} />
+          {isLoading && <LoadingState label="프리셋 불러오는 중" />}
+          {isError && <ErrorState message="프리셋 목록을 불러오지 못했습니다." />}
+          {!isLoading && !isError && (
+            presets.length === 0 ? (
+              <EmptyState title="등록된 프리셋이 없습니다" description="위 폼에서 배제 프리셋을 등록하세요" />
+            ) : (
+              <div className="overflow-x-auto">
+                <div className="min-w-[640px] border-t-[1.5px] border-ink">
+                  <div className={`${PRESET_GRID} border-b border-line py-2`}>
+                    <Label size="sm" tone="faint">심볼</Label>
+                    <Label size="sm" tone="faint">리스트명</Label>
+                    <Label size="sm" tone="faint">사유</Label>
+                    <Label size="sm" tone="faint">수정일</Label>
+                    <span />
+                  </div>
+                  {presets.map(p => (
+                    <div key={p.id} className={`${PRESET_GRID} items-baseline border-b border-line-hair py-2.5 hover:bg-surface-muted`}>
+                      <Num className="text-[12px] font-medium">{p.symbol}</Num>
+                      <span className="text-[12.5px]">{p.listName}</span>
+                      <span className="truncate text-[12.5px] text-fg-3">{p.reason}</span>
+                      <Num className="text-[12px] text-fg-3">{p.updatedAt?.slice(0, 10) ?? '-'}</Num>
+                      <span className="flex justify-end gap-2">
+                        <button
+                          onClick={() => edit(p)}
+                          className="border border-line px-2 py-1 text-xs text-fg-2 transition-colors hover:border-ink hover:text-ink"
+                        >
+                          수정
+                        </button>
+                        <button
+                          onClick={() => deleteMut.mutate(p.id)}
+                          disabled={deleteMut.isPending}
+                          className="border border-line px-2 py-1 text-xs text-fg-faint transition-colors hover:border-danger hover:text-danger disabled:opacity-40"
+                        >
+                          삭제
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          )}
+        </section>
+      </div>
     </div>
   )
 }

@@ -5,17 +5,25 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRequireAdmin } from '@/lib/useRequireAdmin'
 import { createOpsAdminApi } from '@/lib/ops-admin-api'
+import PageHeader from '@/components/ui/PageHeader'
+import SectionHeader from '@/components/ui/SectionHeader'
+import Badge, { type BadgeVariant } from '@/components/ui/Badge'
+import Button from '@/components/ui/Button'
+import Label from '@/components/ui/Label'
+import Num from '@/components/ui/Num'
+import Field, { Input, Select } from '@/components/ui/Field'
+import { EmptyState } from '@/components/ui/states'
 import type { OutboxEventSummary, OutboxStatus, ReprocessResult } from '@/types/ops'
 
 const REFETCH_MS = 30_000
 
 const STATUS_OPTIONS: OutboxStatus[] = ['DEAD', 'FAILED', 'PENDING', 'PROCESSED', 'PROCESSED_KAFKA']
-const STATUS_STYLE: Record<string, string> = {
-  PENDING:         'bg-yellow-900/40 text-yellow-400 border-yellow-800',
-  PROCESSED:       'bg-emerald-900/40 text-emerald-400 border-emerald-800',
-  PROCESSED_KAFKA: 'bg-emerald-900/40 text-emerald-400 border-emerald-800',
-  FAILED:          'bg-orange-900/40 text-orange-400 border-orange-800',
-  DEAD:            'bg-red-900/40 text-red-400 border-red-800',
+const STATUS_BADGE: Record<string, BadgeVariant> = {
+  PENDING:         'warn',
+  PROCESSED:       'ok',
+  PROCESSED_KAFKA: 'ok',
+  FAILED:          'warn',
+  DEAD:            'danger',
 }
 
 function fmt(ts: string | null | undefined) {
@@ -25,11 +33,12 @@ function fmt(ts: string | null | undefined) {
 // 0도 명시적으로 '0' 표시, 로딩·실패는 별도 문자로 구분 (QA P2)
 function StatCard({ label, value, danger }: { label: string; value: number | string; danger?: boolean }) {
   const numeric = typeof value === 'number'
+  const alert = danger && numeric && value > 0
   return (
-    <div className={`rounded-xl border p-4 ${danger && numeric && value > 0 ? 'border-red-800 bg-red-900/20' : 'border-gray-700 bg-gray-900'}`}>
-      <div className="text-xs text-gray-500">{label}</div>
-      <div className={`mt-1 text-2xl font-bold tabular-nums ${danger && numeric && value > 0 ? 'text-red-400' : 'text-gray-100'}`}>
-        {numeric ? value.toLocaleString() : value}
+    <div className={`border p-4 ${alert ? 'border-danger' : 'border-line'}`}>
+      <Label size="sm" tone="faint">{label}</Label>
+      <div className={`mt-1.5 text-xl font-semibold ${alert ? 'text-danger' : ''}`}>
+        <Num>{numeric ? value.toLocaleString() : value}</Num>
       </div>
     </div>
   )
@@ -40,10 +49,10 @@ function PayloadDetail({ id, api }: { id: string; api: ReturnType<typeof createO
     queryKey: ['ops', 'outbox-detail', id],
     queryFn:  () => api.outboxDetail(id),
   })
-  if (isLoading) return <div className="py-2 text-xs text-gray-500">불러오는 중…</div>
+  if (isLoading) return <div className="py-2 font-mono text-[10px] tracking-label text-fg-faint">불러오는 중 …</div>
   if (!data) return null
   return (
-    <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-gray-950 p-3 text-xs text-gray-400">
+    <pre className="my-2 max-h-48 overflow-auto bg-surface-muted p-3 font-mono text-xs text-fg-3">
       {(() => { try { return JSON.stringify(JSON.parse(data.payload), null, 2) } catch { return data.payload } })()}
     </pre>
   )
@@ -131,180 +140,179 @@ export default function OpsMonitorPage() {
   const dlqDead = (summary?.dlq ?? []).reduce((a, d) => a + d.dead, 0)
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">운영 모니터링</h1>
-        <p className="mt-1 text-sm text-gray-400">
-          Outbox 이벤트·DLQ 현황 (30초 자동 갱신) — DEAD 건은 선택 후 재처리할 수 있습니다
-        </p>
-      </div>
+    <div className="border border-line-card bg-surface">
+      <PageHeader
+        className="px-5 pt-5 sm:px-7"
+        title="운영 모니터링"
+        meta={
+          <>
+            <Label size="sm" className="text-warn">ADMIN</Label>
+            <span className="ml-3">Outbox 이벤트·DLQ 현황 · 30초 자동 갱신 · DEAD 건은 선택 후 재처리</span>
+          </>
+        }
+      />
 
-      {summaryError && (
-        <div className="rounded-xl border border-red-800 bg-red-950/40 p-4 text-sm text-red-400">
-          현황 조회에 실패했습니다. 30초 후 자동 재시도합니다.
-        </div>
-      )}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {/* 로딩 '…' / 실패 '—' / 0은 명시적 0 (QA P2) */}
-        <StatCard label="Outbox PENDING" value={summaryLoading ? '…' : summaryError ? '—' : outbox.PENDING ?? 0} />
-        <StatCard label="Outbox FAILED" value={summaryLoading ? '…' : summaryError ? '—' : outbox.FAILED ?? 0} danger />
-        <StatCard label="Outbox DEAD" value={summaryLoading ? '…' : summaryError ? '—' : outbox.DEAD ?? 0} danger />
-        <StatCard label="Outbox PROCESSED" value={summaryLoading ? '…' : summaryError ? '—' : outbox.PROCESSED ?? 0} />
-        <StatCard label="DLQ 대기" value={summaryLoading ? '…' : summaryError ? '—' : dlqWaiting} />
-        <StatCard label="DLQ 데드" value={summaryLoading ? '…' : summaryError ? '—' : dlqDead} danger />
-      </div>
-
-      {/* Outbox 그리드 */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-5">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="text-xs text-gray-500">
-            상태
-            <select
-              value={status}
-              onChange={e => { setStatus(e.target.value as OutboxStatus); setSelected(new Set()) }}
-              className="mt-1 block rounded-lg border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm"
-            >
-              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </label>
-          <label className="text-xs text-gray-500">
-            이벤트 타입
-            <input
-              value={eventType}
-              onChange={e => setEventType(e.target.value)}
-              placeholder="예: TRADE_RECORDED"
-              className="mt-1 block rounded-lg border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm"
-            />
-          </label>
-          <label className="text-xs text-gray-500">
-            시작일
-            <input type="date" value={from} onChange={e => setFrom(e.target.value)}
-              className="mt-1 block rounded-lg border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm" />
-          </label>
-          <label className="text-xs text-gray-500">
-            종료일
-            <input type="date" value={to} onChange={e => setTo(e.target.value)}
-              className="mt-1 block rounded-lg border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm" />
-          </label>
-          {status === 'DEAD' && (
-            <button
-              onClick={handleReprocess}
-              disabled={selected.size === 0 || reprocessing}
-              className="ml-auto rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {reprocessing ? '재처리 중…' : `선택 재처리 (${selected.size})`}
-            </button>
-          )}
-        </div>
-
-        {reprocessResult && (
-          <div className="mt-3 rounded-lg border border-gray-600 bg-gray-800 px-4 py-2 text-sm">
-            재처리 결과 — <span className="text-emerald-400">처리 {reprocessResult.processed}</span> ·{' '}
-            <span className="text-red-400">실패 {reprocessResult.failed}</span> ·{' '}
-            <span className="text-gray-400">스킵 {reprocessResult.skipped}</span>
+      <div className="px-5 py-5 pb-10 sm:px-7">
+        {summaryError && (
+          <div className="mb-4 border border-danger px-4 py-2.5 text-[12.5px] text-danger">
+            현황 조회에 실패했습니다. 30초 후 자동 재시도합니다.
           </div>
         )}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {/* 로딩 '…' / 실패 '—' / 0은 명시적 0 (QA P2) */}
+          <StatCard label="Outbox PENDING" value={summaryLoading ? '…' : summaryError ? '—' : outbox.PENDING ?? 0} />
+          <StatCard label="Outbox FAILED" value={summaryLoading ? '…' : summaryError ? '—' : outbox.FAILED ?? 0} danger />
+          <StatCard label="Outbox DEAD" value={summaryLoading ? '…' : summaryError ? '—' : outbox.DEAD ?? 0} danger />
+          <StatCard label="Outbox PROCESSED" value={summaryLoading ? '…' : summaryError ? '—' : outbox.PROCESSED ?? 0} />
+          <StatCard label="DLQ 대기" value={summaryLoading ? '…' : summaryError ? '—' : dlqWaiting} />
+          <StatCard label="DLQ 데드" value={summaryLoading ? '…' : summaryError ? '—' : dlqDead} danger />
+        </div>
 
-        {events.length === 0 ? (
-          <div className="py-10 text-center text-sm text-gray-500">{status} 상태의 이벤트가 없습니다</div>
-        ) : (
-          <table className="mt-4 w-full text-xs">
-            <thead>
-              <tr className="text-left text-gray-500">
-                {status === 'DEAD' && <th className="py-2 pr-2 font-medium" />}
-                <th className="py-2 pr-4 font-medium">시각</th>
-                <th className="py-2 pr-4 font-medium">이벤트</th>
-                <th className="py-2 pr-4 font-medium">상태</th>
-                <th className="py-2 pr-4 font-medium">재시도</th>
-                <th className="py-2 font-medium">오류</th>
-              </tr>
-            </thead>
-            <tbody>
-              {events.map((e: OutboxEventSummary) => (
-                <>
-                  <tr
-                    key={e.id}
-                    onClick={() => setExpandedId(prev => (prev === e.id ? null : e.id))}
-                    className="cursor-pointer border-t border-gray-800 hover:bg-gray-800/50"
-                  >
-                    {status === 'DEAD' && (
-                      <td className="py-2 pr-2" onClick={ev => ev.stopPropagation()}>
-                        <input type="checkbox" checked={selected.has(e.id)} onChange={() => toggle(e.id)} />
-                      </td>
-                    )}
-                    <td className="py-2 pr-4 text-gray-400">{fmt(e.createdAt)}</td>
-                    <td className="py-2 pr-4">{e.eventType}</td>
-                    <td className="py-2 pr-4">
-                      <span className={`rounded-full border px-2 py-0.5 font-medium ${STATUS_STYLE[e.status] ?? ''}`}>
-                        {e.status}
-                      </span>
-                    </td>
-                    <td className="py-2 pr-4 text-gray-400">{e.retryCount}</td>
-                    <td className="py-2 text-red-400/80 max-w-xs truncate">{e.errorMessage ?? '-'}</td>
-                  </tr>
-                  {expandedId === e.id && api && (
-                    <tr key={`${e.id}-detail`} className="border-t border-gray-800/50">
-                      <td colSpan={status === 'DEAD' ? 6 : 5}>
-                        <PayloadDetail id={e.id} api={api} />
-                      </td>
-                    </tr>
-                  )}
-                </>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+        {/* Outbox 그리드 */}
+        <section className="mt-8">
+          <SectionHeader label="OUTBOX 이벤트" />
+          <div className="flex flex-wrap items-end gap-3">
+            <Field id="ops-status" label="상태" className="w-44">
+              <Select
+                value={status}
+                onChange={e => { setStatus(e.target.value as OutboxStatus); setSelected(new Set()) }}
+              >
+                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+              </Select>
+            </Field>
+            <Field id="ops-event-type" label="이벤트 타입" className="w-48">
+              <Input
+                value={eventType}
+                onChange={e => setEventType(e.target.value)}
+                placeholder="예: TRADE_RECORDED"
+              />
+            </Field>
+            <Field id="ops-from" label="시작일" className="w-40">
+              <Input type="date" value={from} onChange={e => setFrom(e.target.value)} />
+            </Field>
+            <Field id="ops-to" label="종료일" className="w-40">
+              <Input type="date" value={to} onChange={e => setTo(e.target.value)} />
+            </Field>
+            {status === 'DEAD' && (
+              <Button
+                variant="primary"
+                className="ml-auto"
+                onClick={handleReprocess}
+                disabled={selected.size === 0 || reprocessing}
+              >
+                {reprocessing ? '재처리 중…' : `선택 재처리 (${selected.size})`}
+              </Button>
+            )}
+          </div>
 
-      {/* Redis DLQ 섹션 */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-5">
-        <h2 className="text-sm font-semibold">Redis DLQ</h2>
-        {requeueMsg && <div className="mt-2 text-xs text-emerald-400">{requeueMsg}</div>}
-        {(summary?.dlq ?? []).filter(d => d.waiting > 0 || d.dead > 0).length === 0 ? (
-          <div className="py-6 text-center text-sm text-gray-500">대기·데드 항목이 없습니다</div>
-        ) : (
-          <div className="mt-3 space-y-3">
-            {(summary?.dlq ?? []).filter(d => d.waiting > 0 || d.dead > 0).map(d => (
-              <div key={d.broker} className="flex items-center gap-4 rounded-lg border border-gray-800 px-4 py-2 text-sm">
-                <span className="font-medium">{d.broker}</span>
-                <span className="text-gray-400">대기 {d.waiting}</span>
-                <span className={d.dead > 0 ? 'text-red-400' : 'text-gray-400'}>데드 {d.dead}</span>
-                {d.dead > 0 && (
-                  <button
-                    onClick={() => handleRequeue(d.broker)}
-                    className="ml-auto rounded-lg border border-gray-600 px-3 py-1 text-xs hover:border-blue-500 hover:text-blue-400 transition-colors"
-                  >
-                    전체 재큐
-                  </button>
-                )}
-              </div>
-            ))}
-            {dlqDeadEvents.length > 0 && (
-              <table className="w-full text-xs">
+          {reprocessResult && (
+            <div className="mt-3 border border-line bg-surface-muted px-4 py-2 text-[12.5px]">
+              재처리 결과 — <span className="text-ok">처리 {reprocessResult.processed}</span> ·{' '}
+              <span className="text-danger">실패 {reprocessResult.failed}</span> ·{' '}
+              <span className="text-fg-3">스킵 {reprocessResult.skipped}</span>
+            </div>
+          )}
+
+          {events.length === 0 ? (
+            <EmptyState className="mt-4" title={`${status} 상태의 이벤트가 없습니다`} />
+          ) : (
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[640px] border-t-[1.5px] border-ink text-xs">
                 <thead>
-                  <tr className="text-left text-gray-500">
-                    <th className="py-1 pr-4 font-medium">시각</th>
-                    <th className="py-1 pr-4 font-medium">브로커</th>
-                    <th className="py-1 pr-4 font-medium">타입</th>
-                    <th className="py-1 pr-4 font-medium">재시도</th>
-                    <th className="py-1 font-medium">오류</th>
+                  <tr className="border-b border-line text-left">
+                    {status === 'DEAD' && <th className="py-2 pr-2" />}
+                    <th className="py-2 pr-4 font-normal"><Label size="sm" tone="faint">시각</Label></th>
+                    <th className="py-2 pr-4 font-normal"><Label size="sm" tone="faint">이벤트</Label></th>
+                    <th className="py-2 pr-4 font-normal"><Label size="sm" tone="faint">상태</Label></th>
+                    <th className="py-2 pr-4 font-normal"><Label size="sm" tone="faint">재시도</Label></th>
+                    <th className="py-2 font-normal"><Label size="sm" tone="faint">오류</Label></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {dlqDeadEvents.map(ev => (
-                    <tr key={ev.id} className="border-t border-gray-800">
-                      <td className="py-1.5 pr-4 text-gray-400">{fmt(ev.createdAt)}</td>
-                      <td className="py-1.5 pr-4">{ev.brokerType}</td>
-                      <td className="py-1.5 pr-4 text-gray-400">{ev.payloadType}</td>
-                      <td className="py-1.5 pr-4 text-gray-400">{ev.retryCount}</td>
-                      <td className="py-1.5 text-red-400/80 max-w-xs truncate">{ev.errorMessage}</td>
-                    </tr>
+                  {events.map((e: OutboxEventSummary) => (
+                    <>
+                      <tr
+                        key={e.id}
+                        onClick={() => setExpandedId(prev => (prev === e.id ? null : e.id))}
+                        className="cursor-pointer border-b border-line-hair hover:bg-surface-muted"
+                      >
+                        {status === 'DEAD' && (
+                          <td className="py-2 pr-2" onClick={ev => ev.stopPropagation()}>
+                            <input type="checkbox" checked={selected.has(e.id)} onChange={() => toggle(e.id)} />
+                          </td>
+                        )}
+                        <td className="py-2 pr-4"><Num className="text-[11px] text-fg-3">{fmt(e.createdAt)}</Num></td>
+                        <td className="py-2 pr-4">{e.eventType}</td>
+                        <td className="py-2 pr-4">
+                          <Badge variant={STATUS_BADGE[e.status] ?? 'muted'}>{e.status}</Badge>
+                        </td>
+                        <td className="py-2 pr-4"><Num className="text-[11px] text-fg-3">{e.retryCount}</Num></td>
+                        <td className="max-w-xs truncate py-2 text-danger">{e.errorMessage ?? '-'}</td>
+                      </tr>
+                      {expandedId === e.id && api && (
+                        <tr key={`${e.id}-detail`} className="border-b border-line-hair">
+                          <td colSpan={status === 'DEAD' ? 6 : 5}>
+                            <PayloadDetail id={e.id} api={api} />
+                          </td>
+                        </tr>
+                      )}
+                    </>
                   ))}
                 </tbody>
               </table>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+        </section>
+
+        {/* Redis DLQ 섹션 */}
+        <section className="mt-8">
+          <SectionHeader label="REDIS DLQ" />
+          {requeueMsg && <div className="mb-3 font-mono text-[10.5px] tracking-[0.04em] text-ok">{requeueMsg}</div>}
+          {(summary?.dlq ?? []).filter(d => d.waiting > 0 || d.dead > 0).length === 0 ? (
+            <EmptyState title="대기·데드 항목이 없습니다" />
+          ) : (
+            <div className="space-y-3">
+              {(summary?.dlq ?? []).filter(d => d.waiting > 0 || d.dead > 0).map(d => (
+                <div key={d.broker} className="flex items-center gap-4 border border-line px-4 py-2 text-[13px]">
+                  <Num className="text-[12px] font-medium">{d.broker}</Num>
+                  <span className="text-fg-3">대기 <Num>{d.waiting}</Num></span>
+                  <span className={d.dead > 0 ? 'text-danger' : 'text-fg-3'}>데드 <Num>{d.dead}</Num></span>
+                  {d.dead > 0 && (
+                    <Button size="sm" className="ml-auto" onClick={() => handleRequeue(d.broker)}>
+                      전체 재큐
+                    </Button>
+                  )}
+                </div>
+              ))}
+              {dlqDeadEvents.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[640px] border-t-[1.5px] border-ink text-xs">
+                    <thead>
+                      <tr className="border-b border-line text-left">
+                        <th className="py-2 pr-4 font-normal"><Label size="sm" tone="faint">시각</Label></th>
+                        <th className="py-2 pr-4 font-normal"><Label size="sm" tone="faint">브로커</Label></th>
+                        <th className="py-2 pr-4 font-normal"><Label size="sm" tone="faint">타입</Label></th>
+                        <th className="py-2 pr-4 font-normal"><Label size="sm" tone="faint">재시도</Label></th>
+                        <th className="py-2 font-normal"><Label size="sm" tone="faint">오류</Label></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dlqDeadEvents.map(ev => (
+                        <tr key={ev.id} className="border-b border-line-hair hover:bg-surface-muted">
+                          <td className="py-1.5 pr-4"><Num className="text-[11px] text-fg-3">{fmt(ev.createdAt)}</Num></td>
+                          <td className="py-1.5 pr-4">{ev.brokerType}</td>
+                          <td className="py-1.5 pr-4 text-fg-3">{ev.payloadType}</td>
+                          <td className="py-1.5 pr-4"><Num className="text-[11px] text-fg-3">{ev.retryCount}</Num></td>
+                          <td className="max-w-xs truncate py-1.5 text-danger">{ev.errorMessage}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   )

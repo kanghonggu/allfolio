@@ -6,6 +6,9 @@ import { queryKeys } from '@/lib/queryClient'
 import PortfolioSummary from '@/components/PortfolioSummary'
 import PositionList from '@/components/PositionList'
 import AssetAllocationChart from '@/components/AssetAllocationChart'
+import PageHeader from '@/components/ui/PageHeader'
+import SectionHeader from '@/components/ui/SectionHeader'
+import { ErrorState, LoadingState } from '@/components/ui/states'
 
 const TENANT_ID = process.env.NEXT_PUBLIC_DEFAULT_TENANT_ID ?? ''
 
@@ -27,60 +30,45 @@ export default function PortfolioDetailPage({ params }: Props) {
   })
 
   return (
-    <div className="space-y-8">
-      <header>
-        <h1 className="text-2xl font-bold">포트폴리오 상세</h1>
-        <p className="mt-1 font-mono text-sm text-gray-500">{portfolioId}</p>
-      </header>
+    <div className="border border-line-card bg-surface">
+      <PageHeader
+        className="px-5 pt-5 sm:px-7"
+        title="포트폴리오 상세"
+        meta={portfolioId}
+      />
 
-      {/* 스냅샷 요약 */}
-      <section>
-        <h2 className="mb-4 text-lg font-semibold">성과 요약</h2>
-        {snapshotQuery.isLoading && <LoadingRow />}
-        {snapshotQuery.isError && (
-          <ErrorBox message={(snapshotQuery.error as Error).message} />
-        )}
-        {snapshotQuery.data && <PortfolioSummary snapshot={snapshotQuery.data} />}
-      </section>
-
-      {/* 자산 비중 차트 */}
-      {positionsQuery.data && positionsQuery.data.length > 0 && (
+      <div className="px-5 py-5 pb-10 sm:px-7">
+        {/* 스냅샷 요약 */}
         <section>
-          <h2 className="mb-4 text-lg font-semibold">자산 비중</h2>
-          <AssetAllocationChart positions={positionsQuery.data} />
+          <SectionHeader label="성과 요약" />
+          {snapshotQuery.isLoading && <LoadingState label="스냅샷 불러오는 중" />}
+          {snapshotQuery.isError && (
+            <ErrorState message={(snapshotQuery.error as Error).message} />
+          )}
+          {snapshotQuery.data && <PortfolioSummary snapshot={snapshotQuery.data} />}
         </section>
-      )}
 
-      {/* 포지션 목록 */}
-      <section>
-        <h2 className="mb-4 text-lg font-semibold">현재 포지션</h2>
-        {positionsQuery.isLoading && <LoadingRow />}
-        {positionsQuery.isError && (
-          <ErrorBox message={(positionsQuery.error as Error).message} />
+        {/* 자산 비중 차트 */}
+        {positionsQuery.data && positionsQuery.data.length > 0 && (
+          <section className="mt-8">
+            <SectionHeader label="자산 비중" />
+            <AssetAllocationChart positions={positionsQuery.data} />
+          </section>
         )}
-        {positionsQuery.data && (
-          <div className="rounded-lg border border-gray-700 bg-gray-900 p-4">
-            <p className="mb-3 text-xs text-gray-500">
-              총 {positionsQuery.data.length}종목 (Redis 포지션 캐시 기준)
-            </p>
-            <PositionList positions={positionsQuery.data} />
-          </div>
-        )}
-      </section>
-    </div>
-  )
-}
 
-function LoadingRow() {
-  return (
-    <div className="h-16 animate-pulse rounded-lg border border-gray-700 bg-gray-800" />
-  )
-}
-
-function ErrorBox({ message }: { message: string }) {
-  return (
-    <div className="rounded-lg border border-red-800 bg-red-950 p-4 text-sm text-red-400">
-      {message}
+        {/* 포지션 목록 */}
+        <section className="mt-8">
+          <SectionHeader
+            label="현재 포지션"
+            note={positionsQuery.data ? `총 ${positionsQuery.data.length}종목 · Redis 포지션 캐시 기준` : undefined}
+          />
+          {positionsQuery.isLoading && <LoadingState label="포지션 불러오는 중" />}
+          {positionsQuery.isError && (
+            <ErrorState message={(positionsQuery.error as Error).message} />
+          )}
+          {positionsQuery.data && <PositionList positions={positionsQuery.data} />}
+        </section>
+      </div>
     </div>
   )
 }

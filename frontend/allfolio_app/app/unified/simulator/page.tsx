@@ -8,6 +8,11 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
+import PageHeader from '@/components/ui/PageHeader'
+import SectionHeader from '@/components/ui/SectionHeader'
+import Label from '@/components/ui/Label'
+import Num from '@/components/ui/Num'
+import { Input, Select } from '@/components/ui/Field'
 
 function fmt(n: number) {
   return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 }).format(n)
@@ -25,18 +30,18 @@ function MoneyInput({ label, value, onChange, hint }: {
 }) {
   return (
     <div>
-      <label className="mb-1 block text-xs text-gray-400">{label}</label>
+      <label className="mb-1.5 block font-mono text-[10px] tracking-label text-fg-muted">{label}</label>
       <div className="relative">
-        <input
+        <Input
           type="text" inputMode="numeric"
           placeholder="0"
           value={fmtComma(value)}
           onChange={e => { const d = digitsOnly(e.target.value); onChange(d ? parseInt(d) : 0) }}
-          className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none pr-8"
+          className="pr-8"
         />
-        <span className="absolute right-3 top-2 text-xs text-gray-500">원</span>
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-fg-faint">원</span>
       </div>
-      {hint && <p className="mt-1 text-xs text-gray-600">{hint}</p>}
+      {hint && <p className="mt-1 text-xs text-fg-faint">{hint}</p>}
     </div>
   )
 }
@@ -46,18 +51,18 @@ function RateInput({ label, value, onChange, hint }: {
 }) {
   return (
     <div>
-      <label className="mb-1 block text-xs text-gray-400">{label}</label>
+      <label className="mb-1.5 block font-mono text-[10px] tracking-label text-fg-muted">{label}</label>
       <div className="relative">
-        <input
+        <Input
           type="number"
           step="0.1" min="0" max="100"
           value={value}
           onChange={e => onChange(parseFloat(e.target.value) || 0)}
-          className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none pr-8"
+          className="pr-8"
         />
-        <span className="absolute right-3 top-2 text-xs text-gray-500">%</span>
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-fg-faint">%</span>
       </div>
-      {hint && <p className="mt-1 text-xs text-gray-600">{hint}</p>}
+      {hint && <p className="mt-1 text-xs text-fg-faint">{hint}</p>}
     </div>
   )
 }
@@ -146,193 +151,204 @@ export default function SimulatorPage() {
   const totalInterest = finalValue - totalDeposit
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center gap-3">
-        <Link href="/unified/reports" className="text-sm text-gray-500 hover:text-gray-300">← 보고서</Link>
-        <h1 className="text-2xl font-bold">투자 시뮬레이터</h1>
+    <div className="border border-line-card bg-surface">
+      <div className="px-5 pt-4 sm:px-7">
+        <Link
+          href="/unified/reports"
+          className="font-mono text-[10px] tracking-label text-fg-faint transition-colors hover:text-ink"
+        >
+          ← 보고서
+        </Link>
       </div>
-      <p className="text-xs text-gray-500 -mt-4">복리 효과와 목표 달성 기간을 시뮬레이션합니다</p>
+      <PageHeader
+        className="px-5 pt-2 sm:px-7"
+        title="투자 시뮬레이터"
+        meta="복리 효과와 목표 달성 기간을 시뮬레이션합니다"
+      />
 
-      {/* 목표 연동 */}
-      {goalsData && goalsData.goals.length > 0 && (
-        <div className="rounded-xl border border-violet-800 bg-violet-950/20 p-4">
-          <p className="text-xs text-gray-400 mb-2">목표 트래커 연동 (선택)</p>
-          <select
-            value={selectedGoalId}
-            onChange={e => {
-              const g = goalsData.goals.find(g => g.id === e.target.value)
-              setSelectedGoalId(e.target.value)
-              if (g) setInitial(Math.round(Number(g.currentAmount)))
-            }}
-            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
-          >
-            <option value="">목표 선택 (선택 시 현재 자산 자동 입력)</option>
-            {goalsData.goals.map(g => (
-              <option key={g.id} value={g.id}>
-                {g.name} — 목표 {fmt(Number(g.targetAmount))}
-              </option>
-            ))}
-          </select>
-          {selectedGoal && (
-            <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-400">
-              <span>목표: <strong className="text-violet-400">{fmt(targetAmount)}</strong></span>
-              {goalMonths != null && <span>남은 기간: <strong className="text-amber-400">{goalMonths}개월</strong></span>}
-              {suggestedMonthly != null && (
-                <span>
-                  목표 달성 월 적립액:
-                  <strong className="text-emerald-400 ml-1">{fmt(suggestedMonthly)}</strong>
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* 입력 */}
-        <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 space-y-4">
-          <h2 className="text-sm font-semibold text-gray-300">시뮬레이션 조건</h2>
-          <MoneyInput label="초기 투자금" value={initial} onChange={setInitial} hint="현재 총 자산 또는 시작 금액" />
-          <MoneyInput label="월 적립액" value={monthly} onChange={setMonthly} hint="매달 추가 투자하는 금액" />
-          <RateInput label="연간 수익률 (%)" value={annualRate} onChange={setAnnualRate} hint="과거 코스피 평균 약 8%, S&P500 약 10%" />
-
-          <div>
-            <label className="mb-1 block text-xs text-gray-400">투자 기간</label>
-            <div className="flex items-center gap-3">
-              <input
-                type="range" min={1} max={40} value={years}
-                onChange={e => setYears(parseInt(e.target.value))}
-                className="flex-1 accent-blue-500"
-              />
-              <span className="w-16 text-right text-sm font-semibold text-white tabular-nums">{years}년</span>
-            </div>
-            <div className="mt-1 flex justify-between text-xs text-gray-600">
-              <span>1년</span><span>40년</span>
-            </div>
-          </div>
-        </div>
-
-        {/* 결과 요약 */}
-        <div className="space-y-4">
-          <div className="rounded-xl border border-blue-800 bg-blue-950/20 p-5">
-            <p className="text-xs text-gray-500">{years}년 후 예상 자산</p>
-            <p className="mt-2 text-3xl font-bold tabular-nums text-blue-400">{fmt(finalValue)}</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-xl border border-gray-700 bg-gray-900 p-4">
-              <p className="text-xs text-gray-500">총 납입액</p>
-              <p className="mt-1.5 text-lg font-bold tabular-nums text-gray-200">{fmt(totalDeposit)}</p>
-            </div>
-            <div className="rounded-xl border border-emerald-900 bg-gray-900 p-4">
-              <p className="text-xs text-gray-500">복리 수익</p>
-              <p className="mt-1.5 text-lg font-bold tabular-nums text-emerald-400">
-                {totalInterest > 0 ? `+${fmt(totalInterest)}` : fmt(totalInterest)}
-              </p>
-            </div>
-          </div>
-
-          {targetAmount > 0 && (
-            <div className={`rounded-xl border p-4 ${monthsNeeded === 0
-              ? 'border-emerald-800 bg-emerald-950/20'
-              : monthsNeeded != null
-                ? 'border-amber-800 bg-amber-950/20'
-                : 'border-red-800 bg-red-950/20'}`}>
-              <p className="text-xs text-gray-500">목표 {fmt(targetAmount)} 달성까지</p>
-              {monthsNeeded === 0 ? (
-                <p className="mt-1 text-lg font-bold text-emerald-400">이미 달성!</p>
-              ) : monthsNeeded != null ? (
-                <p className="mt-1 text-lg font-bold tabular-nums text-amber-400">
-                  {Math.floor(monthsNeeded / 12)}년 {monthsNeeded % 12}개월
-                </p>
-              ) : (
-                <p className="mt-1 text-sm text-red-400">현재 조건으로는 100년 내 달성 불가</p>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 차트 */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
-        <h2 className="mb-4 text-sm font-semibold text-gray-300">자산 성장 추이</h2>
-        <ResponsiveContainer width="100%" height={300}>
-          <AreaChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-            <defs>
-              <linearGradient id="simGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-            <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#6b7280' }} tickLine={false} />
-            <YAxis
-              tickFormatter={v => `₩${fmtShort(v)}`}
-              tick={{ fontSize: 11, fill: '#6b7280' }}
-              tickLine={false}
-              axisLine={false}
-              width={70}
-            />
-            <Tooltip
-              formatter={(v: number) => [fmt(v), '예상 자산']}
-              contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
-              labelStyle={{ color: '#d1d5db' }}
-            />
-            {targetAmount > 0 && (
-              <ReferenceLine
-                y={targetAmount}
-                stroke="#a855f7"
-                strokeDasharray="6 3"
-                label={{ value: `목표 ${fmtShort(targetAmount)}`, position: 'insideTopRight', fill: '#a855f7', fontSize: 11 }}
-              />
+      <div className="px-5 py-5 pb-10 sm:px-7">
+        {/* 목표 연동 */}
+        {goalsData && goalsData.goals.length > 0 && (
+          <section className="mb-6 border border-line-card bg-surface-muted p-5">
+            <SectionHeader label="목표 트래커 연동 (선택)" />
+            <Select
+              aria-label="시뮬레이션 연동 목표 선택"
+              value={selectedGoalId}
+              onChange={e => {
+                const g = goalsData.goals.find(g => g.id === e.target.value)
+                setSelectedGoalId(e.target.value)
+                if (g) setInitial(Math.round(Number(g.currentAmount)))
+              }}
+            >
+              <option value="">목표 선택 (선택 시 현재 자산 자동 입력)</option>
+              {goalsData.goals.map(g => (
+                <option key={g.id} value={g.id}>
+                  {g.name} — 목표 {fmt(Number(g.targetAmount))}
+                </option>
+              ))}
+            </Select>
+            {selectedGoal && (
+              <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-3">
+                <span>목표 <Num className="font-medium text-ink">{fmt(targetAmount)}</Num></span>
+                {goalMonths != null && <span>남은 기간 <Num className="font-medium text-warn">{goalMonths}개월</Num></span>}
+                {suggestedMonthly != null && (
+                  <span>
+                    목표 달성 월 적립액 <Num className="font-medium text-ok">{fmt(suggestedMonthly)}</Num>
+                  </span>
+                )}
+              </div>
             )}
-            <Area
-              type="monotone"
-              dataKey="value"
-              name="예상 자산"
-              stroke="#3b82f6"
-              strokeWidth={2}
-              fill="url(#simGrad)"
-              dot={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+          </section>
+        )}
 
-      {/* 연도별 상세 테이블 */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 overflow-x-auto">
-        <div className="px-6 py-4 border-b border-gray-700">
-          <h2 className="text-sm font-semibold text-gray-300">연도별 예상 자산</h2>
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* 입력 */}
+          <div className="space-y-4 border border-line-card bg-surface-muted p-5">
+            <SectionHeader label="시뮬레이션 조건" />
+            <MoneyInput label="초기 투자금" value={initial} onChange={setInitial} hint="현재 총 자산 또는 시작 금액" />
+            <MoneyInput label="월 적립액" value={monthly} onChange={setMonthly} hint="매달 추가 투자하는 금액" />
+            <RateInput label="연간 수익률 (%)" value={annualRate} onChange={setAnnualRate} hint="과거 코스피 평균 약 8%, S&P500 약 10%" />
+
+            <div>
+              <label className="mb-1.5 block font-mono text-[10px] tracking-label text-fg-muted">투자 기간</label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range" min={1} max={40} value={years}
+                  onChange={e => setYears(parseInt(e.target.value))}
+                  aria-label="투자 기간 (년)"
+                  className="flex-1 accent-ink"
+                />
+                <Num className="w-16 text-right text-sm font-semibold text-ink">{years}년</Num>
+              </div>
+              <div className="mt-1 flex justify-between font-mono text-[9px] tracking-label text-fg-ghost">
+                <span>1년</span><span>40년</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 결과 요약 */}
+          <div className="space-y-4">
+            <div className="border border-ink bg-surface p-5">
+              <Label size="sm" tone="faint">{years}년 후 예상 자산</Label>
+              <Num className="mt-2 block text-[26px] font-semibold text-ink">{fmt(finalValue)}</Num>
+            </div>
+
+            <div className="grid grid-cols-2 gap-px border border-line-soft bg-line-soft">
+              <div className="bg-surface px-3.5 py-3">
+                <Label size="sm" tone="faint">총 납입액</Label>
+                <Num className="mt-1.5 block text-[15px] font-semibold text-fg-2">{fmt(totalDeposit)}</Num>
+              </div>
+              <div className="bg-surface px-3.5 py-3">
+                <Label size="sm" tone="faint">복리 수익</Label>
+                <Num className={`mt-1.5 block text-[15px] font-semibold ${totalInterest > 0 ? 'text-gain' : totalInterest < 0 ? 'text-loss' : 'text-fg-2'}`}>
+                  {totalInterest > 0 ? `+${fmt(totalInterest)}` : fmt(totalInterest)}
+                </Num>
+              </div>
+            </div>
+
+            {targetAmount > 0 && (
+              <div className={`border p-4 ${monthsNeeded === 0
+                ? 'border-line-card bg-surface'
+                : monthsNeeded != null
+                  ? 'border-warn-line bg-warn-bg'
+                  : 'border-danger bg-surface'}`}>
+                <Label size="sm" tone="faint">목표 {fmt(targetAmount)} 달성까지</Label>
+                {monthsNeeded === 0 ? (
+                  <p className="mt-1 text-[15px] font-semibold text-ok">이미 달성</p>
+                ) : monthsNeeded != null ? (
+                  <Num className="mt-1 block text-[15px] font-semibold text-warn">
+                    {Math.floor(monthsNeeded / 12)}년 {monthsNeeded % 12}개월
+                  </Num>
+                ) : (
+                  <p className="mt-1 text-sm text-danger">현재 조건으로는 100년 내 달성 불가</p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-gray-500 border-b border-gray-800">
-              <th className="px-6 py-3">연차</th>
-              <th className="px-4 py-3 text-right">예상 자산</th>
-              <th className="px-4 py-3 text-right">복리 수익</th>
-              <th className="px-4 py-3 text-right">수익률</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-800">
-            {chartData.filter((_, i) => i % Math.max(1, Math.floor(years / 10)) === 0 || i === years).map(p => {
-              const deposit = initial + monthly * 12 * p.year
-              const interest = p.value - deposit
-              const rate = deposit > 0 ? ((p.value / deposit - 1) * 100) : 0
-              return (
-                <tr key={p.year} className={`hover:bg-gray-800/40 ${targetAmount > 0 && p.value >= targetAmount ? 'bg-violet-900/10' : ''}`}>
-                  <td className="px-6 py-3 font-medium text-gray-300">{p.year}년</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-blue-400">{fmt(p.value)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-emerald-400">
-                    {interest > 0 ? `+${fmt(interest)}` : fmt(interest)}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-gray-300">
-                    {rate > 0 ? `+${rate.toFixed(1)}%` : `${rate.toFixed(1)}%`}
-                  </td>
+
+        {/* 차트 */}
+        <section className="mt-8">
+          <SectionHeader label="자산 성장 추이" />
+          <div className="border-t-[1.5px] border-ink pt-4">
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--c-line)" />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--c-fg-faint)' }} tickLine={false} axisLine={{ stroke: 'var(--c-line)' }} />
+                <YAxis
+                  tickFormatter={v => `₩${fmtShort(v)}`}
+                  tick={{ fontSize: 11, fill: 'var(--c-fg-faint)' }}
+                  tickLine={false}
+                  axisLine={false}
+                  width={70}
+                />
+                <Tooltip
+                  formatter={(v: number) => [fmt(v), '예상 자산']}
+                  contentStyle={{ background: 'var(--c-surface)', border: '1px solid var(--c-line-card)', borderRadius: 0, color: 'var(--c-ink)' }}
+                  labelStyle={{ color: 'var(--c-fg-3)' }}
+                />
+                {targetAmount > 0 && (
+                  <ReferenceLine
+                    y={targetAmount}
+                    stroke="var(--c-fg-muted)"
+                    strokeDasharray="6 3"
+                    label={{ value: `목표 ${fmtShort(targetAmount)}`, position: 'insideTopRight', fill: 'var(--c-fg-muted)', fontSize: 11 }}
+                  />
+                )}
+                <Area
+                  type="monotone"
+                  dataKey="value"
+                  name="예상 자산"
+                  stroke="var(--c-ink)"
+                  strokeWidth={1.5}
+                  fill="var(--c-ink)"
+                  fillOpacity={0.06}
+                  dot={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+
+        {/* 연도별 상세 테이블 */}
+        <section className="mt-8">
+          <SectionHeader label="연도별 예상 자산" />
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] border-t-[1.5px] border-ink text-sm">
+              <thead>
+                <tr className="border-b border-line">
+                  <th className="py-2 text-left"><Label size="sm" tone="faint">연차</Label></th>
+                  <th className="py-2 text-right"><Label size="sm" tone="faint">예상 자산</Label></th>
+                  <th className="py-2 text-right"><Label size="sm" tone="faint">복리 수익</Label></th>
+                  <th className="py-2 text-right"><Label size="sm" tone="faint">수익률</Label></th>
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                {chartData.filter((_, i) => i % Math.max(1, Math.floor(years / 10)) === 0 || i === years).map(p => {
+                  const deposit = initial + monthly * 12 * p.year
+                  const interest = p.value - deposit
+                  const rate = deposit > 0 ? ((p.value / deposit - 1) * 100) : 0
+                  return (
+                    <tr key={p.year} className={`border-b border-line-hair hover:bg-surface-muted ${targetAmount > 0 && p.value >= targetAmount ? 'bg-surface-muted' : ''}`}>
+                      <td className="py-2.5 text-[13px] text-fg-2">{p.year}년</td>
+                      <td className="py-2.5 text-right"><Num className="text-[12.5px] text-ink">{fmt(p.value)}</Num></td>
+                      <td className="py-2.5 text-right">
+                        <Num className={`text-[12.5px] ${interest > 0 ? 'text-gain' : interest < 0 ? 'text-loss' : 'text-fg-3'}`}>
+                          {interest > 0 ? `+${fmt(interest)}` : fmt(interest)}
+                        </Num>
+                      </td>
+                      <td className="py-2.5 text-right">
+                        <Num className={`text-[12.5px] ${rate > 0 ? 'text-gain' : rate < 0 ? 'text-loss' : 'text-fg-3'}`}>
+                          {rate > 0 ? `+${rate.toFixed(1)}%` : `${rate.toFixed(1)}%`}
+                        </Num>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
     </div>
   )
