@@ -36,6 +36,7 @@ class SyncAccountUseCaseSensitiveDataTest {
             syncLogRepository = NoopSyncLogRepository(),
             reconMutex = NoopReconMutex(),
         cashFlowRepository = org.mockito.Mockito.mock(com.allfolio.unifiedasset.application.port.CashFlowRepository::class.java),
+        stockTradeRepository = FakeStockTradeRepository(),
         )
 
         val result = service.execute(accountId)
