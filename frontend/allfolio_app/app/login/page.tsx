@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
+import { navigateWithFreshSession } from '@/lib/session'
 import Button from '@/components/ui/Button'
 import Field, { Input } from '@/components/ui/Field'
 
@@ -27,7 +28,8 @@ export default function LoginPage() {
     setLoading(true)
     try {
       await login(email.trim(), password)
-      router.replace('/unified')
+      // QA AF-87: 직전 계정의 캐시가 남지 않도록 하드 내비게이션으로 진입
+      navigateWithFreshSession('/unified')
     } catch (err: any) {
       setError(err.message ?? '로그인에 실패했습니다')
     } finally {

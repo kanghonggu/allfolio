@@ -5,6 +5,7 @@ import {
   type ReactNode,
 } from 'react'
 import { setApiAccessToken } from '@/lib/api'
+import { navigateWithFreshSession } from '@/lib/session'
 
 interface AuthState {
   accessToken:  string | null
@@ -121,10 +122,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState(await requestToken(REGISTER_URL, body))
   }, [])
 
-  const logout = useCallback(() => {
-    // 서버에서 refresh token revoke + 쿠키 삭제 (실패해도 로컬 상태는 비운다)
-    fetch(LOGOUT_URL, { method: 'POST' }).catch(() => {})
+  // QA AF-87: 뒤로가기로 bfcache에서 복원된 문서는 이전 세션의 JS 힙(메모리 토큰·
+  // 렌더된 자산 데이터)을 그대로 되살린다. 복원된 경우 강제로 다시 로드한다.
+  useEffect(() => {
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) window.location.reload()
+    }
+    window.addEventListener('pageshow', onPageShow)
+    return () => window.removeEventListener('pageshow', onPageShow)
+  }, [])
+
+  const logout = useCallback(async () => {
     setState(EMPTY_STATE)
+    // 서버에서 refresh token revoke + 쿠키 삭제. 이어지는 하드 내비게이션이 요청을
+    // 끊지 않도록 완료를 기다리고 keepalive도 함께 건다 (실패해도 로컬 세션은 비운다)
+    await fetch(LOGOUT_URL, { method: 'POST', keepalive: true }).catch(() => {})
+    // 클라이언트 캐시까지 확실히 버리기 위해 하드 내비게이션으로 로그인 화면 이동
+    navigateWithFreshSession('/login')
   }, [])
 
   return (
