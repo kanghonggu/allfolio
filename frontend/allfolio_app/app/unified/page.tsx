@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useUnifiedApi } from '@/lib/useApi'
@@ -13,12 +13,17 @@ import AllocationBar from '@/components/dashboard/AllocationBar'
 import PageHeader from '@/components/ui/PageHeader'
 import SectionHeader from '@/components/ui/SectionHeader'
 import Button from '@/components/ui/Button'
+import WelcomeModal from '@/components/onboarding/WelcomeModal'
+import StartChecklist from '@/components/onboarding/StartChecklist'
 import Badge from '@/components/ui/Badge'
 import Num from '@/components/ui/Num'
 import DataTable, { type Column } from '@/components/ui/DataTable'
 import { EmptyState, ErrorState } from '@/components/ui/states'
 import { won } from '@/lib/format'
 import type { DashboardResponse, RealAsset } from '@/types/dashboard'
+
+/** 온보딩 모달을 이미 닫았는지 — 계정이 아니라 브라우저 단위로 기억한다 (AF-92) */
+const WELCOME_DISMISSED_KEY = 'allfolio_welcome_dismissed'
 
 /**
  * AF-91: 대시보드가 비어 있는 이유는 세 가지로 갈리고, 사용자가 할 수 있는 일도 다르다.
@@ -92,6 +97,16 @@ export default function UnifiedDashboard() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['dashboard'] }),
   })
 
+  // AF-92: 계좌가 없는 사용자에게 첫 등록 경로를 묻는다. "나중에"는 기억해 다시 묻지 않는다
+  const [welcomeDismissed, setWelcomeDismissed] = useState(true)
+  useEffect(() => {
+    setWelcomeDismissed(localStorage.getItem(WELCOME_DISMISSED_KEY) === '1')
+  }, [])
+  const dismissWelcome = () => {
+    localStorage.setItem(WELCOME_DISMISSED_KEY, '1')
+    setWelcomeDismissed(true)
+  }
+
   const wasSyncing = useRef(false)
   useEffect(() => {
     if (wasSyncing.current && !syncing) {
@@ -162,8 +177,16 @@ export default function UnifiedDashboard() {
       }
     : { title: emptyState.title, description: emptyState.description, action: emptyAction }
 
+  const checklist = {
+    accountRegistered: accountCount > 0,
+    assetEntered:      portfolio.positions.length > 0 || realAssets.length > 0,
+    synced:            syncStatus.some((s) => s.lastSyncedAt !== null),
+  }
+
   return (
     <div className="border border-line-card bg-surface">
+      {accountCount === 0 && !welcomeDismissed && <WelcomeModal onDismiss={dismissWelcome} />}
+      <StartChecklist state={checklist} />
       <PageHeader
         className="px-5 pt-5 sm:px-7"
         title="통합 자산 · 원장 요약"

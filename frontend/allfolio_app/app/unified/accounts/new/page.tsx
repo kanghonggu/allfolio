@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useUnifiedApi } from '@/lib/useApi'
 import PageHeader from '@/components/ui/PageHeader'
@@ -32,6 +32,14 @@ const CATEGORIES: { key: Category; label: string; description: string }[] = [
   { key: 'MANUAL',   label: '수동 입력',       description: '부동산, 금 등 비정형 자산' },
 ]
 
+// AF-92: 온보딩 모달이 "직접 입력 / 연동" 둘로 물어본 답을 이어받아, 처음에는 그
+// 갈래의 방식만 보여준다. 수집 방식 5개를 한꺼번에 늘어놓으면 신규 사용자는
+// "증권사 API 연동"과 "증권 계좌"의 차이부터 헷갈린다.
+const MODE_CATEGORIES: Record<string, Category[]> = {
+  manual:  ['STOCK', 'MANUAL'],
+  connect: ['KIS_API', 'EXCHANGE', 'WALLET'],
+}
+
 const CHAIN_OPTIONS = ['ETH', 'BSC', 'POLYGON', 'ARBITRUM', 'SOLANA', 'BTC']
 
 const BROKERAGES = [
@@ -52,6 +60,13 @@ export default function NewAccountPage() {
   const router = useRouter()
   const qc     = useQueryClient()
   const api    = useUnifiedApi()
+
+  const mode = useSearchParams().get('mode')
+  const modeCategories = mode ? MODE_CATEGORIES[mode] : undefined
+  const [showAllCategories, setShowAllCategories] = useState(false)
+  const visibleCategories = !modeCategories || showAllCategories
+    ? CATEGORIES
+    : CATEGORIES.filter((c) => modeCategories.includes(c.key))
 
   const [category, setCategory]   = useState<Category | null>(null)
   const [provider, setProvider]   = useState<AccountProvider | null>(null)
@@ -177,7 +192,7 @@ export default function NewAccountPage() {
 
         {/* 카테고리 선택 */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {CATEGORIES.map(cat => (
+          {visibleCategories.map(cat => (
             <button
               key={cat.key}
               type="button"
@@ -196,6 +211,17 @@ export default function NewAccountPage() {
             </button>
           ))}
         </div>
+
+        {/* 온보딩에서 좁혀 들어온 경우 — 나머지 방식도 열어볼 수 있게 (AF-92) */}
+        {modeCategories && !showAllCategories && (
+          <button
+            type="button"
+            onClick={() => setShowAllCategories(true)}
+            className="-mt-2 text-xs text-fg-faint underline underline-offset-4 transition-colors hover:text-ink"
+          >
+            다른 수집 방식도 보기
+          </button>
+        )}
 
         {/* 거래소 선택 (암호화폐 거래소 카테고리 선택 시) */}
         {category === 'EXCHANGE' && (
