@@ -7,6 +7,7 @@ import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.application.port.StockTradeRepository
 import com.allfolio.unifiedasset.application.port.SyncLogRepository
 import com.allfolio.unifiedasset.application.usecase.AuthorizationService
+import com.allfolio.unifiedasset.application.usecase.AutoSyncTrigger
 import com.allfolio.unifiedasset.application.usecase.CreateAccountUseCase
 import com.allfolio.unifiedasset.application.usecase.GetSyncStatusUseCase
 import com.allfolio.unifiedasset.application.usecase.ImportCsvUseCase
@@ -44,6 +45,7 @@ class AccountControllerSecurityTest {
     private val syncLogRepository = mock(SyncLogRepository::class.java)
     private val getSyncStatusUseCase = mock(GetSyncStatusUseCase::class.java)
     private val snapshotService = mock(PerformanceSnapshotService::class.java)
+    private val autoSyncTrigger = mock(AutoSyncTrigger::class.java)
     private val authorizationService = AuthorizationService(accountRepository)
 
     private val controller = AccountController(
@@ -56,6 +58,7 @@ class AccountControllerSecurityTest {
         stockTradeRepository,
         syncLogRepository,
         getSyncStatusUseCase,
+        autoSyncTrigger,
         snapshotService,
         authorizationService,
         object : FxConverter {

@@ -3,7 +3,8 @@ package com.allfolio.unifiedasset.domain.sync
 import java.time.LocalDateTime
 import java.util.UUID
 
-enum class SyncTrigger { SCHEDULED, MANUAL }
+/** AUTO: 거래 저장·삭제, 계좌 생성 등 쓰기 작업이 자동으로 건 동기화 (AF-90). */
+enum class SyncTrigger { SCHEDULED, MANUAL, AUTO }
 enum class SyncLogStatus { SUCCESS, ERROR }
 
 /** 계좌 동기화 1회 실행 기록. 스케줄·수동 공통. */

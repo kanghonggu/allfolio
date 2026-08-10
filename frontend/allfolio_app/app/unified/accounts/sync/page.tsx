@@ -19,7 +19,7 @@ const STATUS_KO: Record<string, string> = {
   ACTIVE: '정상', SYNCING: '동기화 중', ERROR: '오류', INACTIVE: '비활성',
 }
 const TRIGGER_KO: Record<SyncLogView['trigger'], string> = {
-  SCHEDULED: '자동', MANUAL: '수동',
+  SCHEDULED: '정기', MANUAL: '수동', AUTO: '자동',
 }
 
 function fmt(ts: string | null | undefined) {
