@@ -810,3 +810,24 @@ CREATE TABLE IF NOT EXISTS user_benchmark (
     updated_at  TIMESTAMP   NOT NULL DEFAULT NOW(),
     CONSTRAINT pk_user_benchmark PRIMARY KEY (user_id)
 );
+
+-- ── feedback ───────────────────────────────────────────────────
+-- 앱 내 1:1 문의 접수 (AF-94). 접수 전용 — 목록·답변·공개 게시판은 범위 밖.
+-- 사용자는 유형과 본문만 적고, 재현 정보는 화면이 함께 보낸다.
+-- 첨부파일은 받지 않는다 — 자산관리 앱 스크린샷에는 계좌번호·잔고가 그대로 담긴다.
+CREATE TABLE IF NOT EXISTS feedback (
+    id              UUID          NOT NULL,
+    user_id         UUID          NOT NULL,
+    kind            VARCHAR(20)   NOT NULL,   -- BUG / IMPROVEMENT / QUESTION
+    message         VARCHAR(2000) NOT NULL,
+    page_url        VARCHAR(500),             -- 문의를 남긴 화면
+    user_agent      VARCHAR(500),
+    viewport        VARCHAR(20),              -- "1280x720" — 모바일/데스크톱 구분
+    last_api_error  VARCHAR(500),             -- 상태코드 + 엔드포인트
+    console_errors  VARCHAR(2000),            -- 최근 프론트 예외 (최대 5건)
+    created_at      TIMESTAMP     NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_feedback PRIMARY KEY (id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_created
+    ON feedback (created_at DESC);
