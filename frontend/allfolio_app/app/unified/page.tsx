@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useUnifiedApi } from '@/lib/useApi'
 import { useSyncStatus } from '@/lib/useSyncStatus'
@@ -12,12 +12,52 @@ import PositionTable from '@/components/dashboard/PositionTable'
 import AllocationBar from '@/components/dashboard/AllocationBar'
 import PageHeader from '@/components/ui/PageHeader'
 import SectionHeader from '@/components/ui/SectionHeader'
+import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
 import Num from '@/components/ui/Num'
 import DataTable, { type Column } from '@/components/ui/DataTable'
 import { EmptyState, ErrorState } from '@/components/ui/states'
 import { won } from '@/lib/format'
 import type { DashboardResponse, RealAsset } from '@/types/dashboard'
+
+/**
+ * AF-91: 대시보드가 비어 있는 이유는 세 가지로 갈리고, 사용자가 할 수 있는 일도 다르다.
+ * 하나로 뭉뚱그린 예전 문구는 이미 동기화를 마친 사용자에게 거짓 안내가 됐다.
+ */
+function describeEmptyState(s: {
+  accountCount: number
+  syncableCount: number
+  hasSyncHistory: boolean
+  syncing: boolean
+}): { title: string; description: string; cta: 'connect' | 'sync' | 'accounts' | null } {
+  if (s.syncing) {
+    return {
+      title: '자산을 불러오는 중입니다',
+      description: '동기화가 끝나면 이 화면에 자동으로 반영됩니다',
+      cta: null,
+    }
+  }
+  if (s.accountCount === 0) {
+    return {
+      title: '자산을 등록해 주세요',
+      description: '증권사·거래소를 연결하거나 자산을 직접 등록하면 여기에 집계됩니다',
+      cta: 'connect',
+    }
+  }
+  // 수동·CSV 계좌만 있으면 눌러도 불러올 외부 소스가 없다 — 동기화 버튼을 내밀지 않는다
+  if (!s.hasSyncHistory && s.syncableCount > 0) {
+    return {
+      title: '아직 동기화되지 않았습니다',
+      description: '연결한 계좌의 자산을 아직 한 번도 불러오지 않았습니다',
+      cta: 'sync',
+    }
+  }
+  return {
+    title: '집계된 자산이 없습니다',
+    description: '동기화했지만 조회된 자산이 없습니다. 증권 계좌는 거래를 입력하면 포지션이 만들어집니다',
+    cta: 'accounts',
+  }
+}
 
 // QA: 가장 최근 계좌 동기화 시각을 'N일 전'으로 표기 (실시간 가격배지와 구분)
 function lastSyncLabel(iso: string | null): { text: string; stale: boolean } | null {
@@ -43,6 +83,15 @@ export default function UnifiedDashboard() {
   // AF-90: 거래 저장·계좌 등록이 백엔드 자동 동기화를 건다. 도는 동안 "반영 중"을 표시하고,
   // 끝나는 순간 대시보드를 다시 불러와 사용자가 새로고침하지 않아도 숫자가 잡히게 한다.
   const { statuses: syncStatus, syncing } = useSyncStatus()
+  // AF-91: 계좌는 있는데 동기화 이력이 없는 상태에서 사용자가 직접 시작할 수 있게 한다
+  const syncNow = useMutation({
+    mutationFn: async () => {
+      const targets = syncStatus.filter((s) => s.syncable)
+      for (const t of targets) await api!.accounts.sync(t.accountId)
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['dashboard'] }),
+  })
+
   const wasSyncing = useRef(false)
   useEffect(() => {
     if (wasSyncing.current && !syncing) {
@@ -71,7 +120,47 @@ export default function UnifiedDashboard() {
 
   const { netWorth, portfolio, realAssets } = data
   const hasMetrics = Object.values(portfolio.metrics).some(Boolean)
-  const accountCount = (syncStatus ?? []).length
+  const accountCount = syncStatus.length
+
+  // AF-91: 빈 상태를 원인별로 나눈다. 예전 문구("자산을 sync하면 표시됩니다")는 이미
+  // 동기화를 끝낸 사용자에게 거짓말이 됐다 — 지표가 없는 진짜 이유는 스냅샷 부족이다.
+  const emptyState = describeEmptyState({
+    accountCount,
+    syncableCount: syncStatus.filter((s) => s.syncable).length,
+    hasSyncHistory: syncStatus.some((s) => s.lastSyncedAt !== null),
+    syncing,
+  })
+
+  const emptyAction = emptyState.cta === 'connect' ? (
+    <Link
+      href="/unified/accounts/new"
+      className="border border-ink bg-ink px-4 py-2 text-sm text-white transition-colors hover:bg-fg-2"
+    >
+      계좌 연결하기
+    </Link>
+  ) : emptyState.cta === 'sync' ? (
+    <Button variant="primary" size="sm" disabled={syncNow.isPending} onClick={() => syncNow.mutate()}>
+      {syncNow.isPending ? '동기화 중 …' : '지금 동기화'}
+    </Button>
+  ) : emptyState.cta === 'accounts' ? (
+    <Link
+      href="/unified/accounts"
+      className="border border-ink px-4 py-2 text-sm text-ink transition-colors hover:bg-surface-muted"
+    >
+      계좌 관리로 이동
+    </Link>
+  ) : undefined
+
+  // 포지션은 있는데 지표만 비어 있으면 원인은 자산이 아니라 스냅샷 축적 기간이다
+  const metricsEmpty = portfolio.positions.length > 0
+    ? {
+        title: '내일부터 수익률이 표시됩니다',
+        description:
+          '일별 NAV 스냅샷이 2건 이상 쌓여야 수익률을 계산할 수 있습니다. ' +
+          '계좌를 연동해 두면 매일 자정 스냅샷이 쌓입니다.',
+        action: undefined as React.ReactNode,
+      }
+    : { title: emptyState.title, description: emptyState.description, action: emptyAction }
 
   return (
     <div className="border border-line-card bg-surface">
@@ -135,10 +224,7 @@ export default function UnifiedDashboard() {
           {hasMetrics ? (
             <MetricTable metrics={portfolio.metrics} />
           ) : (
-            <EmptyState
-              title="수익률 지표 없음"
-              description="자산을 sync하면 수익률 지표가 표시됩니다"
-            />
+            <EmptyState {...metricsEmpty} />
           )}
         </section>
 
@@ -147,7 +233,7 @@ export default function UnifiedDashboard() {
           {portfolio.allocation.length > 0 ? (
             <AllocationBar allocation={portfolio.allocation} />
           ) : (
-            <EmptyState title="배분 데이터 없음" description="자산을 sync하면 자산군 배분이 표시됩니다" />
+            <EmptyState title={emptyState.title} description={emptyState.description} />
           )}
         </section>
       </div>
@@ -162,7 +248,16 @@ export default function UnifiedDashboard() {
 
       {/* 포지션 명세 */}
       <section className="px-5 py-5 pb-10 sm:px-7">
-        <PositionTable positions={portfolio.positions} />
+        <PositionTable
+          positions={portfolio.positions}
+          empty={
+            <EmptyState
+              title={emptyState.title}
+              description={emptyState.description}
+              action={emptyAction}
+            />
+          }
+        />
       </section>
     </div>
   )
