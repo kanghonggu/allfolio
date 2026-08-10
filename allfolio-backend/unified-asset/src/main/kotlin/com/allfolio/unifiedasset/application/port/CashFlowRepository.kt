@@ -10,4 +10,5 @@ interface CashFlowRepository {
     fun findByUserIdAndPeriod(userId: UUID, from: LocalDate, to: LocalDate): List<CashFlow>
     fun findByUserId(userId: UUID): List<CashFlow>
     fun delete(id: UUID)
+    fun deleteByAccountId(accountId: UUID)
 }

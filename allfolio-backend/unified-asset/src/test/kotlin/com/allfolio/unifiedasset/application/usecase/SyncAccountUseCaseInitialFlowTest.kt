@@ -48,6 +48,7 @@ class SyncAccountUseCaseInitialFlowTest {
         override fun findByUserIdAndPeriod(userId: UUID, from: LocalDate, to: LocalDate) = emptyList<CashFlow>()
         override fun findByUserId(userId: UUID) = emptyList<CashFlow>()
         override fun delete(id: UUID) = Unit
+        override fun deleteByAccountId(accountId: UUID) = Unit
     }
 
     /** deleteByAccountId 이전의 기존 자산과 이후 저장 자산을 구분하는 상태형 fake. */

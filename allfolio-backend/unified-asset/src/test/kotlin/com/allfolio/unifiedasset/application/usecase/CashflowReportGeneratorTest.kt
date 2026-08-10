@@ -41,6 +41,7 @@ class CashflowReportGeneratorTest {
             flows.filter { it.flowDate in from..to }
         override fun findByUserId(userId: UUID) = flows
         override fun delete(id: UUID) {}
+        override fun deleteByAccountId(accountId: UUID) {}
     }
     private class FakeTradeSource(private val trades: List<TradeCashRecord>) : CashflowTradeSource {
         override fun findTrades(userId: UUID, from: LocalDate, to: LocalDate) =

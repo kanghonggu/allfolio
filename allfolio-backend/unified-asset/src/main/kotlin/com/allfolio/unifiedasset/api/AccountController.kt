@@ -108,6 +108,7 @@ data class StockTradeResponse(
 @RequestMapping("/api/unified/accounts")
 class AccountController(
     private val createAccountUseCase: CreateAccountUseCase,
+    private val deleteAccountUseCase: DeleteAccountUseCase,
     private val syncAccountUseCase: SyncAccountUseCase,
     private val importCsvUseCase: ImportCsvUseCase,
     private val testConnectionUseCase: TestConnectionUseCase,
@@ -165,9 +166,7 @@ class AccountController(
         val account = accountRepository.findById(id)
             ?: throw NoSuchElementException("Account not found: $id")
         if (account.userId != userId) throw NoSuchElementException("Account not found: $id")
-        assetRepository.deleteByAccountId(id)
-        syncLogRepository.deleteByAccountId(id)
-        accountRepository.delete(id)
+        deleteAccountUseCase.execute(id)
     }
 
     /** 계좌별 최신 동기화 상태 요약 (AF-9). */
