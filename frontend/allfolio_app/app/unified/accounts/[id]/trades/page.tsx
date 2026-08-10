@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useUnifiedApi } from '@/lib/useApi'
+import { useSyncStatus } from '@/lib/useSyncStatus'
 import { useAuth } from '@/contexts/AuthContext'
 import PageHeader from '@/components/ui/PageHeader'
 import SectionHeader from '@/components/ui/SectionHeader'
@@ -85,6 +86,9 @@ export default function StockTradesPage() {
   })
   const account = accounts.find(a => a.id === id)
 
+  const { isSyncing } = useSyncStatus()
+  const syncingThisAccount = isSyncing(id)
+
   // 거래내역
   const { data: trades = [], isLoading } = useQuery({
     queryKey: ['stock-trades', id],
@@ -92,10 +96,18 @@ export default function StockTradesPage() {
     enabled:  !!api,
   })
 
+  // AF-90: 거래 쓰기 작업은 백엔드가 자동으로 계좌 동기화를 건다. 대시보드가 예전
+  // 숫자를 그대로 보여주지 않도록 관련 캐시를 버려, 이동 시 새로 받아오게 한다.
+  const invalidateAfterWrite = () => {
+    qc.invalidateQueries({ queryKey: ['stock-trades', id] })
+    qc.invalidateQueries({ queryKey: ['dashboard'] })       // 대시보드 + 동기화 상태
+    qc.invalidateQueries({ queryKey: ['unified', 'accounts'] })
+  }
+
   const addMutation = useMutation({
     mutationFn: (payload: CreateStockTradePayload) => api!.stockTrades.create(id, payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['stock-trades', id] })
+      invalidateAfterWrite()
       setForm(EMPTY_FORM)
       setShowForm(false)
     },
@@ -103,7 +115,7 @@ export default function StockTradesPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (tradeId: string) => api!.stockTrades.delete(id, tradeId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['stock-trades', id] }),
+    onSuccess: invalidateAfterWrite,
   })
 
   // 요약 통계
@@ -162,6 +174,14 @@ export default function StockTradesPage() {
       />
 
       <div className="px-5 py-5 pb-10 sm:px-7">
+        {/* AF-90: 저장·삭제가 건 자동 동기화 진행 상태 — 예전엔 sync 화면에서 직접 눌러야 했다 */}
+        {syncingThisAccount && (
+          <div className="mb-6 flex items-center gap-2 border border-warn bg-surface-muted px-4 py-3 text-xs text-warn">
+            <span className="block h-[5px] w-[5px] animate-pulse bg-warn" />
+            거래를 포지션에 반영하는 중입니다 — 잠시 후 대시보드에 자동으로 잡힙니다
+          </div>
+        )}
+
         {/* 요약 */}
         {trades.length > 0 && (
           <div className="mb-6 grid grid-cols-2 gap-px border border-line-soft bg-line-soft sm:grid-cols-4">

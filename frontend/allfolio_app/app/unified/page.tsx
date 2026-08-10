@@ -1,8 +1,10 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useRef } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useUnifiedApi } from '@/lib/useApi'
+import { useSyncStatus } from '@/lib/useSyncStatus'
 import { useLivePrices } from '@/lib/useLivePrices'
 import NetWorthBar from '@/components/dashboard/NetWorthBar'
 import MetricTable from '@/components/dashboard/MetricTable'
@@ -28,6 +30,7 @@ function lastSyncLabel(iso: string | null): { text: string; stale: boolean } | n
 
 export default function UnifiedDashboard() {
   const api = useUnifiedApi()
+  const qc  = useQueryClient()
   const { connected: liveConnected } = useLivePrices()
 
   const { data, isLoading, isError, error, refetch } = useQuery<DashboardResponse>({
@@ -37,12 +40,17 @@ export default function UnifiedDashboard() {
     staleTime: 60_000,
   })
 
-  const { data: syncStatus } = useQuery({
-    queryKey: ['dashboard', 'sync-status'],
-    queryFn:  () => api!.accounts.syncStatus(),
-    enabled:  !!api,
-    staleTime: 60_000,
-  })
+  // AF-90: 거래 저장·계좌 등록이 백엔드 자동 동기화를 건다. 도는 동안 "반영 중"을 표시하고,
+  // 끝나는 순간 대시보드를 다시 불러와 사용자가 새로고침하지 않아도 숫자가 잡히게 한다.
+  const { statuses: syncStatus, syncing } = useSyncStatus()
+  const wasSyncing = useRef(false)
+  useEffect(() => {
+    if (wasSyncing.current && !syncing) {
+      qc.invalidateQueries({ queryKey: ['dashboard'], exact: true })
+    }
+    wasSyncing.current = syncing
+  }, [syncing, qc])
+
   const lastSync = lastSyncLabel(
     (syncStatus ?? [])
       .map((s) => s.lastSyncedAt)
@@ -74,6 +82,12 @@ export default function UnifiedDashboard() {
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {accountCount > 0 && <span>계좌 {accountCount}</span>}
             <span>포지션 {portfolio.positions.length}</span>
+            {/* AF-90: 자동 동기화 진행 중 — 끝나면 숫자가 저절로 갱신된다 */}
+            {syncing && (
+              <span className="text-warn" title="거래·계좌 변경을 포지션에 반영하는 중입니다">
+                반영 중 …
+              </span>
+            )}
             {lastSync && (
               <span className={lastSync.stale ? 'text-warn' : undefined} title="계좌 마지막 동기화 시각">
                 최종 동기화 {lastSync.text}

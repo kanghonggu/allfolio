@@ -475,7 +475,7 @@ CREATE TABLE IF NOT EXISTS ua_sync_logs (
     id            UUID         NOT NULL,
     account_id    UUID         NOT NULL,
     user_id       UUID         NOT NULL,
-    trigger_type  VARCHAR(20)  NOT NULL,   -- SCHEDULED / MANUAL
+    trigger_type  VARCHAR(20)  NOT NULL,   -- SCHEDULED / MANUAL / AUTO(쓰기 작업 자동 트리거)
     status        VARCHAR(20)  NOT NULL,   -- SUCCESS / ERROR
     synced_count  INT          NOT NULL DEFAULT 0,
     error_message VARCHAR(500),

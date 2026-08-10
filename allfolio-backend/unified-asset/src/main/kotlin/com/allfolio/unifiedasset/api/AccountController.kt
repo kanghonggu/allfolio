@@ -116,6 +116,7 @@ class AccountController(
     private val stockTradeRepository: StockTradeRepository,
     private val syncLogRepository: SyncLogRepository,
     private val getSyncStatusUseCase: GetSyncStatusUseCase,
+    private val autoSyncTrigger: AutoSyncTrigger,
     private val snapshotService: PerformanceSnapshotService,
     private val authorizationService: AuthorizationService,
     private val fx: FxConverter,
@@ -136,8 +137,8 @@ class AccountController(
     fun create(
         @RequestHeader("X-User-Id") userId: UUID,
         @Valid @RequestBody req: CreateAccountRequest,
-    ): AccountResponse =
-        createAccountUseCase.execute(
+    ): AccountResponse {
+        val account = createAccountUseCase.execute(
             CreateAccountCommand(
                 userId        = userId,
                 provider      = req.provider,
@@ -150,7 +151,14 @@ class AccountController(
                 walletAddress = req.walletAddress,
                 chain         = req.chain,
             )
-        ).toResponse()
+        )
+        // AF-90: 외부 조회가 가능한 계좌는 등록 즉시 자동 동기화 — 사용자가 sync 화면을
+        // 찾아 들어가지 않아도 자산이 대시보드에 잡히게 한다
+        if (account.provider in DailyAccountSyncer.SYNC_ELIGIBLE_PROVIDERS) {
+            autoSyncTrigger.requestSync(account.id)
+        }
+        return account.toResponse()
+    }
 
     @GetMapping
     fun list(@RequestHeader("X-User-Id") userId: UUID): List<AccountResponse> =
@@ -329,7 +337,10 @@ class AccountController(
             tradedAt    = req.tradedAt,
             memo        = req.memo,
         )
-        return stockTradeRepository.save(trade).toResponse()
+        val saved = stockTradeRepository.save(trade).toResponse()
+        // AF-90: 거래 저장이 포지션에 반영되도록 자동 동기화 (응답은 기다리지 않는다)
+        autoSyncTrigger.requestSync(id)
+        return saved
     }
 
     @DeleteMapping("/{id}/stock-trades/{tradeId}")
@@ -346,6 +357,8 @@ class AccountController(
             ?: throw NoSuchElementException("Trade not found: $tradeId")
         require(trade.accountId == id) { "Trade does not belong to this account" }
         stockTradeRepository.delete(tradeId)
+        // AF-90: 삭제도 포지션에 즉시 반영 — 예전엔 "삭제 → sync → 새로고침" 3단계였다
+        autoSyncTrigger.requestSync(id)
     }
 
     // ── Helpers ──

@@ -152,7 +152,8 @@ export interface SyncResult {
 
 export interface SyncLogView {
   id:           string
-  trigger:      'SCHEDULED' | 'MANUAL'
+  /** AUTO = 거래 저장·삭제, 계좌 생성이 건 자동 동기화 (AF-90) */
+  trigger:      'SCHEDULED' | 'MANUAL' | 'AUTO'
   status:       'SUCCESS' | 'ERROR'
   syncedCount:  number
   errorMessage: string | null
