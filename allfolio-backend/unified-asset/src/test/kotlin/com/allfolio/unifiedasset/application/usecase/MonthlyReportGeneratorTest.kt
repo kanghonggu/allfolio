@@ -48,6 +48,7 @@ class MonthlyReportGeneratorTest {
         override fun findByUserIdAndPeriod(userId: UUID, from: LocalDate, to: LocalDate) = emptyList<CashFlow>()
         override fun findByUserId(userId: UUID) = emptyList<CashFlow>()
         override fun delete(id: UUID) {}
+        override fun deleteByAccountId(accountId: UUID) {}
     }
 
     private class FakeUserBm(private val type: BenchmarkType?) : UserBenchmarkLookup {

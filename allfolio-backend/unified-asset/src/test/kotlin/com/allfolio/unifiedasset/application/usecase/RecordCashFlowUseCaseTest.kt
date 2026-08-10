@@ -23,6 +23,7 @@ class RecordCashFlowUseCaseTest {
             saved.filter { it.userId == userId && it.flowDate in from..to }
         override fun findByUserId(userId: UUID) = saved.filter { it.userId == userId }
         override fun delete(id: UUID) { saved.removeIf { it.id == id } }
+        override fun deleteByAccountId(accountId: UUID) { saved.removeIf { it.accountId == accountId } }
     }
 
     private val fx = object : FxConverter {

@@ -33,6 +33,7 @@ class GetReturnsAnalysisUseCaseTest {
             flows.filter { it.flowDate in from..to }
         override fun findByUserId(userId: UUID) = flows
         override fun delete(id: UUID) {}
+        override fun deleteByAccountId(accountId: UUID) {}
     }
 
     private class FakeBenchmarkStore(private val rows: List<Pair<LocalDate, BigDecimal>> = emptyList()) : BenchmarkDailyStore {
