@@ -238,6 +238,7 @@ export default function UnifiedDashboard() {
         debt={netWorth.debt}
         change30d={netWorth.change30d}
         changeRate30d={netWorth.changeRate30d}
+        netFlow30d={netWorth.netFlow30d}
       />
 
       {/* 수익률·리스크 + 자산군 배분 */}

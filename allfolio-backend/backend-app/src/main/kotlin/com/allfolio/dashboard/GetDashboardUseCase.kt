@@ -44,17 +44,32 @@ class GetDashboardUseCase(
             .setScale(0, RoundingMode.HALF_UP)
         val totalNow      = liquidValue.add(illiquidValue).subtract(debtValue)
 
+        val today = LocalDate.now()
+        val flows = cashFlowRepository.findByUserId(userId)
+            .map { Flow(it.flowDate, it.signedKrw()) }
+
         // 30일 전 NAV
-        val today   = LocalDate.now()
         val date30d = today.minusDays(30)
         val perf30d = performanceRepo
             .findTopByIdPortfolioIdAndIdDateBeforeOrderByIdDateDesc(userId, date30d.plusDays(1))
         // 30일 전 스냅샷이 없으면 change/rate를 null로 — '변동 없음(0)'과 '비교 데이터 없음'을 구분 (QA)
         val nav30d        = perf30d?.nav
         val hasBaseline   = nav30d != null && nav30d > BigDecimal.ZERO
+
+        // AF-95: 기저 관측일 이후 들어온 외부 입출금은 수익이 아니다. 차감하지 않으면
+        // 계좌를 새로 연동한 사용자에게 편입액이 통째로 수익으로 잡힌다(실측 +2060%).
+        // 기간 수익률이 이미 쓰는 분해와 같은 규약: pnl = endNav − startNav − netFlow.
+        val netFlow30d = if (hasBaseline) {
+            val baselineDate = perf30d!!.id.date
+            flows.filter { it.date > baselineDate && it.date <= today }
+                .fold(BigDecimal.ZERO) { acc, f -> acc + f.amountKrw }
+                .setScale(0, RoundingMode.HALF_UP)
+        } else null
+
         val change30d     = if (hasBaseline)
-            totalNow.subtract(nav30d).setScale(0, RoundingMode.HALF_UP)
+            totalNow.subtract(nav30d).subtract(netFlow30d).setScale(0, RoundingMode.HALF_UP)
         else null
+        // 분모는 기초 자본 — 입출금은 분자에서 이미 제거했다
         val changeRate30d = if (hasBaseline)
             change30d!!.divide(nav30d, 4, RoundingMode.HALF_UP).multiply(BigDecimal(100))
         else null
@@ -67,8 +82,6 @@ class GetDashboardUseCase(
             .findByIdPortfolioIdAndIdDateBetween(userId, EARLIEST, today)
             .map { NavPoint(it.id.date, it.nav) }
             .sortedBy { it.date }
-        val flows = cashFlowRepository.findByUserId(userId)
-            .map { Flow(it.flowDate, it.signedKrw()) }
         val dataDays = navSeries.count { it.date >= ytdStart }
 
         // 기간 수익률은 performance 리포트와 같은 공용 엔진 사용 (QA 후속 #3) —
@@ -222,6 +235,7 @@ class GetDashboardUseCase(
                 debt          = debtValue,
                 change30d     = change30d,
                 changeRate30d = changeRate30d?.setScale(2, RoundingMode.HALF_UP),
+                netFlow30d    = netFlow30d,
             ),
             portfolio = PortfolioDto(
                 totalValue = liquidValue,
