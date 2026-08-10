@@ -55,8 +55,11 @@ export interface DashboardResponse {
     liquid: number
     illiquid: number
     debt: number
+    /** 입출금을 차감한 30일 투자손익 — 순자산 총변화가 아니다 (AF-95) */
     change30d: number | null
     changeRate30d: number | null
+    /** 기간 내 순 외부 입출금 */
+    netFlow30d: number | null
   }
   portfolio: {
     totalValue: number

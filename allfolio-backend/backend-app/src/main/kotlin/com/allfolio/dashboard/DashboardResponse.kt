@@ -16,8 +16,11 @@ data class NetWorthDto(
     val illiquid: BigDecimal,
     val debt: BigDecimal,
     // null = 30일 전 비교 기준 스냅샷 없음 (0 변동과 구분 — QA)
+    // change30d는 입출금을 차감한 투자손익 (AF-95). 순자산 총변화가 아니다.
     val change30d: BigDecimal?,
     val changeRate30d: BigDecimal?,
+    /** 기간 내 순 외부 입출금 — 화면이 "입출금 제외" 근거를 밝힐 수 있게 함께 내려준다 (AF-95) */
+    val netFlow30d: BigDecimal?,
 )
 
 data class PortfolioDto(
