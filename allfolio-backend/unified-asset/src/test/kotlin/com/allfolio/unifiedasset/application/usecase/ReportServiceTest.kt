@@ -55,6 +55,7 @@ class ReportServiceTest {
             emptyList<com.allfolio.unifiedasset.domain.cashflow.CashFlow>()
         override fun findByUserId(userId: UUID) = emptyList<com.allfolio.unifiedasset.domain.cashflow.CashFlow>()
         override fun delete(id: UUID) = Unit
+        override fun deleteByAccountId(accountId: UUID) = Unit
     }
 
     private fun svc(

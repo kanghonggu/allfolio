@@ -5,6 +5,7 @@ import com.allfolio.unifiedasset.domain.account.StockTrade
 import com.allfolio.unifiedasset.infrastructure.entity.StockTradeEntity
 import com.allfolio.unifiedasset.infrastructure.jpa.StockTradeJpaRepository
 import org.springframework.stereotype.Repository
+import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
 
 @Repository
@@ -21,4 +22,8 @@ class StockTradeRepositoryImpl(
         jpa.findById(id).map { it.toDomain() }.orElse(null)
 
     override fun delete(id: UUID) = jpa.deleteById(id)
+
+    @Transactional
+    override fun deleteByAccountId(accountId: UUID) =
+        jpa.deleteByAccountId(accountId)
 }

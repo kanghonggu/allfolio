@@ -5,6 +5,7 @@ import com.allfolio.unifiedasset.domain.cashflow.CashFlow
 import com.allfolio.unifiedasset.infrastructure.entity.CashFlowEntity
 import com.allfolio.unifiedasset.infrastructure.jpa.CashFlowJpaRepository
 import org.springframework.stereotype.Repository
+import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDate
 import java.util.UUID
 
@@ -23,4 +24,8 @@ class CashFlowRepositoryImpl(private val jpa: CashFlowJpaRepository) : CashFlowR
         jpa.findByUserIdOrderByFlowDateDesc(userId).map { it.toDomain() }
 
     override fun delete(id: UUID) = jpa.deleteById(id)
+
+    @Transactional
+    override fun deleteByAccountId(accountId: UUID) =
+        jpa.deleteByAccountId(accountId)
 }

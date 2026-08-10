@@ -105,6 +105,7 @@ class EsgScreeningReportGeneratorTest {
         override fun findByAccountId(accountId: UUID) = trades.filter { it.accountId == accountId }
         override fun findById(id: UUID): StockTrade? = null
         override fun delete(id: UUID) {}
+        override fun deleteByAccountId(accountId: UUID) {}
     }
     private fun account() = Account.reconstruct(
         id = acctId, userId = userId, provider = AccountProvider.KIS, accountType = AccountType.STOCK,

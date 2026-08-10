@@ -8,4 +8,5 @@ interface StockTradeRepository {
     fun findByAccountId(accountId: UUID): List<StockTrade>
     fun findById(id: UUID): StockTrade?
     fun delete(id: UUID)
+    fun deleteByAccountId(accountId: UUID)
 }

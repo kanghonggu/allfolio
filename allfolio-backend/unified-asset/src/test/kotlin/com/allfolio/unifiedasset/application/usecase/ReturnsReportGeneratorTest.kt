@@ -32,6 +32,7 @@ class ReturnsReportGeneratorTest {
             flows.filter { it.flowDate in from..to }
         override fun findByUserId(userId: UUID) = flows
         override fun delete(id: UUID) {}
+        override fun deleteByAccountId(accountId: UUID) {}
     }
 
     private fun nav(day: Int, v: String) = NavPoint(LocalDate.of(2026, 6, day), BigDecimal(v))
