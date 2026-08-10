@@ -19,13 +19,15 @@ const GRID = 'grid grid-cols-[2fr_0.7fr_1.1fr_1fr_0.7fr] gap-3'
 
 interface PositionTableProps {
   positions: Position[]
+  /** 포지션이 아예 없을 때의 안내 — 원인(계좌 없음/자산 없음)을 아는 화면이 넘겨준다 (AF-91) */
+  empty?: React.ReactNode
 }
 
-export default function PositionTable({ positions }: PositionTableProps) {
+export default function PositionTable({ positions, empty }: PositionTableProps) {
   const [showDust, setShowDust] = useState(false)
 
   if (positions.length === 0) {
-    return <EmptyState title="투자 포지션 없음" description="계좌를 연결하고 sync하면 보유 포지션이 표시됩니다" />
+    return <>{empty ?? <EmptyState title="집계된 포지션이 없습니다" />}</>
   }
 
   const mainPositions = positions.filter(p => (p.currentValueKrw ?? p.currentValue) >= DUST_THRESHOLD_KRW)
