@@ -103,6 +103,7 @@ class SyncAccountUseCaseLoggingTest {
         syncLogRepository = logs,
         reconMutex = mutex,
         cashFlowRepository = org.mockito.Mockito.mock(com.allfolio.unifiedasset.application.port.CashFlowRepository::class.java),
+        stockTradeRepository = FakeStockTradeRepository(),
     )
 
     @Test

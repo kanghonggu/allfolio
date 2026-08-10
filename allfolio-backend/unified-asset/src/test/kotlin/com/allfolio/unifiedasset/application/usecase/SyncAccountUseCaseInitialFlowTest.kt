@@ -86,6 +86,7 @@ class SyncAccountUseCaseInitialFlowTest {
         syncLogRepository = NoopSyncLogRepository(),
         reconMutex = NoopReconMutex(),
         cashFlowRepository = cashFlows,
+        stockTradeRepository = FakeStockTradeRepository(),
     )
 
     @Test

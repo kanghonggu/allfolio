@@ -57,6 +57,7 @@ class SyncAccountUseCaseNavTest {
             syncLogRepository = NoopSyncLogRepository(),
             reconMutex = NoopReconMutex(),
         cashFlowRepository = org.mockito.Mockito.mock(com.allfolio.unifiedasset.application.port.CashFlowRepository::class.java),
+        stockTradeRepository = FakeStockTradeRepository(),
         )
 
         service.execute(account.id)
