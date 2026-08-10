@@ -186,5 +186,6 @@ class GetDashboardUseCaseNetWorthChangeTest {
             flows.filter { it.flowDate in from..to }
         override fun findByUserId(userId: UUID) = flows
         override fun delete(id: UUID) = Unit
+        override fun deleteByAccountId(accountId: UUID) = Unit
     }
 }

@@ -12,4 +12,5 @@ class FakeStockTradeRepository(
     override fun findByAccountId(accountId: UUID): List<StockTrade> = trades.filter { it.accountId == accountId }
     override fun findById(id: UUID): StockTrade? = trades.find { it.id == id }
     override fun delete(id: UUID) = Unit
+    override fun deleteByAccountId(accountId: UUID) = Unit
 }

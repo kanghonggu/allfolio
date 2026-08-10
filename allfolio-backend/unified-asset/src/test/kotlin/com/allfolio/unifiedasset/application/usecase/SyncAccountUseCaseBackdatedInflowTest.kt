@@ -214,6 +214,7 @@ class SyncAccountUseCaseBackdatedInflowTest {
         override fun findByUserIdAndPeriod(userId: UUID, from: LocalDate, to: LocalDate) = preExisting
         override fun findByUserId(userId: UUID) = preExisting
         override fun delete(id: UUID) = Unit
+        override fun deleteByAccountId(accountId: UUID) = Unit
     }
 
     private class StatefulAssetRepository : AssetRepository {
