@@ -43,7 +43,7 @@ interface FxConverter {
      * netFlow가 맞고 TWR/MWR이 왜곡되지 않는다.
      *
      * default 구현은 과거 환율을 모르는 구현체를 위한 것으로, 현재 환율로 근사하고
-     * estimated=true를 반환한다.
+     * estimated=true를 반환한다 (단, KRW는 환산이 없으므로 estimated=false).
      */
     fun toKrwOn(amount: BigDecimal, currency: String, date: LocalDate): KrwConversion =
         KrwConversion(

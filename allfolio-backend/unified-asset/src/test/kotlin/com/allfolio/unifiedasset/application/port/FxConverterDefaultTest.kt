@@ -32,5 +32,6 @@ class FxConverterDefaultTest {
 
         assertThat(result.amountKrw).isEqualByComparingTo("5000")
         assertThat(result.estimated).isFalse()
+        assertThat(result.rateDate).isNull()
     }
 }
