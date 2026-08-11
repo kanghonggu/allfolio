@@ -43,8 +43,14 @@ class EcosStatisticSearchClient(
             .build()
     }
 
+    /**
+     * 응답 대기 상한. 테스트에서만 줄인다 — 기본 30초를 매번 태우면 타임아웃 경로를 검증할 수 없다.
+     * 프로덕션에서 바꿀 값이 아니라 설정으로 빼지 않았다.
+     */
+    internal var timeout: Duration = DEFAULT_TIMEOUT
+
     companion object {
-        private val TIMEOUT = Duration.ofSeconds(30)
+        private val DEFAULT_TIMEOUT = Duration.ofSeconds(30)
         private val DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd")
 
         /**
@@ -56,6 +62,12 @@ class EcosStatisticSearchClient(
 
         /** 실패 시 로그에 남길 응답 앞부분 길이. 본문 전체는 남기지 않는다(길고, 되울린 URI가 섞인다). */
         private const val BODY_PREVIEW_LENGTH = 200
+
+        /**
+         * 되울려 온 우리 요청 URI. 경로 첫 세그먼트가 인증키라 통째로 지운다.
+         * 공백·따옴표·꺾쇠에서 멈춘다 — HTML 안에 박혀 와도 뒤따르는 마크업까지 먹지 않도록.
+         */
+        private val REQUEST_PATH = Regex("""/api/StatisticSearch[^\s<>"']*""")
     }
 
     /**
@@ -64,11 +76,20 @@ class EcosStatisticSearchClient(
      * 본문은 서버가 준 내용이라 우리 인증키가 실려 돌아올 수 있다 — Tomcat 기본 오류 페이지는
      * 요청 URI를 그대로 렌더링하고, 인증키는 그 URI 경로에 들어 있다.
      * 자르기 전에 지운다: 먼저 자르면 경계에 걸친 키 조각이 남는다.
+     *
+     * 두 단계를 거친다:
+     *   1. 설정된 키 문자열 마스킹 — 키가 경로 밖에 단독으로 실려 올 때를 잡는다
+     *      ("등록되지 않은 인증키입니다: XXX" 같은 오류 메시지)
+     *   2. 되울려 온 요청 URI 통째 제거 — 1번은 **정확히 일치**할 때만 들어서
+     *      퍼센트 인코딩된 키(KEY%2DZZTOP)를 놓치기 때문이다. 경로를 통으로 지우면 인코딩 형태와 무관하게 사라진다.
+     *
+     * 남는 잔여 위험: 경로 밖에서 인코딩된 채로 실려 오는 키. 그래서 예외 메시지에는 본문을 아예 싣지 않고
+     * (로그에만 남긴다) 이 함수는 마지막 방벽이 아니라 심층 방어로 둔다. 로그는 Render 대시보드로 나간다.
      */
     private fun preview(raw: String): String {
         // 빈 문자열로 replace하면 문자 사이마다 마스크가 끼어든다. 키가 없으면 가릴 것도 없다.
         val masked = if (properties.apiKey.isBlank()) raw else raw.replace(properties.apiKey, "***")
-        return masked.take(BODY_PREVIEW_LENGTH)
+        return masked.replace(REQUEST_PATH, "[요청 URI 생략]").take(BODY_PREVIEW_LENGTH)
     }
 
     override fun fetchDailyRates(
@@ -96,12 +117,19 @@ class EcosStatisticSearchClient(
                 .uri(path)
                 .retrieve()
                 .bodyToMono(String::class.java)
-                .block(TIMEOUT)
+                .block(timeout)
                 ?: throw EcosApiException("EMPTY", "응답 본문이 비어 있습니다")
         } catch (e: WebClientResponseException) {
             // WebClientResponseException의 메시지·스택에는 인증키가 박힌 전체 URI가 들어 있다.
             // 호출자가 예외를 그대로 로깅해도 키가 새지 않도록 여기서 갈아끼운다 — 그래서 cause도 붙이지 않는다.
             val status = e.statusCode.value()
+            if (e.statusCode.is2xxSuccessful) {
+                // 2xx인데 이 예외가 나왔다는 건 본문을 못 읽었다는 뜻이다(코덱 8MB 초과, 중간 절단 등).
+                // "HTTP 200 실패"로 보고하면 운영자가 한국은행 쪽을 보게 되므로 코드를 따로 준다 —
+                // Task 11은 code만 받으므로 여기서 구분하지 않으면 구분할 방법이 없다.
+                log.warn("[ECOS] 응답 본문 디코드 실패 status={} statCode={} reason={}", status, statCode, e.javaClass.simpleName)
+                throw EcosApiException("DECODE", "응답 본문을 읽지 못했습니다 (status=$status)")
+            }
             log.warn("[ECOS] HTTP {} statCode={} preview={}", status, statCode, preview(e.responseBodyAsString))
             throw EcosApiException("HTTP-$status", "ECOS가 HTTP $status 를 반환했습니다")
         } catch (e: WebClientRequestException) {
@@ -113,9 +141,23 @@ class EcosStatisticSearchClient(
         } catch (e: EcosApiException) {
             throw e // 위 EMPTY. 우리가 만든 예외라 이미 깨끗하다.
         } catch (e: Throwable) {
-            // 예외 종류를 열거하는 건 블랙리스트라 계속 샌다 — 예를 들어 DataBufferLimitException은
-            // IllegalStateException을 상속하면서 WebClient 체인 안에서 터져 checkpoint 프레임을 달고 나온다.
-            // 그래서 나머지를 전부 삼키고 갈아끼운다. 타임아웃도 여기로 모여 EcosApiException으로 통일된다.
+            // 예외 종류를 열거하는 건 블랙리스트라 새 경로가 생길 때마다 샌다. 그래서 남은 전부를 갈아끼운다.
+            // 실제로 여기 걸리는 건 block(timeout)의 IllegalStateException이다 —
+            // 이건 Reactor가 BlockingSingleSubscriber에서 새로 만들어 던지므로 checkpoint 프레임이 없지만,
+            // 그래도 EcosApiException으로 통일해 호출자가 한 종류만 다루게 한다.
+            // (DataBufferLimitException은 여기 오지 않는다. 실측 결과 WebClientResponseException으로 감싸여
+            //  위 2xx 분기에서 DECODE로 처리된다.)
+            if (e is Error) {
+                // OutOfMemoryError를 "ECOS 호출 실패"로 둔갑시키면 운영자를 한국은행 쪽으로 보낸다.
+                // 치명 오류는 Reactor checkpoint 기계를 타지 않으므로 그대로 올려도 유출되지 않는다.
+                throw e
+            }
+            if (e is InterruptedException || e.cause is InterruptedException) {
+                // 실측: 현재 reactor-core는 block()에서 이미 플래그를 복원해 준다. 이 줄은 그 위에 덧대는
+                // 멱등한 재확인이다 — 인터럽트 보존이 리액터 내부 구현에 의존하지 않게 못 박는다.
+                // 플래그가 지워지면 종료 중 끊긴 백필이 ECOS 장애로 읽히고 Task 10 루프가 다음 통화로 넘어간다.
+                Thread.currentThread().interrupt()
+            }
             log.warn("[ECOS] 호출 실패 statCode={} reason={}", statCode, e.javaClass.simpleName)
             throw EcosApiException("IO", "ECOS 호출에 실패했습니다")
         }
@@ -124,6 +166,12 @@ class EcosStatisticSearchClient(
         // 본문이 아예 JSON이 아니면(HTML 오류 페이지 등) Jackson 예외가 그대로 새므로 여기서 감싼다.
         return try {
             parser.parse(body)
+        } catch (e: EcosApiException) {
+            // 파서는 RESULT.MESSAGE를 그대로 detail에 넣는다. 그건 서버가 준 문자열이라
+            // 우리 요청 URI가 되울려 올 수 있고 길이 제한도 없다 — 본문 미리보기와 똑같은 경로다.
+            // code는 우리가 분기에 쓰므로 보존하고 detail만 마스킹·절단한다.
+            // (위 NO_KEY·NO_SERIES는 우리가 만든 문자열이고 try 밖에 있어 여기 오지 않는다.)
+            throw EcosApiException(e.code, preview(e.detail))
         } catch (e: JsonProcessingException) {
             // 본문 미리보기는 우리 로그에만 남기고 예외에는 싣지 않는다. 예외 메시지는 어드민 응답까지
             // 흘러가는데, 본문은 서버가 준 내용이라 우리 요청 URI가 되울려 올 수 있기 때문이다.

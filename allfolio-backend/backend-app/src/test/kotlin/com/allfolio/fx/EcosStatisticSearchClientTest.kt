@@ -1,5 +1,8 @@
 package com.allfolio.fx
 
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
@@ -8,9 +11,13 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.Assertions.catchThrowable
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
+import org.slf4j.LoggerFactory
 import java.net.InetSocketAddress
 import java.net.ServerSocket
+import java.time.Duration
 import java.time.LocalDate
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -135,16 +142,138 @@ class EcosStatisticSearchClientTest {
     }
 
     @Test
-    fun `코덱 한도를 넘는 응답에서도 인증키가 새지 않는다`() {
-        // DataBufferLimitException은 IllegalStateException을 상속하면서 WebClient 체인 안에서 터진다 —
-        // 즉 checkpoint 프레임을 달고 나온다. 예외 종류를 열거하는 방식으로는 잡히지 않는 자리다.
+    fun `코덱 한도를 넘는 응답은 DECODE로 보고된다`() {
+        // 실측: DataBufferLimitException은 그대로 새어 나오지 않고 WebClientResponseException(status=200)으로
+        // 감싸여 온다. 그래서 코드를 분기하지 않으면 "HTTP 200 실패"라는 엉뚱한 보고가 된다 —
+        // 운영자가 ECOS를 의심하게 만드는 자리라 DECODE로 갈라 둔다.
         val oversized = "x".repeat(9 * 1024 * 1024) // maxInMemorySize(8MB) 초과
         val port = serve { ex -> respond(ex, 200, oversized) }
 
         val raw = catchThrowable { call(port) }
 
         assertThat(raw).isInstanceOf(EcosApiException::class.java)
+        assertThat((raw as EcosApiException).code).isEqualTo("DECODE")
         assertNoSecretAnywhere(raw)
+    }
+
+    @Test
+    fun `RESULT 오류 메시지에 되울려 온 인증키가 예외로 새지 않는다`() {
+        // 잘 형성된 JSON이라 파서가 정상 동작하고 RESULT.MESSAGE를 detail에 그대로 넣는다.
+        // 서버가 준 문자열이므로 본문 미리보기와 똑같이 서버제어 → 예외 경로다.
+        val port = serve { ex ->
+            respond(
+                ex, 200,
+                """{"RESULT":{"CODE":"INFO-300","MESSAGE":"조회 실패: ${ex.requestURI.path}"}}""",
+            )
+        }
+
+        val raw = catchThrowable { call(port) }
+
+        assertThat(raw).isInstanceOf(EcosApiException::class.java)
+        val thrown = raw as EcosApiException
+        assertThat(thrown.code).isEqualTo("INFO-300") // 분기용 코드는 보존한다
+        assertNoSecretAnywhere(thrown)
+    }
+
+    @Test
+    fun `RESULT 메시지가 길어도 잘라서 싣는다`() {
+        val port = serve { ex ->
+            respond(ex, 200, """{"RESULT":{"CODE":"INFO-300","MESSAGE":"${"가".repeat(5_000)}"}}""")
+        }
+
+        val raw = catchThrowable { call(port) }
+
+        assertThat((raw as EcosApiException).detail).hasSizeLessThanOrEqualTo(200)
+    }
+
+    @Test
+    fun `타임아웃은 EcosApiException으로 통일되고 인증키가 새지 않는다`() {
+        // catch (Throwable) 종단 절의 실제 유일한 사용자. 기본 30초라 타임아웃을 주입해 싸게 만든다.
+        val port = serve { Thread.sleep(30_000) } // 응답을 주지 않고 물고 있는다
+        val client = client(port).apply { timeout = Duration.ofMillis(300) }
+
+        val raw = catchThrowable {
+            client.fetchDailyRates("TEST-STAT-CODE", "TEST-ITEM-CODE", LocalDate.now(), LocalDate.now())
+        }
+
+        assertThat(raw).isInstanceOf(EcosApiException::class.java)
+        assertThat((raw as EcosApiException).code).isEqualTo("IO")
+        assertNoSecretAnywhere(raw)
+    }
+
+    @Test
+    fun `인터럽트되면 플래그를 남긴 채 EcosApiException으로 나간다`() {
+        // 플래그가 지워지면 종료 중 끊긴 백필이 ECOS 장애로 읽히고 Task 10 루프가 다음 통화로 넘어간다.
+        // (실측상 지금은 reactor-core가 복원해 주지만, 그 의존을 테스트로 못 박아 둔다.)
+        val port = serve { Thread.sleep(30_000) }
+        val client = client(port).apply { timeout = Duration.ofSeconds(20) }
+
+        val started = CountDownLatch(1)
+        val thrown = AtomicReference<Throwable>()
+        val flagRestored = AtomicBoolean(false)
+        val worker = Thread {
+            started.countDown()
+            try {
+                client.fetchDailyRates("TEST-STAT-CODE", "TEST-ITEM-CODE", LocalDate.now(), LocalDate.now())
+            } catch (e: Throwable) {
+                thrown.set(e)
+            }
+            flagRestored.set(Thread.currentThread().isInterrupted)
+        }
+        worker.start()
+        started.await()
+        Thread.sleep(500) // 요청이 실제로 대기 상태에 들어간 뒤 끊는다
+        worker.interrupt()
+        worker.join(10_000)
+
+        assertThat(thrown.get()).isInstanceOf(EcosApiException::class.java)
+        assertThat(flagRestored).isTrue()
+        assertNoSecretAnywhere(thrown.get())
+    }
+
+    @Test
+    fun `WARN 로그의 본문 미리보기에서 인증키가 마스킹된다`() {
+        // 예외에서는 본문을 뺐지만 로그에는 미리보기가 남는다. 이 로그는 Render 대시보드로 나가므로
+        // 마스킹이 빠지면 조용히 키가 흘러간다 — 예외만 보는 단언으로는 못 잡는 자리다.
+        val logger = LoggerFactory.getLogger(EcosStatisticSearchClient::class.java) as Logger
+        val appender = ListAppender<ILoggingEvent>().apply { start() }
+        logger.addAppender(appender)
+        try {
+            // 키를 경로 밖에 단독으로 싣는다 — ECOS 인증 오류 페이지가 하는 모양이다.
+            // 경로 안에 두면 URI 통째 제거가 먼저 먹어서 "마스킹이 살아 있는지"를 못 가린다.
+            val port = serve { ex -> respond(ex, 500, "<html><body>등록되지 않은 인증키입니다: $apiKey</body></html>") }
+
+            catchThrowable { call(port) }
+
+            val logged = appender.list.joinToString("\n") { it.formattedMessage }
+            assertThat(logged).contains("***")          // 마스킹이 실제로 일어났다
+            assertThat(logged).doesNotContain(apiKey)   // 평문 키는 없다
+        } finally {
+            logger.detachAppender(appender)
+        }
+    }
+
+    @Test
+    fun `WARN 로그에서 되울려 온 요청 URI가 통째로 지워진다`() {
+        // 마스킹은 정확 일치일 때만 듣는다. 퍼센트 인코딩된 키는 통과하므로 경로를 통으로 지운다.
+        val logger = LoggerFactory.getLogger(EcosStatisticSearchClient::class.java) as Logger
+        val appender = ListAppender<ILoggingEvent>().apply { start() }
+        logger.addAppender(appender)
+        try {
+            val port = serve { ex ->
+                // 키를 퍼센트 인코딩해서 되울린다 — 마스킹만으로는 절대 못 잡는 형태.
+                val encoded = ex.requestURI.path.replace("SUPERSECRETKEY1234", "SUPERSECRETKEY%31%32%33%34")
+                respond(ex, 500, "<html><body><b>Message</b> $encoded</body></html>")
+            }
+
+            catchThrowable { call(port) }
+
+            val logged = appender.list.joinToString("\n") { it.formattedMessage }
+            assertThat(logged).contains("[요청 URI 생략]")
+            assertThat(logged).doesNotContain("SUPERSECRETKEY")
+        } finally {
+            logger.detachAppender(appender)
+        }
     }
 
     @Test
