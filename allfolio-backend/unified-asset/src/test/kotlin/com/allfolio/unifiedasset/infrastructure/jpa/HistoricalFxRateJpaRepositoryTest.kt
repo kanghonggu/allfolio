@@ -1,6 +1,7 @@
 package com.allfolio.unifiedasset.infrastructure.jpa
 
 import com.allfolio.unifiedasset.infrastructure.entity.HistoricalFxRateEntity
+import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -29,22 +30,27 @@ class HistoricalFxRateJpaRepositoryTest {
     @Autowired
     private lateinit var repository: HistoricalFxRateJpaRepository
 
+    @Autowired
+    private lateinit var entityManager: EntityManager
+
     @Test
     fun `정확히 그 날짜의 고시가 있으면 그것을 준다`() {
         save(LocalDate.of(2025, 8, 8), "1385.500000")
-        save(LocalDate.of(2025, 8, 11), "1390.200000")
+        // 소수점 6자리를 끝까지 채운 값 — 컬럼 스케일이 좁으면 여기서 잘려 단언이 깨진다
+        save(LocalDate.of(2025, 8, 11), "1385.123456")
 
         val found = repository.findTopByCurrencyAndBaseDateLessThanEqualOrderByBaseDateDesc(
             "USD", LocalDate.of(2025, 8, 11),
         )
 
         assertThat(found?.baseDate).isEqualTo(LocalDate.of(2025, 8, 11))
-        assertThat(found?.rateKrw).isEqualByComparingTo("1390.2")
+        assertThat(found?.rateKrw).isEqualByComparingTo("1385.123456")
     }
 
     @Test
     fun `주말은 직전 영업일 고시로 잇는다`() {
         save(LocalDate.of(2025, 8, 8), "1385.500000") // 금요일
+        save(LocalDate.of(2025, 8, 11), "1390.200000") // 월요일 — 더 최신 행을 건너뛰어야 한다
 
         // 2025-08-09는 토요일 — 고시가 없다
         val found = repository.findTopByCurrencyAndBaseDateLessThanEqualOrderByBaseDateDesc(
@@ -100,6 +106,8 @@ class HistoricalFxRateJpaRepositoryTest {
         save(LocalDate.of(2025, 8, 7), "1380.000000")
         save(LocalDate.of(2025, 8, 8), "1385.500000")
         save(LocalDate.of(2025, 8, 11), "1390.200000")
+        // 범위 안에 있지만 통화가 다른 행 — 끼어들면 백필이 JPY를 USD 환율로 덮는다
+        save(LocalDate.of(2025, 8, 8), "9.500000", currency = "JPY")
 
         val rows = repository.findAllByCurrencyAndBaseDateBetween(
             "USD", LocalDate.of(2025, 8, 7), LocalDate.of(2025, 8, 8),
@@ -109,8 +117,13 @@ class HistoricalFxRateJpaRepositoryTest {
             .containsExactlyInAnyOrder(LocalDate.of(2025, 8, 7), LocalDate.of(2025, 8, 8))
     }
 
+    /**
+     * flush + clear로 영속성 컨텍스트를 비운다.
+     * 이게 없으면 조회가 1차 캐시에서 방금 만든 인스턴스를 그대로 돌려주고,
+     * 컬럼 타입(NUMERIC(18,6))을 실제로 거치지 않아 정밀도 손실을 못 잡는다.
+     */
     private fun save(date: LocalDate, rate: String, currency: String = "USD") {
-        repository.save(
+        repository.saveAndFlush(
             HistoricalFxRateEntity(
                 id = UUID.randomUUID(),
                 baseDate = date,
@@ -120,6 +133,7 @@ class HistoricalFxRateJpaRepositoryTest {
                 createdAt = LocalDateTime.now(),
             ),
         )
+        entityManager.clear()
     }
 
     @Configuration
