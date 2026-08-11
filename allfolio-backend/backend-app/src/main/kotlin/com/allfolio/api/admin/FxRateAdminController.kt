@@ -1,19 +1,32 @@
 package com.allfolio.api.admin
 
+import com.allfolio.fx.BackfillSummary
+import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
+import org.slf4j.LoggerFactory
+import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.format.annotation.DateTimeFormat
+import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.server.ResponseStatusException
 import java.math.BigDecimal
+import java.time.LocalDate
 
 @RestController
 @RequestMapping("/api/admin/fx")
 class FxRateAdminController(
     private val fxRateService: FxRateService,
+    private val backfillService: FxRateBackfillService,
 ) {
+    private val log = LoggerFactory.getLogger(javaClass)
+
     /** GET /api/admin/fx/usdtkrw — 현재 환율 조회 */
     @GetMapping("/usdtkrw")
     fun getUsdtKrw(): ResponseEntity<FxRateResponse> =
@@ -40,6 +53,47 @@ class FxRateAdminController(
         fxRateService.setCryptoToKrw(symbol, req.rate)
         return ResponseEntity.ok(CryptoRateResponse(symbol.uppercase(), req.rate))
     }
+
+    /**
+     * POST /api/admin/fx/backfill — ECOS 과거 환율 백필 (어드민 전용, AF-100)
+     *
+     * 예: POST /api/admin/fx/backfill?currency=USD&from=2020-01-01&to=2026-08-11
+     * 멱등하다 — 같은 구간을 다시 돌리면 값만 덮는다.
+     *
+     * 다년 범위는 나눠 돌릴 것. 행마다 merge SELECT가 나가 한 트랜잭션이 길어진다.
+     *
+     * 아래 두 예외만 여기서 갈아끼우는 이유는 **범위** 때문이다.
+     * [DataIntegrityViolationException]은 전역에서 422로 매핑돼 있는데, 그걸 409로 바꾸면
+     * 모든 다른 엔드포인트의 계약이 함께 바뀐다. [IllegalStateException]도 마찬가지로
+     * 전역에서 502로 돌리면 순수한 내부 버그까지 "외부 API 탓"으로 위장된다.
+     * 여기서는 둘 다 백필 고유의 의미가 있어(각각 경합·ECOS 응답 이상) 이 엔드포인트에만 가둔다.
+     * `EcosApiException`은 code 필드를 응답에 실어야 해서 [ResponseStatusException]으로는
+     * 옮길 수 없고, 이미 백필 전용 예외라 전역 핸들러에 둬도 범위가 새지 않는다.
+     */
+    @PostMapping("/backfill")
+    fun backfill(
+        @RequestParam(defaultValue = "USD") currency: String,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate,
+    ): ResponseEntity<BackfillSummary> =
+        try {
+            ResponseEntity.ok(backfillService.backfill(currency, from, to))
+        } catch (e: IllegalStateException) {
+            // 0건 응답·범위 밖 행만 온 경우. 요청은 멀쩡했고 상류가 이상한 것이므로 502다.
+            // 전역 폴백에 맡기면 500 + "서버 오류가 발생했습니다"로 뭉개져,
+            // 통계표 코드를 고쳐야 하는지 재실행하면 되는지 운영자가 판단할 근거가 사라진다.
+            throw ResponseStatusException(HttpStatus.BAD_GATEWAY, e.message ?: "ECOS 응답을 신뢰할 수 없어 중단했습니다.")
+        } catch (e: DataIntegrityViolationException) {
+            // uk_fx_rate_daily 위반. 두 어드민이 겹치는 구간을 동시에 돌리면 난다.
+            // 입력 잘못이 아니라 일시적 경합이라 422(전역 기본)가 아니라 409로 재실행을 유도한다.
+            // 여기서 가로채면 전역 핸들러의 log.error("Data integrity violation", e)를 지나치게 되므로
+            // 그 진단을 대신 남긴다 — 제약 이름이 있어야 "정말 uk_fx_rate_daily였나"를 확인할 수 있다.
+            log.error("[ECOS] 백필 제약 위반 currency={} {}~{}", currency, from, to, e)
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "환율 저장이 다른 백필과 충돌했습니다. 같은 구간을 다시 실행해주세요.",
+            )
+        }
 }
 
 data class FxRateRequest(val rate: BigDecimal)

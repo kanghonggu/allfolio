@@ -3,7 +3,9 @@ package com.allfolio.config
 import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.auth.JwtTokenService
 import com.allfolio.auth.UserEntity
+import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
+import org.springframework.boot.test.mock.mockito.MockBean
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -43,6 +45,11 @@ import java.math.BigDecimal
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
 )
 class SecurityConfigErrorDispatchTest {
+
+    // 인가·오류 디스패치만 보는 테스트라 백필은 호출되지 않는다.
+    // FxRateAdminController가 요구하므로 자리만 채운다 (final 클래스라 수동 스텁을 못 만든다).
+    @MockBean
+    private lateinit var fxRateBackfillService: FxRateBackfillService
 
     @Autowired
     private lateinit var restTemplate: TestRestTemplate
