@@ -35,15 +35,14 @@ class RecordCashFlowUseCase(
         val cur = com.allfolio.unifiedasset.domain.common.Currencies.normalize(currency)
         // 과거 날짜 입력을 허용하므로(위 require) 환산도 그 날짜 기준이어야 한다
         val conversion = fxConverter.toKrwOn(amount, cur, flowDate)
+        val flow = CashFlow.create(userId, accountId, flowDate, type, amount, cur, conversion.amountKrw, memo)
         if (conversion.estimated) {
-            // 사용자가 쓴 메모는 서버가 고쳐 쓰지 않는다 — 로그로만 남긴다
+            // 사용자가 쓴 메모는 서버가 고쳐 쓰지 않는다 — 로그로만 남긴다(행 식별자 포함, 영향 행 수 집계용)
             log.warn(
-                "[Fx] 과거 환율 없음 — 현재 환율로 환산 userId={} accountId={} currency={} date={}",
-                userId, accountId, cur, flowDate,
+                "[Fx] 과거 환율 없음 — 현재 환율로 환산 flowId={} userId={} accountId={} currency={} date={}",
+                flow.id, userId, accountId, cur, flowDate,
             )
         }
-        return repository.save(
-            CashFlow.create(userId, accountId, flowDate, type, amount, cur, conversion.amountKrw, memo)
-        )
+        return repository.save(flow)
     }
 }

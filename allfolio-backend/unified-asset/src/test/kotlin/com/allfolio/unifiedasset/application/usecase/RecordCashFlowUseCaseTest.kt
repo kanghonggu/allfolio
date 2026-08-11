@@ -148,8 +148,8 @@ class RecordCashFlowUseCaseTest {
             override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
                 amount * BigDecimal("1400")
 
-            override fun toKrwOn(amount: BigDecimal, currency: String, on: LocalDate) =
-                KrwConversion(amount * BigDecimal("1100"), on, estimated = false)
+            override fun toKrwOn(amount: BigDecimal, currency: String, date: LocalDate) =
+                KrwConversion(amount * BigDecimal("1100"), date, estimated = false)
         }
         val repo = InMemoryRepo()
 
@@ -161,6 +161,29 @@ class RecordCashFlowUseCaseTest {
         // 오늘 환율 1400이 아니라 발생일 환율 1100
         assertEquals(0, BigDecimal("1100000").compareTo(flow.amountKrw))
         // 사용자가 쓴 메모는 그대로다
+        assertEquals("달러 입금", flow.memo)
+    }
+
+    @Test
+    fun `과거 환율을 못 찾으면 현재 환율로 근사하고 메모는 그대로 둔다`() {
+        val past = LocalDate.of(2025, 8, 11)
+        val estimatingFx = object : FxConverter {
+            override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
+                amount * BigDecimal("1400")
+
+            override fun toKrwOn(amount: BigDecimal, currency: String, date: LocalDate) =
+                KrwConversion(amount * BigDecimal("1400"), null, estimated = true)
+        }
+        val repo = InMemoryRepo()
+
+        val flow = RecordCashFlowUseCase(repo, estimatingFx, accountRepo).record(
+            userId = userId, accountId = null, flowDate = past, type = FlowType.DEPOSIT,
+            amount = BigDecimal("1000"), currency = "USD", memo = "달러 입금",
+        )
+
+        // 폴백이므로 현재 환율(1400) 기반
+        assertEquals(0, BigDecimal("1400000").compareTo(flow.amountKrw))
+        // 폴백이어도 사용자가 쓴 메모는 그대로다
         assertEquals("달러 입금", flow.memo)
     }
 }
