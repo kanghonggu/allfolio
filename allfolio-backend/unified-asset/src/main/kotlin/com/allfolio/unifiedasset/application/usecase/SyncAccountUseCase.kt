@@ -179,8 +179,19 @@ class SyncAccountUseCase(
             }
             if (amount <= BigDecimal.ZERO) return@mapNotNull null
 
-            // 오늘이 아니라 체결일 환율 — 오늘 환율로 환산하면 과거 USD 거래의 원금이 틀어진다
+            // 오늘이 아니라 체결일 환율 — 오늘 환율로 환산하면 과거 USD 거래의 원금이 틀어진다.
+            // StockTrade에 통화 필드가 없어 계좌 통화를 거래의 통화로 본다. 국내 KRW와 해외 USD를
+            // 한 계좌에 섞어 담았다면 이 가정이 깨지는데(이전 코드도 같은 가정), 그때는 틀린 값이
+            // "일률적으로 틀린 오늘 환율"에서 "정밀하게 틀린 과거 환율"로 바뀔 뿐이다.
             val conversion = fx.toKrwOn(amount, account.currency, trade.tradedAt)
+            if (conversion.estimated) {
+                // 어댑터 WARN은 통화·날짜만 찍어 어느 계좌·어느 거래인지 알 수 없다.
+                // 나중에 정정 대상 집합을 로그에서 추려낼 수 있도록 행 식별자를 여기서 남긴다.
+                log.warn(
+                    "체결일 환율 미보유 — 현재 환율로 근사 accountId={} tradeId={} tradedAt={} currency={}",
+                    account.id, trade.id, trade.tradedAt, account.currency,
+                )
+            }
             val memo = buildString {
                 append("거래 로그 기준 자동 기록(${trade.stockName})")
                 // 시스템이 만드는 메모이므로 부정확함을 여기 남긴다
