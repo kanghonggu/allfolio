@@ -483,6 +483,14 @@ git commit -m "feat(fx): fx_rate_daily 엔티티 + 직전 영업일 조회 리�
 
 ## Task 4: 어댑터에 폴백과 캐시 구현
 
+> ⚠️ **아래 코드는 실행 중 결함이 드러나 폐기됐다. 최종 형태는 커밋 `f26dd76`의 파일을 볼 것.**
+> 코드 리뷰가 잡은 것 셋:
+> 1. `Optional`로 **조회 실패와 미스를 캐시**해서, Neon 커넥션이 한 번만 끊겨도 그 날짜가 프로세스 수명 내내 폴백에 고정됐다. 백필을 나중에 도는 우리 배포 순서와도 정면으로 부딪힌다 — 백필 전에 조회된 날짜는 백필 후에도 영영 미스로 남는다.
+> 2. `estimatedNow`에 **정규화 전 통화 코드**를 넘겨서, `" btc "`가 `CurrencyConverter`의 else로 떨어져 **0.5 BTC가 0.5원**이 됐다. 같은 결함이 `toKrw`에도 있었다(`100 USDT → 100원`).
+> 3. `code !in HISTORICAL` catch-all이라 `"EUR"` 같은 미지원 코드가 크립토와 같은 길로 가서 `estimated`가 두 의미를 갖게 됐다.
+>
+> 최종 구현: 캐시는 `ConcurrentHashMap<String, ResolvedRate>`(Optional 없음)이고 **정확히 그 날짜에 행이 있었을 때만** 기억한다. 조회는 맵 락 밖에서 한다. `CRYPTO` 집합을 명시하고 어느 쪽도 아니면 `log.error`. `normalize`는 `canonical`로 개명(검증하는 `Currencies.normalize`와 구분).
+
 **Files:**
 - Modify: `allfolio-backend/backend-app/src/main/kotlin/com/allfolio/fx/UnifiedAssetFxConverterAdapter.kt`
 - Test: `allfolio-backend/backend-app/src/test/kotlin/com/allfolio/fx/UnifiedAssetFxConverterAdapterTest.kt`
