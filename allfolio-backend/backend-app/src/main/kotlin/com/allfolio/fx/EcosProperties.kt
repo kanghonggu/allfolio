@@ -23,5 +23,13 @@ data class EcosProperties(
         val statCode: String = "",
         val itemCode: String = "",
         val unitDivisor: BigDecimal = BigDecimal.ONE,
-    )
+    ) {
+        init {
+            // 0이면 백필이 ArithmeticException으로 죽고, 음수면 더 나쁘다 — 모든 환율의 부호가 뒤집힌 채
+            // fx_rate_daily를 거쳐 cash_flow.amount_krw까지 조용히 흘러간다.
+            // (파서의 rate <= 0 가드는 나눗셈 전에 돌기 때문에 걸러 주지 못한다.)
+            // 그래서 바인딩 시점에 막아 기동을 실패시킨다.
+            require(unitDivisor > BigDecimal.ZERO) { "unit-divisor는 0보다 커야 합니다: $unitDivisor" }
+        }
+    }
 }

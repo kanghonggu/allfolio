@@ -31,6 +31,19 @@ class EcosPropertiesBindingTest {
     }
 
     @Test
+    fun `unit-divisor가 0 이하면 기동이 실패한다`() {
+        // Task 10은 rate.divide(unitDivisor)를 한다. 0이면 ArithmeticException, 음수면 더 나쁘다 —
+        // 모든 환율의 부호가 뒤집힌 채 fx_rate_daily를 거쳐 cash_flow.amount_krw까지 흘러간다.
+        // 파서의 rate <= 0 가드는 나눗셈 전에 돌아서 걸러 주지 못하므로 바인딩 시점에 막는다.
+        listOf("0", "-100").forEach { bad ->
+            runner.withPropertyValues("ecos.series.JPY.unit-divisor=$bad").run { context ->
+                assertThat(context).hasFailed()
+                assertThat(context.startupFailure).hasStackTraceContaining("unit-divisor는 0보다 커야 합니다")
+            }
+        }
+    }
+
+    @Test
     fun `설정이 비어 있어도 컨텍스트가 뜬다`() {
         // 키·통계표 코드 없이 먼저 배포하는 계획이므로 기동 실패는 곧 배포 실패다.
         runner.run { context ->
