@@ -84,6 +84,19 @@ class UnifiedAssetFxConverterAdapter(
     }
 
     /**
+     * 캐시를 통째로 비운다. 백필이 **같은 날짜의 값을 정정**했을 때 [FxRateBackfillService]가 호출한다 —
+     * 확정치라 무기한 캐싱하지만 "확정"은 ECOS가 준 값 기준이고, 그 값이 바뀌면 캐시는 낡은 값이 된다.
+     *
+     * 통화별로 가려 비우지 않는 이유: 캐시는 정확히 맞은 날짜만 담고(직전 영업일 해소분·미스는 안 담는다)
+     * 백필은 어드민이 수동으로 한 번씩 돌리는 경로라, 다 비우고 다시 채우는 비용이 선별 로직보다 싸다.
+     */
+    fun invalidate() {
+        val size = cache.size
+        cache.clear()
+        log.info("[Fx] 과거 환율 캐시 무효화 entries={}", size)
+    }
+
+    /**
      * 반드시 [canonical]을 거친 코드를 넘긴다. [CurrencyConverter]는 uppercase만 하고 trim을 안 해서
      * " btc " 같은 원본 값을 넘기면 어느 갈래에도 안 맞고 1:1로 떨어진다 — 0.5 BTC가 0.5원이 된다.
      */
