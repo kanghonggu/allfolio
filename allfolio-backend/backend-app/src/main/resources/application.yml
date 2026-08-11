@@ -24,6 +24,54 @@ spring:
     password: ${DB_PASS:postgres}
     driver-class-name: org.postgresql.Driver
 
+    # ── HikariCP ────────────────────────────────────────────────────────────
+    # 이 블록은 2026-08-11까지 `spring.hikari`에 있었다. 바인딩 prefix는
+    # `spring.datasource.hikari`이므로 전량 무시됐고, 운영은 줄곧 HikariCP
+    # 기본값으로 돌았다(pool 10 / connection-timeout 30s / keepalive off).
+    # 위치를 바로잡으면서, 한 번도 적용된 적 없는 기존 값을 그대로 켜는 대신
+    # "실제로 돌아가던 값"을 기준으로 재산정했다.
+    #
+    # 환경 전제:
+    #   앱 — Render 무료 플랜 단일 인스턴스(0.1 vCPU). k6 실측 처리량 상한 ~20 req/s
+    #   DB — Neon 무료 플랜(0.25 CU). max_connections ~104(사용가능 ~97),
+    #        5분 유휴 시 scale-to-zero(무료 플랜은 해제 불가), 월 컴퓨트 시간 제한
+    #
+    # 로컬 도커 Postgres와 운영 Neon에 같은 값을 쓴다. 아래 값은 scale-to-zero가
+    # 있는 쪽에 맞춘 보수적 설정이고 로컬에서도 해가 없어, 프로파일을 나눠
+    # 두 벌을 동기화하는 비용이 이득보다 크다고 판단했다.
+    hikari:
+      pool-name: allfolio-pool
+
+      # 기존 주석은 "8 vCPU 기준 16~20"을 근거로 삼았으나 실제 인스턴스는 0.1 vCPU다.
+      # 지금까지 문제 없이 돌아온 실효값 10을 유지한다. Neon 가용 커넥션 ~97 중
+      # 10개면 배치·어드민·psql 몫을 남기면서 ~20 req/s를 감당하기 충분하다.
+      maximum-pool-size: 10
+      minimum-idle: 10              # = maximum-pool-size (고정 크기 풀 — HikariCP 권장)
+
+      # 풀에서 커넥션을 얻기까지의 최대 대기 시간. TCP connect 타임아웃이 아니라
+      # 대기열 대기까지 포함한다. 기존에 적혀 있던 5초는 위험하다:
+      #   - Neon 문서 권고 connect timeout이 10~15초 (scale-to-zero 복귀 포함)
+      #   - 자정 배치가 @Transactional 안에서 KIS/Binance HTTP를 호출하며 커넥션을
+      #     붙들어 일시적 풀 경합이 생긴다 → 5초면 사용자 요청이 바로 500으로 떨어진다
+      # 지금까지 실제 적용돼 있던 30초를 유지한다.
+      connection-timeout: 30000     # 30초
+
+      # minimum-idle == maximum-pool-size인 동안에는 동작하지 않는다(HikariCP 사양).
+      # 고정 풀 정책을 바꿀 때를 위해 기본값을 명시만 해 둔다.
+      idle-timeout: 600000          # 10분
+
+      max-lifetime: 1800000         # 30분
+
+      # keepalive는 끈 채로 둔다(0 = 비활성).
+      # 30초 주기 ping은 Neon의 5분 scale-to-zero를 영구히 무력화해 무료 플랜의
+      # 월 컴퓨트 시간을 소진시킨다. 유휴 중 서버가 끊은 커넥션은 HikariCP가
+      # 대여 시점 유효성 검사로 걸러내므로 keepalive 없이도 안전하다.
+      keepalive-time: 0
+
+      # connection-test-query는 의도적으로 두지 않는다. JDBC4 드라이버(PostgreSQL)는
+      # Connection.isValid()를 지원하므로 HikariCP 공식 권고대로 설정하지 않는 편이
+      # 빠르고, 설정하면 경고 로그가 남는다.
+
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -38,27 +86,6 @@ spring:
           max-active: 10
           max-idle: 5
           min-idle: 2
-
-  hikari:
-      # 커넥션 풀 크기: vCPU × 2 + effective_spindle_count (SSD 기준 = vCPU × 2)
-      # 기본 운영 환경 8 vCPU 기준 → pool-size 16~20
-      maximum-pool-size: 20
-      minimum-idle: 10
-
-      # 커넥션 획득 대기 최대 시간 (부하 테스트 시 timeout 방지)
-      connection-timeout: 5000        # 5초
-
-      # 유휴 커넥션 해제 시간
-      idle-timeout: 300000            # 5분
-
-      # 커넥션 최대 수명 (PostgreSQL wait_timeout보다 짧게)
-      max-lifetime: 1800000           # 30분
-
-      # 커넥션 유효성 검사 주기
-      keepalive-time: 30000           # 30초
-
-      pool-name: allfolio-pool
-      connection-test-query: SELECT 1
 
   jpa:
     hibernate:
