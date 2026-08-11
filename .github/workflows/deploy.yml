@@ -1,16 +1,14 @@
 name: Backend Verification
 
+# 경로 필터를 두지 않는다.
+# 필수 체크(required status check)로 지정하면, 경로가 안 맞아 워크플로가 아예 실행되지
+# 않은 PR은 체크가 "실행 대기"로 남아 머지가 무기한 막힌다. 프론트만 고친 PR이
+# 영원히 못 들어가는 상황이 되므로, 항상 돌게 두고 캐시로 시간을 줄인다.
 on:
   push:
     branches:
       - main
-    paths:
-      - "allfolio-backend/**"
-      - ".github/workflows/deploy.yml"
   pull_request:
-    paths:
-      - "allfolio-backend/**"
-      - ".github/workflows/deploy.yml"
 
 permissions:
   contents: read
