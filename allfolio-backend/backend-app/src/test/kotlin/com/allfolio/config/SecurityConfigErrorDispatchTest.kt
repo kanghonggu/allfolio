@@ -47,7 +47,7 @@ import java.math.BigDecimal
 class SecurityConfigErrorDispatchTest {
 
     // 인가·오류 디스패치만 보는 테스트라 백필은 호출되지 않는다.
-    // FxRateAdminController가 요구하므로 자리만 채운다 (final 클래스라 수동 스텁을 못 만든다).
+    // FxRateAdminController가 요구하므로 자리만 채운다.
     @MockBean
     private lateinit var fxRateBackfillService: FxRateBackfillService
 

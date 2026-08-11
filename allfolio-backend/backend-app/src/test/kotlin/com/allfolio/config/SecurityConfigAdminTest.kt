@@ -42,7 +42,7 @@ import java.math.BigDecimal
 class SecurityConfigAdminTest {
 
     // 이 테스트가 보는 건 인가 경로뿐이라 백필은 호출되지 않는다.
-    // FxRateAdminController가 요구하므로 자리만 채운다 (final 클래스라 수동 스텁을 못 만든다).
+    // FxRateAdminController가 요구하므로 자리만 채운다.
     @MockBean
     private lateinit var fxRateBackfillService: FxRateBackfillService
 

@@ -12,6 +12,7 @@ import com.allfolio.fx.EcosApiException
 import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.SpringBootConfiguration
@@ -145,6 +146,34 @@ class FxRateAdminBackfillControllerTest {
         }
     }
 
+    /**
+     * 설정 누락은 상류 장애가 아니라 우리 문제다. 502로 내보내면 운영자가 한국은행 상태를
+     * 확인하러 가는데, 실제 할 일은 Render에 ECOS_API_KEY를 등록하는 것이다.
+     */
+    @Test
+    fun `인증키 미설정은 502가 아니라 500이다`() {
+        `when`(backfillService.backfill("USD", from, to))
+            .thenThrow(EcosApiException("NO_KEY", "ECOS 인증키가 설정되지 않았습니다 (ECOS_API_KEY)"))
+
+        callBackfill().andExpect {
+            status { isInternalServerError() }
+            // 전역 폴백의 "서버 오류가 발생했습니다"가 아니라 실제 사유가 나가야 한다
+            jsonPath("$.error") { value("ECOS 인증키가 설정되지 않았습니다 (ECOS_API_KEY)") }
+            jsonPath("$.code") { value("NO_KEY") }
+        }
+    }
+
+    @Test
+    fun `시계열 코드 미설정도 500이다`() {
+        `when`(backfillService.backfill("USD", from, to))
+            .thenThrow(EcosApiException("NO_SERIES", "ECOS 통계표·항목 코드가 설정되지 않았습니다"))
+
+        callBackfill().andExpect {
+            status { isInternalServerError() }
+            jsonPath("$.code") { value("NO_SERIES") }
+        }
+    }
+
     @Test
     fun `제약 위반은 409로 재실행을 유도한다 - 422가 아니다`() {
         `when`(backfillService.backfill("USD", from, to))
@@ -170,13 +199,34 @@ class FxRateAdminBackfillControllerTest {
     @Test
     fun `날짜 형식이 깨지면 400 - 서비스는 호출되지 않는다`() {
         callBackfill(fromParam = "2020-13-99").andExpect { status { isBadRequest() } }
+
+        // 바인딩에서 걸러야 한다. 여기까지 통과하면 파싱 안 된 날짜로 ECOS를 때린다.
+        verifyNoInteractions(backfillService)
     }
 
     @Test
     fun `from 파라미터가 없으면 400`() {
         mockMvc.post("/api/admin/fx/backfill") {
             header("Authorization", "Bearer ${tokenFor(UserRole.ADMIN)}")
+            param("currency", "USD")
             param("to", "2020-01-31")
         }.andExpect { status { isBadRequest() } }
+
+        verifyNoInteractions(backfillService)
+    }
+
+    /**
+     * currency에 기본값이 있으면 파라미터 이름 오타(`currncy=JPY`)가 조용히 USD 전 구간 백필로
+     * 둔갑한다. 필수로 두면 바인딩이 400으로 잡는다.
+     */
+    @Test
+    fun `currency 파라미터가 없으면 400 - 조용히 USD로 떨어지지 않는다`() {
+        mockMvc.post("/api/admin/fx/backfill") {
+            header("Authorization", "Bearer ${tokenFor(UserRole.ADMIN)}")
+            param("from", "2020-01-01")
+            param("to", "2020-01-31")
+        }.andExpect { status { isBadRequest() } }
+
+        verifyNoInteractions(backfillService)
     }
 }

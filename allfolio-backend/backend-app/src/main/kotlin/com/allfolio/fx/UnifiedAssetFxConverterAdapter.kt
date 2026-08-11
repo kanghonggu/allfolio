@@ -46,7 +46,19 @@ class UnifiedAssetFxConverterAdapter(
     companion object {
         private val KST = ZoneId.of("Asia/Seoul")
 
-        /** 과거 시계열을 가진 통화. ECOS로 채울 수 있는 것만 여기 들어간다. */
+        /**
+         * 과거 시계열을 가진 통화. ECOS로 채울 수 있는 것만 여기 들어간다.
+         *
+         * **`ecos.series`(application.yml) 설정 맵과 손으로 맞춰야 하는 두 번째 진실 공급원이다.**
+         * 백필은 `ecos.series`에 있는 통화를 채우지만 조회는 이 집합만 본다. JPY 시계열을 설정에
+         * 추가해 백필하면 `fx_rate_daily`에 행은 쌓이는데 여기 없어서 영영 안 읽히고,
+         * 아래 `log.error("지원하지 않는 통화")`로 빠져 현재 환율 폴백이 된다 —
+         * 설정을 바꿨는데 아무 일도 안 일어나는, 원인이 가장 안 보이는 형태다.
+         * 통화를 늘릴 때는 반드시 양쪽을 함께 고칠 것.
+         * (지금은 `Currencies.SUPPORTED`에 USD 외 법정통화가 없어 무해하다.
+         *  코드로 결합하지 않는 이유는 조회 가능 통화와 백필 가능 통화가 개념상 별개이기 때문이다 —
+         *  설정에 넣기 전에 미리 코드를 넣어 두는 것도, 그 반대도 정당하다.)
+         */
         private val HISTORICAL = setOf("USD")
 
         /** 과거 시세 소스가 없어 현재가로만 환산되는 통화 */
@@ -135,6 +147,25 @@ class UnifiedAssetFxConverterAdapter(
         return resolved
     }
 
+    /**
+     * 조회 실패를 삼키고 null을 돌려준다 — 호출자는 현재 환율 폴백으로 떨어진다.
+     * 환율 테이블 하나 때문에 동기화·현금흐름 기록 전체가 실패하는 것보다 낫다는 판단이다.
+     *
+     * **이 폴백은 활성 트랜잭션 밖에서만 성립한다 — 중요한 한계다.**
+     * JPA 스펙상 쿼리에서 난 `PersistenceException`은 현재 트랜잭션을 rollback-only로 표시한다.
+     * 여기서 예외를 잡아도 그 표시는 지워지지 않아서, 실행은 태연히 이어지다가 커밋 시점에
+     * `UnexpectedRollbackException`으로 죽는다. 즉 트랜잭션 안에서는 "우아한 폴백"이 아니라
+     * 지연된 500이다.
+     *
+     * 소비 지점 셋 중 `RecordCashFlowUseCase`는 비트랜잭션이라 의도대로 동작하지만,
+     * `SyncAccountUseCase.execute`와 `RecordInternalFlowUseCase`의 두 메서드는 `@Transactional`이라
+     * 해당하지 않는다. 마이그레이션을 건너뛰고 배포했거나(테이블 없음) Neon 커넥션이 순간 끊기면
+     * 이 경로들은 폴백이 아니라 500이 된다.
+     *
+     * `Propagation.REQUIRES_NEW`로 격리하면 닫히지만 조회마다 트랜잭션을 여는 비용이 붙는다.
+     * 마이그레이션 선행이 이미 배포 필수 절차라(테이블은 있다) 남은 위험은 순간적인 커넥션 장애뿐이고,
+     * 그 대가로 sync 한 번에 트랜잭션 수백 개를 여는 건 지금 균형이 맞지 않는다고 판단했다.
+     */
     private fun query(code: String, date: LocalDate): ResolvedRate? =
         runCatching {
             historicalRates

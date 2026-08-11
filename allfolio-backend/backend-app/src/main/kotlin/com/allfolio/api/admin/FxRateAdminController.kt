@@ -62,6 +62,10 @@ class FxRateAdminController(
      *
      * 다년 범위는 나눠 돌릴 것. 행마다 merge SELECT가 나가 한 트랜잭션이 길어진다.
      *
+     * `currency`에 기본값을 두지 않는다 — 파라미터 이름을 오타내면(`currncy=JPY`) 기본값이
+     * 조용히 USD 전 구간 백필을 돌린다. 손상은 없지만 수십 초짜리 엉뚱한 작업이 소리 없이 실행된다.
+     * 백필을 돌리는 운영자가 통화를 모를 리 없어 기본값으로 얻는 것도 없다.
+     *
      * 아래 두 예외만 여기서 갈아끼우는 이유는 **범위** 때문이다.
      * [DataIntegrityViolationException]은 전역에서 422로 매핑돼 있는데, 그걸 409로 바꾸면
      * 모든 다른 엔드포인트의 계약이 함께 바뀐다. [IllegalStateException]도 마찬가지로
@@ -72,7 +76,7 @@ class FxRateAdminController(
      */
     @PostMapping("/backfill")
     fun backfill(
-        @RequestParam(defaultValue = "USD") currency: String,
+        @RequestParam currency: String,
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate,
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate,
     ): ResponseEntity<BackfillSummary> =
@@ -88,7 +92,9 @@ class FxRateAdminController(
             // 입력 잘못이 아니라 일시적 경합이라 422(전역 기본)가 아니라 409로 재실행을 유도한다.
             // 여기서 가로채면 전역 핸들러의 log.error("Data integrity violation", e)를 지나치게 되므로
             // 그 진단을 대신 남긴다 — 제약 이름이 있어야 "정말 uk_fx_rate_daily였나"를 확인할 수 있다.
-            log.error("[ECOS] 백필 제약 위반 currency={} {}~{}", currency, from, to, e)
+            // 다만 ERROR가 아니라 WARN이다: 응답이 재실행을 안내하는 일시적 경합인데
+            // ERROR는 보통 알림을 울려서, 사람을 깨울 일이 아닌 것으로 사람을 깨우게 된다.
+            log.warn("[ECOS] 백필 제약 위반 currency={} {}~{}", currency, from, to, e)
             throw ResponseStatusException(
                 HttpStatus.CONFLICT,
                 "환율 저장이 다른 백필과 충돌했습니다. 같은 구간을 다시 실행해주세요.",
