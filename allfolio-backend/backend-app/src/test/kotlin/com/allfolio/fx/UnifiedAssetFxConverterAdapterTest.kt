@@ -53,7 +53,7 @@ class UnifiedAssetFxConverterAdapterTest {
     fun `과거 환율이 없으면 현재 환율로 폴백하고 추정치로 표시한다`() {
         val result = adapter(FakeRepo()).toKrwOn(BigDecimal("100"), "USD", date)
 
-        // CurrencyConverter가 fallback 1350을 쓴다
+        // 현재 환율 경로로 넘어간다 — StubFxRateService가 USD 1350을 준다
         assertThat(result.amountKrw).isEqualByComparingTo("135000")
         assertThat(result.estimated).isTrue()
         assertThat(result.rateDate).isNull()
@@ -65,6 +65,28 @@ class UnifiedAssetFxConverterAdapterTest {
 
         assertThat(result.amountKrw).isEqualByComparingTo("45000000")
         assertThat(result.estimated).isTrue()
+        assertThat(result.rateDate).isNull()
+    }
+
+    @Test
+    fun `통화 코드에 공백이 섞여도 크립토 현재가로 환산한다`() {
+        // 계좌 통화는 엔티티 값이 그대로 넘어오므로 어댑터가 유일한 방어선이다.
+        // 폴백에 정규화 전 코드를 넘기면 CurrencyConverter가 " BTC "를 못 알아보고
+        // 0.5 BTC를 0.5원으로 돌려준다
+        val result = adapter(FakeRepo()).toKrwOn(BigDecimal("0.5"), " btc ", date)
+
+        assertThat(result.amountKrw).isEqualByComparingTo("45000000")
+        assertThat(result.estimated).isTrue()
+    }
+
+    @Test
+    fun `화이트리스트 밖 통화는 환산하지 못하고 추정치로 표시한다`() {
+        val result = adapter(FakeRepo()).toKrwOn(BigDecimal("100"), "EUR", date)
+
+        // CurrencyConverter가 모르는 통화라 그대로 돌려준다 — 환산이 안 된 값이다
+        assertThat(result.amountKrw).isEqualByComparingTo("100")
+        assertThat(result.estimated).isTrue()
+        assertThat(result.rateDate).isNull()
     }
 
     @Test
@@ -98,6 +120,56 @@ class UnifiedAssetFxConverterAdapterTest {
         assertThat(repo.callCount).isEqualTo(5)
     }
 
+    @Test
+    fun `일시적 조회 실패는 기억하지 않는다`() {
+        // Neon autosuspend로 커넥션이 한 번 끊긴 날짜가 프로세스 수명 내내
+        // 현재환율 폴백으로 고정되면, 그 값이 cash_flow에 그대로 저장된다
+        val repo = FlakyRepo(row(date, "1390.200000"))
+        val adapter = adapter(repo)
+
+        val duringOutage = adapter.toKrwOn(BigDecimal("100"), "USD", date)
+        val afterRecovery = adapter.toKrwOn(BigDecimal("100"), "USD", date)
+
+        assertThat(duringOutage.estimated).isTrue()
+        assertThat(afterRecovery.amountKrw).isEqualByComparingTo("139020")
+        assertThat(afterRecovery.estimated).isFalse()
+        assertThat(afterRecovery.rateDate).isEqualTo(date)
+    }
+
+    @Test
+    fun `백필로 나중에 들어온 행을 다음 조회부터 반영한다`() {
+        // 빈 테이블로 먼저 배포하고 살아있는 프로세스에 백필을 때리는 계획이라,
+        // 백필 전에 조회된 날짜가 empty로 굳으면 백필이 무의미해진다
+        val repo = FakeRepo()
+        val adapter = adapter(repo)
+
+        val beforeBackfill = adapter.toKrwOn(BigDecimal("100"), "USD", date)
+        repo.stored = row(date, "1390.200000")
+        val afterBackfill = adapter.toKrwOn(BigDecimal("100"), "USD", date)
+
+        assertThat(beforeBackfill.amountKrw).isEqualByComparingTo("135000")
+        assertThat(beforeBackfill.estimated).isTrue()
+        assertThat(afterBackfill.amountKrw).isEqualByComparingTo("139020")
+        assertThat(afterBackfill.estimated).isFalse()
+        assertThat(afterBackfill.rateDate).isEqualTo(date)
+    }
+
+    @Test
+    fun `직전 영업일로 해소된 조회는 캐시하지 않는다`() {
+        // 주말·공휴일은 직전 영업일 행으로 이어지는데, 그 결과를 요청 날짜 키에 박아두면
+        // 나중에 그 날짜의 행이 들어와도 계속 옛 값을 확정치인 양 내놓는다
+        val repo = FakeRepo(row(date.minusDays(3), "1390.200000"))
+        val adapter = adapter(repo)
+
+        val first = adapter.toKrwOn(BigDecimal("100"), "USD", date)
+        val second = adapter.toKrwOn(BigDecimal("100"), "USD", date)
+
+        assertThat(first.rateDate).isEqualTo(date.minusDays(3))
+        assertThat(first.estimated).isFalse()
+        assertThat(second.amountKrw).isEqualByComparingTo("139020")
+        assertThat(repo.callCount).isEqualTo(2)
+    }
+
     // ── helpers ──────────────────────────────────────────────────
 
     private val KST = ZoneId.of("Asia/Seoul")
@@ -117,9 +189,9 @@ class UnifiedAssetFxConverterAdapterTest {
         override fun setCryptoToKrw(symbol: String, rate: BigDecimal) = Unit
     }
 
-    /** 조회 두 메서드만 쓰므로 나머지는 위임하지 않는다 */
+    /** 조회 두 메서드만 쓰므로 나머지는 위임하지 않는다. stored가 var인 이유는 백필 시나리오 */
     private open class FakeRepo(
-        private val stored: HistoricalFxRateEntity? = null,
+        var stored: HistoricalFxRateEntity? = null,
     ) : HistoricalFxRateJpaRepository by mock(HistoricalFxRateJpaRepository::class.java) {
         var callCount = 0
         var lastCurrency: String? = null
@@ -139,5 +211,16 @@ class UnifiedAssetFxConverterAdapterTest {
             currency: String,
             baseDate: LocalDate,
         ): HistoricalFxRateEntity? = throw RuntimeException("DB down")
+    }
+
+    /** 첫 조회만 끊기고 이후엔 정상 — 커넥션이 잠깐 끊기는 실제 양상 */
+    private class FlakyRepo(row: HistoricalFxRateEntity) : FakeRepo(row) {
+        override fun findTopByCurrencyAndBaseDateLessThanEqualOrderByBaseDateDesc(
+            currency: String,
+            baseDate: LocalDate,
+        ): HistoricalFxRateEntity? {
+            if (callCount++ == 0) throw RuntimeException("connection reset by peer")
+            return super.findTopByCurrencyAndBaseDateLessThanEqualOrderByBaseDateDesc(currency, baseDate)
+        }
     }
 }

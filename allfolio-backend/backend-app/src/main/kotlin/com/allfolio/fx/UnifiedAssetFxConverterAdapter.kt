@@ -9,7 +9,6 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.LocalDate
 import java.time.ZoneId
-import java.util.Optional
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -32,9 +31,15 @@ class UnifiedAssetFxConverterAdapter(
     /**
      * 확정된 과거 환율은 변하지 않으므로 무기한 캐싱해도 안전하다.
      * 거래 수백 건짜리 sync에서 날짜별 조회가 반복되는 것을 막는 용도이고,
-     * 프로세스 재시작 시 비워져도 무방하다. 오늘 이후는 캐싱하지 않는다 — 아직 확정 전이다.
+     * 프로세스 재시작 시 비워져도 무방하다.
+     *
+     * "결과가 아닌 것"은 절대 기억하지 않는다 — 요청한 날짜의 행을 정확히 찾았을 때만 넣는다.
+     * 조회 실패(예외)나 행 없음을 캐시하면 잠깐 끊긴 커넥션 하나가 그 날짜를 프로세스 수명 내내
+     * 현재환율 폴백으로 고정시키고, 나중에 백필로 들어온 행도 영영 못 보게 된다.
+     * 직전 영업일로 해소된 결과도 넣지 않는다 — 요청 날짜 키에 옛 base_date 값이 박히면
+     * 그 날짜의 행이 나중에 들어와도 계속 옛 값을 확정치인 양 내놓는다.
      */
-    private val cache = ConcurrentHashMap<String, Optional<ResolvedRate>>()
+    private val cache = ConcurrentHashMap<String, ResolvedRate>()
 
     private data class ResolvedRate(val rateKrw: BigDecimal, val rateDate: LocalDate)
 
@@ -43,21 +48,29 @@ class UnifiedAssetFxConverterAdapter(
 
         /** 과거 시계열을 가진 통화. ECOS로 채울 수 있는 것만 여기 들어간다. */
         private val HISTORICAL = setOf("USD")
+
+        /** 과거 시세 소스가 없어 현재가로만 환산되는 통화 */
+        private val CRYPTO = setOf("BTC", "ETH")
     }
 
     override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
         currencyConverter.toKrw(amount, currency)
 
     override fun toKrwOn(amount: BigDecimal, currency: String, date: LocalDate): KrwConversion {
-        val code = normalize(currency)
+        val code = canonical(currency)
 
         if (code == "KRW") return KrwConversion(amount, rateDate = null, estimated = false)
 
         // BTC/ETH는 과거 시세를 가진 소스가 없다 — 현행 현재가 환산을 유지한다
-        if (code !in HISTORICAL) return estimatedNow(amount, currency)
+        if (code in CRYPTO) return estimatedNow(amount, code)
+
+        if (code !in HISTORICAL) {
+            log.error("[Fx] 지원하지 않는 통화 — 환산 없이 그대로 둔다 currency={} date={}", currency, date)
+            return estimatedNow(amount, code)
+        }
 
         val resolved = lookup(code, date)
-            ?: return estimatedNow(amount, currency).also {
+            ?: return estimatedNow(amount, code).also {
                 log.warn("[Fx] 과거 환율 없음 — 현재 환율로 환산 currency={} date={}", code, date)
             }
 
@@ -68,19 +81,36 @@ class UnifiedAssetFxConverterAdapter(
         )
     }
 
-    private fun estimatedNow(amount: BigDecimal, currency: String) =
-        KrwConversion(currencyConverter.toKrw(amount, currency), rateDate = null, estimated = true)
+    /**
+     * 반드시 [canonical]을 거친 코드를 넘긴다. [CurrencyConverter]는 uppercase만 하고 trim을 안 해서
+     * " btc " 같은 원본 값을 넘기면 어느 갈래에도 안 맞고 1:1로 떨어진다 — 0.5 BTC가 0.5원이 된다.
+     */
+    private fun estimatedNow(amount: BigDecimal, code: String) =
+        KrwConversion(currencyConverter.toKrw(amount, code), rateDate = null, estimated = true)
 
-    /** USDT는 USD 시계열로 근사한다 — 현재 환율 경로(CurrencyConverter)와 같은 취급이다. */
-    private fun normalize(currency: String): String =
+    /**
+     * 별칭을 정리한 통화 코드. USDT는 USD 시계열로 근사한다 —
+     * 현재 환율 경로(CurrencyConverter)와 같은 취급이다.
+     *
+     * 화이트리스트 검증을 겸하는 `Currencies.normalize`와 달리 여기서는 별칭 치환만 한다.
+     */
+    private fun canonical(currency: String): String =
         when (val code = currency.trim().uppercase()) {
             "USDT" -> "USD"
             else -> code
         }
 
     private fun lookup(code: String, date: LocalDate): ResolvedRate? {
+        // 오늘 이후는 아직 확정 전이라 캐시에 넣지 않는다
         if (!date.isBefore(LocalDate.now(KST))) return query(code, date)
-        return cache.computeIfAbsent("$code@$date") { Optional.ofNullable(query(code, date)) }.orElse(null)
+
+        val key = "$code@$date"
+        cache[key]?.let { return it }
+
+        // computeIfAbsent 밖에서 조회한다 — 맵 락을 쥔 채로 DB I/O를 하지 않는다
+        val resolved = query(code, date) ?: return null
+        if (resolved.rateDate == date) cache[key] = resolved
+        return resolved
     }
 
     private fun query(code: String, date: LocalDate): ResolvedRate? =
