@@ -5,6 +5,7 @@ import com.allfolio.unifiedasset.application.port.CashFlowRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.domain.cashflow.CashFlow
 import com.allfolio.unifiedasset.domain.cashflow.FlowType
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.math.BigDecimal
 import java.time.LocalDate
@@ -16,6 +17,8 @@ class RecordCashFlowUseCase(
     private val fxConverter: FxConverter,
     private val accountRepository: AccountRepository,
 ) {
+    private val log = LoggerFactory.getLogger(javaClass)
+
     fun record(
         userId: UUID, accountId: UUID?, flowDate: LocalDate, type: FlowType,
         amount: BigDecimal, currency: String, memo: String?,
@@ -30,9 +33,17 @@ class RecordCashFlowUseCase(
                 throw NoSuchElementException("Account not found: $id")
         }
         val cur = com.allfolio.unifiedasset.domain.common.Currencies.normalize(currency)
-        val amountKrw = fxConverter.toKrw(amount, cur)
+        // 과거 날짜 입력을 허용하므로(위 require) 환산도 그 날짜 기준이어야 한다
+        val conversion = fxConverter.toKrwOn(amount, cur, flowDate)
+        if (conversion.estimated) {
+            // 사용자가 쓴 메모는 서버가 고쳐 쓰지 않는다 — 로그로만 남긴다
+            log.warn(
+                "[Fx] 과거 환율 없음 — 현재 환율로 환산 userId={} accountId={} currency={} date={}",
+                userId, accountId, cur, flowDate,
+            )
+        }
         return repository.save(
-            CashFlow.create(userId, accountId, flowDate, type, amount, cur, amountKrw, memo)
+            CashFlow.create(userId, accountId, flowDate, type, amount, cur, conversion.amountKrw, memo)
         )
     }
 }
