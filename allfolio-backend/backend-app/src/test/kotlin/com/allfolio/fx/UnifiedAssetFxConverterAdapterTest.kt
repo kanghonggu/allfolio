@@ -80,6 +80,15 @@ class UnifiedAssetFxConverterAdapterTest {
     }
 
     @Test
+    fun `현재 환율 경로도 공백이 섞인 통화 코드를 환산한다`() {
+        // Account.reconstruct는 DB 값을 재정규화 없이 되살리므로, 정규화 없이 저장된
+        // 과거 행은 Currencies.normalize 방어를 우회한다. 자산 평가 경로가 이 메서드를 쓴다
+        val result = adapter(FakeRepo()).toKrw(BigDecimal("100"), " usdt ")
+
+        assertThat(result).isEqualByComparingTo("135000")
+    }
+
+    @Test
     fun `화이트리스트 밖 통화는 환산하지 못하고 추정치로 표시한다`() {
         val result = adapter(FakeRepo()).toKrwOn(BigDecimal("100"), "EUR", date)
 
@@ -134,6 +143,7 @@ class UnifiedAssetFxConverterAdapterTest {
         assertThat(afterRecovery.amountKrw).isEqualByComparingTo("139020")
         assertThat(afterRecovery.estimated).isFalse()
         assertThat(afterRecovery.rateDate).isEqualTo(date)
+        assertThat(repo.callCount).isEqualTo(2)
     }
 
     @Test
@@ -215,11 +225,18 @@ class UnifiedAssetFxConverterAdapterTest {
 
     /** 첫 조회만 끊기고 이후엔 정상 — 커넥션이 잠깐 끊기는 실제 양상 */
     private class FlakyRepo(row: HistoricalFxRateEntity) : FakeRepo(row) {
+        private var brokenOnce = false
+
         override fun findTopByCurrencyAndBaseDateLessThanEqualOrderByBaseDateDesc(
             currency: String,
             baseDate: LocalDate,
         ): HistoricalFxRateEntity? {
-            if (callCount++ == 0) throw RuntimeException("connection reset by peer")
+            // 실패 경로는 super를 타지 않으므로 여기서 직접 센다 — 호출 수와 callCount를 1:1로 유지
+            if (!brokenOnce) {
+                brokenOnce = true
+                callCount++
+                throw RuntimeException("connection reset by peer")
+            }
             return super.findTopByCurrencyAndBaseDateLessThanEqualOrderByBaseDateDesc(currency, baseDate)
         }
     }

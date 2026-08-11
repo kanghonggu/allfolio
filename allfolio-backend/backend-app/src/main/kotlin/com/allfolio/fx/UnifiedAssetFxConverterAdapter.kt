@@ -53,8 +53,10 @@ class UnifiedAssetFxConverterAdapter(
         private val CRYPTO = setOf("BTC", "ETH")
     }
 
+    // Account.reconstruct는 DB 값을 재정규화 없이 되살리므로 Currencies.normalize를 우회한 코드가
+    // 그대로 도달한다. 정규화 없이 넘기면 " usdt "가 1:1로 떨어져 100 USDT가 100원이 된다
     override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
-        currencyConverter.toKrw(amount, currency)
+        currencyConverter.toKrw(amount, canonical(currency))
 
     override fun toKrwOn(amount: BigDecimal, currency: String, date: LocalDate): KrwConversion {
         val code = canonical(currency)
