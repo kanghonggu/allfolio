@@ -156,17 +156,20 @@ class AiConsultantServiceTest {
 
     @Test
     fun `submitChat - 즉시 jobId 반환, 상태는 pending`() {
-        `when`(configRepo.findById(userId)).thenReturn(Optional.empty())
-
+        // configRepo 스텁을 두지 않는다. submitChat/getChatResult는 configRepo를 건드리지 않고,
+        // findById를 호출하는 chat()은 오직 비동기 워커에서만 실행된다. 따라서 스텁을 두면
+        // "사용됨" 여부가 워커 스레드와 Mockito의 테스트별 finishMocking 사이의 경합으로 결정되어
+        // 워커가 지는 순간 UnnecessaryStubbingException으로 터진다.
+        // 스텁이 없어도 Mockito 기본 응답이 Optional.empty()라 동작은 완전히 동일하다.
         val svc = svc()
         val jobId = svc.submitChat(userId, listOf(ChatMessage("user", "안녕")))
 
         assertNotNull(jobId)
         assertTrue(jobId.isNotBlank())
 
-        // job은 바로 존재 (pending or done or error)
+        // 워커가 이미 끝났을 수도 있어 pending을 단정할 수 없다. job이 즉시 조회된다는 점만 검증한다.
         val job = svc.getChatResult(userId, jobId)
-        assertNotNull(job.status)
+        assertTrue(job.status in setOf("pending", "done", "error"))
     }
 
     @Test
