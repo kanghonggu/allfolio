@@ -4,6 +4,7 @@ import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.CashFlowRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
+import com.allfolio.unifiedasset.application.port.KrwConversion
 import com.allfolio.unifiedasset.application.port.ReconMutex
 import com.allfolio.unifiedasset.application.port.SyncAdapter
 import com.allfolio.unifiedasset.application.port.SyncLogRepository
@@ -147,6 +148,71 @@ class SyncAccountUseCaseBackdatedInflowTest {
         assertThat(cashFlows.saved.single().amountKrw).isEqualByComparingTo("7000000")
     }
 
+    @Test
+    fun `USD 계좌는 오늘이 아니라 체결일 환율로 환산한다`() {
+        val usdAccount = Account.create(
+            userId = userId, provider = AccountProvider.STOCK,
+            accountType = AccountType.STOCK, accountName = "달러계좌", currency = "USD",
+        )
+        val tradedOn = LocalDate.of(2025, 8, 11)
+        val cashFlows = RecordingCashFlowRepository()
+        // 체결일 1100, 오늘 1300 — 오늘 환율을 쓰면 130만이 나온다
+        val datedFx = DatedFxConverter(on = tradedOn, rate = BigDecimal("1100"), now = BigDecimal("1300"))
+
+        SyncAccountUseCase(
+            accountRepository = FixedAccountRepository(usdAccount),
+            assetRepository = StatefulAssetRepository(),
+            adapters = listOf(object : SyncAdapter {
+                override val supportedProvider = usdAccount.provider
+                override fun sync(account: Account): List<Asset> = listOf(asset("1000"))
+            }),
+            snapshotService = mock(PerformanceSnapshotService::class.java),
+            fx = datedFx,
+            syncLogRepository = NoopSyncLogRepository(),
+            reconMutex = AlwaysAcquiredReconMutex(),
+            cashFlowRepository = cashFlows,
+            stockTradeRepository = FakeStockTradeRepository(
+                listOf(usdTrade(usdAccount, quantity = 10, price = 100, on = tradedOn)),
+            ),
+        ).execute(usdAccount.id)
+
+        val flow = cashFlows.saved.single()
+        assertThat(flow.amountKrw).isEqualByComparingTo("1100000")
+        assertThat(flow.memo).doesNotContain("환율 추정치")
+    }
+
+    @Test
+    fun `체결일 환율을 못 찾으면 메모에 추정치임을 남긴다`() {
+        val usdAccount = Account.create(
+            userId = userId, provider = AccountProvider.STOCK,
+            accountType = AccountType.STOCK, accountName = "달러계좌", currency = "USD",
+        )
+        val tradedOn = LocalDate.of(2019, 3, 4)   // 백필 범위 밖
+        val cashFlows = RecordingCashFlowRepository()
+        val datedFx = DatedFxConverter(on = null, rate = BigDecimal.ZERO, now = BigDecimal("1300"))
+
+        SyncAccountUseCase(
+            accountRepository = FixedAccountRepository(usdAccount),
+            assetRepository = StatefulAssetRepository(),
+            adapters = listOf(object : SyncAdapter {
+                override val supportedProvider = usdAccount.provider
+                override fun sync(account: Account): List<Asset> = listOf(asset("1000"))
+            }),
+            snapshotService = mock(PerformanceSnapshotService::class.java),
+            fx = datedFx,
+            syncLogRepository = NoopSyncLogRepository(),
+            reconMutex = AlwaysAcquiredReconMutex(),
+            cashFlowRepository = cashFlows,
+            stockTradeRepository = FakeStockTradeRepository(
+                listOf(usdTrade(usdAccount, quantity = 10, price = 100, on = tradedOn)),
+            ),
+        ).execute(usdAccount.id)
+
+        val flow = cashFlows.saved.single()
+        assertThat(flow.amountKrw).isEqualByComparingTo("1300000")
+        assertThat(flow.memo).contains("환율 추정치")
+    }
+
     // ── helpers ──────────────────────────────────────────────────
 
     private fun useCase(
@@ -196,6 +262,15 @@ class SyncAccountUseCaseBackdatedInflowTest {
         fee = fee, tax = tax, tradedAt = on, memo = null,
     )
 
+    private fun usdTrade(account: Account, quantity: Int, price: Int, on: LocalDate) =
+        StockTrade.create(
+            accountId = account.id, userId = userId, tradeType = StockTradeType.BUY,
+            stockName = "AAPL", symbol = "AAPL",
+            quantity = BigDecimal(quantity), price = BigDecimal(price),
+            totalAmount = BigDecimal(quantity) * BigDecimal(price),
+            fee = BigDecimal.ZERO, tax = BigDecimal.ZERO, tradedAt = on, memo = null,
+        )
+
     private fun asset(value: String): Asset = Asset.create(
         userId = userId, accountId = account.id,
         category = AssetCategory.FINANCIAL, type = AssetType.STOCK, sourceType = AssetSourceType.STOCK_API,
@@ -205,6 +280,22 @@ class SyncAccountUseCaseBackdatedInflowTest {
     )
 
     // ── fakes ────────────────────────────────────────────────────
+
+    /** on 날짜만 과거 환율을 가진 fake. on이 null이면 언제나 미보유(=추정치 폴백). */
+    private class DatedFxConverter(
+        private val on: LocalDate?,
+        private val rate: BigDecimal,
+        private val now: BigDecimal,
+    ) : FxConverter {
+        override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
+            if (currency.uppercase() == "KRW") amount else amount.multiply(now)
+
+        override fun toKrwOn(amount: BigDecimal, currency: String, date: LocalDate) = when {
+            currency.uppercase() == "KRW" -> KrwConversion(amount, null, false)
+            date == on -> KrwConversion(amount.multiply(rate), date, false)
+            else -> KrwConversion(amount.multiply(now), null, true)
+        }
+    }
 
     private class RecordingCashFlowRepository(vararg existing: CashFlow) : CashFlowRepository {
         private val preExisting = existing.toList()

@@ -178,7 +178,13 @@ class SyncAccountUseCase(
             }
             if (amount <= BigDecimal.ZERO) return@mapNotNull null
 
-            val amountKrw = fx.toKrw(amount, account.currency)
+            // 오늘이 아니라 체결일 환율 — 오늘 환율로 환산하면 과거 USD 거래의 원금이 틀어진다
+            val conversion = fx.toKrwOn(amount, account.currency, trade.tradedAt)
+            val memo = buildString {
+                append("거래 로그 기준 자동 기록(${trade.stockName})")
+                // 시스템이 만드는 메모이므로 부정확함을 여기 남긴다
+                if (conversion.estimated) append(" · 환율 추정치")
+            }
             CashFlow.create(
                 userId = account.userId,
                 accountId = account.id,
@@ -186,8 +192,8 @@ class SyncAccountUseCase(
                 type = type,
                 amount = amount,
                 currency = account.currency,
-                amountKrw = amountKrw,
-                memo = "거래 로그 기준 자동 기록(${trade.stockName})",
+                amountKrw = conversion.amountKrw,
+                memo = memo,
             )
         }
 
