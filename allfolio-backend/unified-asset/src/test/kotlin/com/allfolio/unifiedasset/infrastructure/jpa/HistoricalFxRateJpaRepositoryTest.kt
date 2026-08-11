@@ -117,6 +117,30 @@ class HistoricalFxRateJpaRepositoryTest {
             .containsExactlyInAnyOrder(LocalDate.of(2025, 8, 7), LocalDate.of(2025, 8, 8))
     }
 
+    @Test
+    fun `조회해 온 행을 고쳐 다시 저장하면 행이 늘지 않고 값만 바뀐다`() {
+        // 백필의 멱등성 전체가 이 한 가지 JPA 동작에 기대고 있다 —
+        // id가 할당식이라 saveAll이 persist가 아니라 merge를 타고, 그래서 같은 id면 UPDATE가 된다.
+        // 백필 서비스에는 트랜잭션이 없어 조회와 저장이 각각 별도 트랜잭션이다. 즉 저장 시점의
+        // 엔티티는 분리 상태이고, 더티 체킹이 대신 저장해 주지 않는다 — 여기서도 그대로 재현한다.
+        save(LocalDate.of(2025, 8, 11), "1390.200000")
+
+        val detached = repository.findAllByCurrencyAndBaseDateBetween(
+            "USD", LocalDate.of(2025, 8, 11), LocalDate.of(2025, 8, 11),
+        ).single()
+        entityManager.clear()
+        detached.rateKrw = BigDecimal("1391.500000")
+        detached.source = "ECOS"
+
+        repository.saveAll(listOf(detached))
+        entityManager.flush()
+        entityManager.clear()
+
+        // 행이 늘었다면 uk_fx_rate_daily가 먼저 터졌겠지만, count로 못 박아 둔다
+        assertThat(repository.count()).isEqualTo(1)
+        assertThat(repository.findAll().single().rateKrw).isEqualByComparingTo("1391.500000")
+    }
+
     /**
      * flush + clear로 영속성 컨텍스트를 비운다.
      * 이게 없으면 조회가 1차 캐시에서 방금 만든 인스턴스를 그대로 돌려주고,
