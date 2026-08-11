@@ -35,10 +35,12 @@ class RecordInternalFlowUseCase(
         val (out, inn) = CashFlow.transferPair(
             userId, fromAccountId, toAccountId, flowDate, amount, cur, conversion.amountKrw, memo,
         )
+        val savedOut = repository.save(out)
+        val savedInn = repository.save(inn)
         // 한 번의 환산이 두 레그에 쓰이므로 레그마다 찍어야 정정 대상을 행 단위로 셀 수 있다
-        warnIfEstimated(out, conversion, cur, flowDate)
-        warnIfEstimated(inn, conversion, cur, flowDate)
-        return listOf(repository.save(out), repository.save(inn))
+        warnIfEstimated(savedOut, conversion)
+        warnIfEstimated(savedInn, conversion)
+        return listOf(savedOut, savedInn)
     }
 
     @Transactional
@@ -63,22 +65,24 @@ class RecordInternalFlowUseCase(
             toAmount, toCur, toConversion.amountKrw, memo,
             toAccountId = toAccountId,
         )
-        warnIfEstimated(out, fromConversion, fromCur, flowDate)
-        warnIfEstimated(inn, toConversion, toCur, flowDate)
-        return listOf(repository.save(out), repository.save(inn))
+        val savedOut = repository.save(out)
+        val savedInn = repository.save(inn)
+        warnIfEstimated(savedOut, fromConversion)
+        warnIfEstimated(savedInn, toConversion)
+        return listOf(savedOut, savedInn)
     }
 
     /**
      * 사용자가 쓴 메모는 서버가 고쳐 쓰지 않는다 — 추정 환산은 로그로만 남긴다.
-     * 나중에 정정 대상을 세려면 행 식별자가 있어야 하므로 레그를 만든 뒤에 찍는다.
+     * 나중에 정정 대상을 세려면 행 식별자가 있어야 하므로 저장된 레그로 찍는다
+     * (저장 전에 찍으면 롤백된 행까지 집계에 잡힌다).
+     * 통화·날짜도 flow에서 읽는다 — 레그와 다른 값을 넘길 여지를 두지 않는다.
      */
-    private fun warnIfEstimated(
-        flow: CashFlow, conversion: KrwConversion, currency: String, date: LocalDate,
-    ) {
+    private fun warnIfEstimated(flow: CashFlow, conversion: KrwConversion) {
         if (!conversion.estimated) return
         log.warn(
             "[Fx] 과거 환율 없음 — 현재 환율로 환산 flowId={} userId={} accountId={} currency={} date={}",
-            flow.id, flow.userId, flow.accountId, currency, date,
+            flow.id, flow.userId, flow.accountId, flow.currency, flow.flowDate,
         )
     }
 
