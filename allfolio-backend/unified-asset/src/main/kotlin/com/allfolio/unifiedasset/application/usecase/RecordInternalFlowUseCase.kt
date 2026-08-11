@@ -3,7 +3,9 @@ package com.allfolio.unifiedasset.application.usecase
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.CashFlowRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
+import com.allfolio.unifiedasset.application.port.KrwConversion
 import com.allfolio.unifiedasset.domain.cashflow.CashFlow
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
@@ -16,6 +18,8 @@ class RecordInternalFlowUseCase(
     private val fx: FxConverter,
     private val accountRepository: AccountRepository,
 ) {
+    private val log = LoggerFactory.getLogger(javaClass)
+
     @Transactional
     fun recordTransfer(
         userId: UUID, fromAccountId: UUID, toAccountId: UUID, flowDate: LocalDate,
@@ -26,8 +30,14 @@ class RecordInternalFlowUseCase(
         requireOwned(userId, fromAccountId)
         requireOwned(userId, toAccountId)
         val cur = com.allfolio.unifiedasset.domain.common.Currencies.normalize(currency)
-        val krw = fx.toKrw(amount, cur)
-        val (out, inn) = CashFlow.transferPair(userId, fromAccountId, toAccountId, flowDate, amount, cur, krw, memo)
+        // 과거 날짜 이체를 허용하므로(requireNotFuture) 환산도 그 날짜 기준이어야 한다
+        val conversion = fx.toKrwOn(amount, cur, flowDate)
+        val (out, inn) = CashFlow.transferPair(
+            userId, fromAccountId, toAccountId, flowDate, amount, cur, conversion.amountKrw, memo,
+        )
+        // 한 번의 환산이 두 레그에 쓰이므로 레그마다 찍어야 정정 대상을 행 단위로 셀 수 있다
+        warnIfEstimated(out, conversion, cur, flowDate)
+        warnIfEstimated(inn, conversion, cur, flowDate)
         return listOf(repository.save(out), repository.save(inn))
     }
 
@@ -44,13 +54,32 @@ class RecordInternalFlowUseCase(
         toAccountId?.let { requireOwned(userId, it) }
         val fromCur = com.allfolio.unifiedasset.domain.common.Currencies.normalize(fromCurrency)
         val toCur = com.allfolio.unifiedasset.domain.common.Currencies.normalize(toCurrency)
+        // 레그별 통화가 다르므로 환산도 레그별로 — 발생일 환율 기준
+        val fromConversion = fx.toKrwOn(fromAmount, fromCur, flowDate)
+        val toConversion = fx.toKrwOn(toAmount, toCur, flowDate)
         val (out, inn) = CashFlow.fxPair(
             userId, accountId, flowDate,
-            fromAmount, fromCur, fx.toKrw(fromAmount, fromCur),
-            toAmount, toCur, fx.toKrw(toAmount, toCur), memo,
+            fromAmount, fromCur, fromConversion.amountKrw,
+            toAmount, toCur, toConversion.amountKrw, memo,
             toAccountId = toAccountId,
         )
+        warnIfEstimated(out, fromConversion, fromCur, flowDate)
+        warnIfEstimated(inn, toConversion, toCur, flowDate)
         return listOf(repository.save(out), repository.save(inn))
+    }
+
+    /**
+     * 사용자가 쓴 메모는 서버가 고쳐 쓰지 않는다 — 추정 환산은 로그로만 남긴다.
+     * 나중에 정정 대상을 세려면 행 식별자가 있어야 하므로 레그를 만든 뒤에 찍는다.
+     */
+    private fun warnIfEstimated(
+        flow: CashFlow, conversion: KrwConversion, currency: String, date: LocalDate,
+    ) {
+        if (!conversion.estimated) return
+        log.warn(
+            "[Fx] 과거 환율 없음 — 현재 환율로 환산 flowId={} userId={} accountId={} currency={} date={}",
+            flow.id, flow.userId, flow.accountId, currency, date,
+        )
     }
 
     private fun requireNotFuture(flowDate: LocalDate) =

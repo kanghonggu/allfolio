@@ -2,6 +2,7 @@ package com.allfolio.unifiedasset.application.usecase
 
 import com.allfolio.unifiedasset.application.port.CashFlowRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
+import com.allfolio.unifiedasset.application.port.KrwConversion
 import com.allfolio.unifiedasset.domain.cashflow.CashFlow
 import com.allfolio.unifiedasset.domain.cashflow.FlowType
 import org.assertj.core.api.Assertions.assertThat
@@ -111,5 +112,61 @@ class RecordInternalFlowUseCaseTest {
             .isInstanceOf(IllegalArgumentException::class.java)
         assertThatThrownBy { uc.recordFx(user, a1, date, BigDecimal("1"), "KRW", BigDecimal("1"), "KRW", null) }
             .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `과거 날짜 환전은 그날 환율로 양쪽 레그를 환산한다`() {
+        val datedFx = object : FxConverter {
+            override fun toKrw(amount: BigDecimal, currency: String) =
+                if (currency.uppercase() == "KRW") amount else amount * BigDecimal("1300")
+
+            override fun toKrwOn(amount: BigDecimal, currency: String, on: LocalDate) =
+                if (currency.uppercase() == "KRW") KrwConversion(amount, null, false)
+                else KrwConversion(amount * BigDecimal("1100"), on, false)
+        }
+
+        val legs = RecordInternalFlowUseCase(repo, datedFx, accountRepo)
+            .recordFx(user, a1, date, BigDecimal("1100000"), "KRW", BigDecimal("1000"), "USD", "달러 환전")
+
+        // 오늘 환율 1300이 아니라 발생일 환율 1100
+        assertThat(legs.single { it.currency == "USD" }.amountKrw).isEqualByComparingTo("1100000")
+    }
+
+    @Test
+    fun `과거 날짜 이체도 그날 환율로 환산한다`() {
+        val datedFx = object : FxConverter {
+            override fun toKrw(amount: BigDecimal, currency: String) =
+                if (currency.uppercase() == "KRW") amount else amount * BigDecimal("1300")
+
+            override fun toKrwOn(amount: BigDecimal, currency: String, on: LocalDate) =
+                if (currency.uppercase() == "KRW") KrwConversion(amount, null, false)
+                else KrwConversion(amount * BigDecimal("1100"), on, false)
+        }
+
+        val legs = RecordInternalFlowUseCase(repo, datedFx, accountRepo)
+            .recordTransfer(user, a1, a2, date, BigDecimal("1000"), "USD", "달러 이체")
+
+        // 두 레그 모두 발생일 환율로 환산된다
+        assertThat(legs).hasSize(2)
+        assertThat(legs.map { it.amountKrw }).allMatch { it.compareTo(BigDecimal("1100000")) == 0 }
+    }
+
+    @Test
+    fun `과거 환율을 못 찾으면 현재 환율로 근사하고 메모는 그대로 둔다`() {
+        val estimatingFx = object : FxConverter {
+            override fun toKrw(amount: BigDecimal, currency: String) =
+                if (currency.uppercase() == "KRW") amount else amount * BigDecimal("1300")
+
+            override fun toKrwOn(amount: BigDecimal, currency: String, on: LocalDate) =
+                if (currency.uppercase() == "KRW") KrwConversion(amount, null, false)
+                else KrwConversion(amount * BigDecimal("1300"), null, estimated = true)
+        }
+
+        val legs = RecordInternalFlowUseCase(repo, estimatingFx, accountRepo)
+            .recordTransfer(user, a1, a2, date, BigDecimal("1000"), "USD", "달러 이체")
+
+        assertThat(legs.map { it.amountKrw }).allMatch { it.compareTo(BigDecimal("1300000")) == 0 }
+        // 사용자가 쓴 메모는 그대로다
+        assertThat(legs.map { it.memo }).allMatch { it == "달러 이체" }
     }
 }
