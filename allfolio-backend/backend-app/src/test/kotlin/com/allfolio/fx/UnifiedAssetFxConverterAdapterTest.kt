@@ -8,6 +8,7 @@ import org.mockito.Mockito.mock
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.util.UUID
 
 /**
@@ -84,7 +85,22 @@ class UnifiedAssetFxConverterAdapterTest {
         assertThat(repo.callCount).isEqualTo(1)
     }
 
+    @Test
+    fun `오늘 환율은 아직 확정 전이므로 캐싱하지 않는다`() {
+        val today = LocalDate.now(KST)
+        // 오늘 행이 있어 조회가 hit하는 상황에서도 캐시에 박히면 안 된다 —
+        // 장중 값은 확정 전이라, 한 번 캐시되면 하루 종일 그 값이 나온다
+        val repo = FakeRepo(row(today, "1390.200000"))
+        val adapter = adapter(repo)
+
+        repeat(5) { adapter.toKrwOn(BigDecimal("100"), "USD", today) }
+
+        assertThat(repo.callCount).isEqualTo(5)
+    }
+
     // ── helpers ──────────────────────────────────────────────────
+
+    private val KST = ZoneId.of("Asia/Seoul")
 
     private fun adapter(repo: HistoricalFxRateJpaRepository) =
         UnifiedAssetFxConverterAdapter(CurrencyConverter(StubFxRateService()), repo)
