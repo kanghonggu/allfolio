@@ -2,12 +2,14 @@ package com.allfolio.unifiedasset.infrastructure.jpa
 
 import com.allfolio.unifiedasset.infrastructure.entity.HistoricalFxRateEntity
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration
 import org.springframework.boot.autoconfigure.domain.EntityScan
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
 import org.springframework.context.annotation.Configuration
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories
 import org.springframework.test.context.ContextConfiguration
 import java.math.BigDecimal
@@ -72,6 +74,25 @@ class HistoricalFxRateJpaRepositoryTest {
         )
 
         assertThat(found).isNull()
+    }
+
+    @Test
+    fun `같은 날짜 같은 통화는 두 번 들어갈 수 없다`() {
+        save(LocalDate.of(2025, 8, 11), "1390.200000")
+
+        // 자연키가 겹치는 다른 id의 행 — flush 시점에 DB 제약이 막아야 한다
+        assertThatThrownBy {
+            repository.saveAndFlush(
+                HistoricalFxRateEntity(
+                    id = UUID.randomUUID(),
+                    baseDate = LocalDate.of(2025, 8, 11),
+                    currency = "USD",
+                    rateKrw = BigDecimal("1391.000000"),
+                    source = "ECOS",
+                    createdAt = LocalDateTime.now(),
+                ),
+            )
+        }.isInstanceOf(DataIntegrityViolationException::class.java)
     }
 
     @Test

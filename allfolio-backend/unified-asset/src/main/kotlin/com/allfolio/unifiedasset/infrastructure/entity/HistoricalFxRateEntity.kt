@@ -4,6 +4,7 @@ import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.Id
 import jakarta.persistence.Table
+import jakarta.persistence.UniqueConstraint
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -22,7 +23,12 @@ import java.util.UUID
  * 덮어쓰기 때문. 자연키가 UNIQUE로 걸려 있어 중복은 생기지 않는다.
  */
 @Entity
-@Table(name = "fx_rate_daily")
+@Table(
+    name = "fx_rate_daily",
+    uniqueConstraints = [
+        UniqueConstraint(name = "uk_fx_rate_daily", columnNames = ["base_date", "currency"]),
+    ],
+)
 class HistoricalFxRateEntity(
     @Id val id: UUID,
     @Column(name = "base_date", nullable = false) val baseDate: LocalDate,
