@@ -1,5 +1,6 @@
 package com.allfolio.fx
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -7,7 +8,7 @@ import java.time.LocalDate
 
 class EcosResponseParserTest {
 
-    private val parser = EcosResponseParser()
+    private val parser = EcosResponseParser(ObjectMapper())
 
     @Test
     fun `정상 응답에서 날짜와 값을 뽑는다`() {
@@ -65,6 +66,16 @@ class EcosResponseParserTest {
         assertThatThrownBy { parser.parse(json) }
             .isInstanceOf(EcosApiException::class.java)
             .hasMessageContaining("INFO-200")
+            .satisfies({ ex -> assertThat((ex as EcosApiException).code).isEqualTo("INFO-200") })
+    }
+
+    @Test
+    fun `RESULT에 CODE가 없으면 빈 code로 예외를 올린다`() {
+        val json = """{"RESULT":{"MESSAGE":"코드 없는 오류"}}"""
+
+        assertThatThrownBy { parser.parse(json) }
+            .isInstanceOf(EcosApiException::class.java)
+            .satisfies({ ex -> assertThat((ex as EcosApiException).code).isEmpty() })
     }
 
     @Test
@@ -78,5 +89,39 @@ class EcosResponseParserTest {
         val result = parser.parse("""{"StatisticSearch":{"list_total_count":0,"row":[]}}""")
 
         assertThat(result.rates).isEmpty()
+    }
+
+    @Test
+    fun `TIME이나 DATA_VALUE 키가 아예 없는 행도 빈 문자열과 동일하게 건너뛴다`() {
+        val json = """
+            {"StatisticSearch":{"list_total_count":2,"row":[
+              {"DATA_VALUE":"1385.5"},
+              {"TIME":"20250811"}
+            ]}}
+        """.trimIndent()
+
+        val result = parser.parse(json)
+
+        assertThat(result.rates).isEmpty()
+        assertThat(result.skipped).isEqualTo(2)
+    }
+
+    @Test
+    fun `같은 TIME이 중복돼도 파서는 걸러내지 않고 그대로 통과시킨다`() {
+        val json = """
+            {"StatisticSearch":{"list_total_count":2,"row":[
+              {"TIME":"20250811","DATA_VALUE":"1385.5"},
+              {"TIME":"20250811","DATA_VALUE":"1390.2"}
+            ]}}
+        """.trimIndent()
+
+        val result = parser.parse(json)
+
+        assertThat(result.rates).hasSize(2)
+        assertThat(result.rates.map { it.baseDate }).containsExactly(
+            LocalDate.of(2025, 8, 11),
+            LocalDate.of(2025, 8, 11),
+        )
+        assertThat(result.skipped).isZero()
     }
 }

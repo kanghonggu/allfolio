@@ -13,8 +13,8 @@ data class EcosRate(val baseDate: LocalDate, val rateKrw: BigDecimal)
 /** @param skipped 값·날짜가 이상해 버린 행 수. 조용히 삼키지 않고 호출자에게 보고한다. */
 data class EcosParseResult(val rates: List<EcosRate>, val skipped: Int)
 
-class EcosApiException(code: String, message: String) :
-    RuntimeException("ECOS 오류 [$code] $message")
+class EcosApiException(val code: String, val detail: String) :
+    RuntimeException("ECOS 오류 [$code] $detail")
 
 /**
  * ECOS StatisticSearch 응답 파서.
@@ -26,7 +26,7 @@ class EcosApiException(code: String, message: String) :
  */
 @Component
 class EcosResponseParser(
-    private val mapper: ObjectMapper = ObjectMapper(),
+    private val mapper: ObjectMapper,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -57,7 +57,7 @@ class EcosResponseParser(
 
             if (date == null || rate == null || rate <= BigDecimal.ZERO) {
                 skipped++
-                log.debug("[ECOS] 행 건너뜀 TIME={} DATA_VALUE={}", time, value)
+                log.warn("[ECOS] 행 건너뜀 TIME={} DATA_VALUE={}", time, value)
                 null
             } else {
                 EcosRate(date, rate)
