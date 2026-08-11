@@ -44,14 +44,20 @@ AF-93(소급 현금흐름 생성)이 체결일·체결금액까지는 바로잡�
 
 ## 1. 데이터 모델
 
+> **구현 시 바뀐 부분** — 아래는 실제 배포된 스키마다. 초안은 복합 PK와 `TIMESTAMPTZ`를 썼는데,
+> 이 코드베이스의 모든 테이블이 대리키 `id UUID` PK + `TIMESTAMP` 관례라 거기에 맞췄다.
+> 정본은 `docs/superpowers/migrations/2026-08-11-fx-rate-daily.sql`이다.
+
 ```sql
 CREATE TABLE IF NOT EXISTS fx_rate_daily (
+    id         UUID           NOT NULL,
     base_date  DATE           NOT NULL,
     currency   VARCHAR(10)    NOT NULL,
     rate_krw   NUMERIC(18, 6) NOT NULL,   -- 통화 1단위당 KRW
     source     VARCHAR(20)    NOT NULL DEFAULT 'ECOS',
-    created_at TIMESTAMPTZ    NOT NULL DEFAULT now(),
-    PRIMARY KEY (base_date, currency)
+    created_at TIMESTAMP      NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_fx_rate_daily PRIMARY KEY (id),
+    CONSTRAINT uk_fx_rate_daily UNIQUE (base_date, currency)
 );
 CREATE INDEX IF NOT EXISTS idx_fx_rate_daily_lookup ON fx_rate_daily (currency, base_date DESC);
 ```
@@ -75,21 +81,38 @@ CREATE INDEX IF NOT EXISTS idx_fx_rate_daily_lookup ON fx_rate_daily (currency, 
 `market-data`에 두면 AF-103(Render Cron)이 사실상 선행이 된다. AF-100의 노션 의존성은 "없음"이다.
 일일 갱신을 붙일 때 AF-103에서 옮긴다.
 
-저장은 `ON CONFLICT (base_date, currency) DO UPDATE`. 재실행이 안전해야 긴 기간을 나눠 돌릴 수 있다.
+저장은 재실행이 안전해야 긴 기간을 나눠 돌릴 수 있다.
+
+> **구현 시 바뀐 부분** — 초안은 네이티브 `ON CONFLICT (base_date, currency) DO UPDATE`를 썼는데,
+> H2(테스트)와 Postgres(운영)의 `DO UPDATE` 지원이 갈려서 **기존 행을 한 번에 읽어 값만 덮는**
+> 방식으로 바꿨다. 어드민이 수동으로 돌리는 경로라 동시성 경합을 걱정할 필요가 없고,
+> 자연키 UNIQUE 제약이 최후 방어선이다. 동시에 두 번 돌리면 지는 쪽이 409를 받는다.
 
 안전장치 (AF-99 스크래퍼 원칙을 그대로 적용):
 - 응답 0건 → 아무것도 쓰지 않고 실패로 기록. 빈 결과로 기존 값을 덮지 않는다
 - `rate_krw <= 0` 또는 파싱 실패 행 → 스킵하고 카운트
 - 응답으로 `{요청범위, 저장, 스킵, 최초일, 최종일}` 요약 반환 — 무엇이 들어갔는지 눈으로 확인 가능해야 한다
 
-설정:
+설정 (**실제 배포된 형태** — 정본은 `application.yml`):
 ```yaml
 ecos:
   api-key: ${ECOS_API_KEY:}
-  fx:
-    stat-code: ${ECOS_FX_STAT_CODE:}   # 착수 시 ECOS 사이트에서 확인
-    item-code: ${ECOS_FX_ITEM_CODE:}   # 원/미국달러
+  base-url: ${ECOS_BASE_URL:https://ecos.bok.or.kr}
+  series:
+    USD:
+      stat-code: ${ECOS_USD_STAT_CODE:}   # 착수 시 ECOS 사이트에서 확인
+      item-code: ${ECOS_USD_ITEM_CODE:}   # 원/미국달러
+      unit-divisor: 1
 ```
+
+초안은 `ecos.fx.stat-code`(→ `ECOS_FX_STAT_CODE`)였으나 통화별 시계열 맵으로 바뀌었다.
+**환경변수 이름이 `ECOS_USD_STAT_CODE`·`ECOS_USD_ITEM_CODE`다** — 초안 이름으로 등록하면
+아무 효과가 없고 백필이 `NO_SERIES`로 실패한다.
+
+통화를 추가하려면 YAML 수정이 필요하다. 대문자 맵 키는 환경변수 relaxed binding으로 표현할 수
+없기 때문이다(`ECOS_SERIES_JPY_STAT_CODE`는 `ecos.series.jpy.*`로 바인딩된다). 백필 서비스는
+대소문자 무관으로 조회하므로 소문자 키도 동작한다. 다만 어댑터의 `HISTORICAL` 집합은 별도로
+하드코딩돼 있어, 통화를 늘리려면 양쪽을 함께 고쳐야 한다.
 
 통계표·항목 코드는 설정값으로 빼고 **착수 시 사이트에서 직접 확인해 채운다.** 설계 문서에서
 추정하지 않는다 — 틀린 코드는 조용히 0건을 반환하고, 위 안전장치에 걸려 실패로만 보인다.
@@ -169,15 +192,57 @@ TDD. 아래에서 위로.
 마이그레이션: `docs/superpowers/migrations/2026-08-11-fx-rate-daily.sql` + `init.sql` 하단 추가.
 `ddl-auto=none`이므로 **Neon 수동 실행이 필요하다(사용자 몫).**
 
-환경변수: `ECOS_API_KEY`, `ECOS_FX_STAT_CODE`, `ECOS_FX_ITEM_CODE` — Render에 사용자가 등록.
+환경변수: `ECOS_API_KEY`, `ECOS_USD_STAT_CODE`, `ECOS_USD_ITEM_CODE` — Render에 사용자가 등록.
 
 **키가 없어도 배포가 안전하다.** 테이블이 비어 있으면 조회가 전부 miss → 현재 환율 폴백 →
 현행과 동일하게 동작한다. 키·백필 없이 먼저 머지해도 회귀가 없고, 키가 생긴 뒤 백필을 돌리면
 그때부터 값이 정확해진다. 배포와 데이터 확보를 분리할 수 있다는 뜻이다.
 
+**단, 마이그레이션은 배포보다 먼저다.** `ddl-auto=none`이라 테이블이 없어도 앱은 정상 기동한다 —
+그리고 계좌 동기화·이체·환전에서 500이 나기 시작한다. 조회 실패를 삼키고 폴백하도록 만들어 뒀지만,
+그 세 경로는 `@Transactional` 안이라 JPA가 트랜잭션을 rollback-only로 표시해 커밋에서 터진다.
+수동 입출금만 조용히 폴백한다. 기동이 멀쩡해서 더 헷갈리니 순서를 지킬 것.
+
+### 운영 절차
+
+**백필 시작일 정하기** — 가장 오래된 외화 거래·현금흐름 기준:
+```sql
+SELECT MIN(flow_date) FROM cash_flow WHERE currency IN ('USD','USDT');
+SELECT MIN(traded_at)  FROM ua_stock_trades;
+```
+
+**실행** (다년 구간은 **반드시 나눠서** — 행마다 merge SELECT가 나가 한 트랜잭션이 길어진다):
+```
+POST /api/admin/fx/backfill?currency=USD&from=2020-01-01&to=2020-12-31
+```
+
+**결과 확인** — 응답 요약의 `inserted`/`updated`/`unchanged`/`skipped`/`duplicates`/`outOfRange`를
+먼저 보고, DB에서 한 번 더 대조:
+```sql
+SELECT currency, COUNT(*), MIN(base_date), MAX(base_date) FROM fx_rate_daily GROUP BY currency;
+```
+
+**응답 코드 읽는 법**: 400=요청이 잘못됨(통화·기간) · 409=동시 실행, 재실행하면 됨 ·
+500=우리 설정 누락(`ECOS_API_KEY` 등) · 502=ECOS 쪽 문제. 본문의 `code`가 어느 경우인지 말해 준다.
+
+**수동으로 한 행을 고칠 때**는 `id`를 직접 넣어야 한다 — `fx_rate_daily.id`에 `DEFAULT gen_random_uuid()`가 없다.
+
+### 네 단계를 다 끝내도 기존 수익률은 그대로 틀리다
+
+분명히 해 둔다. 이 작업이 고치는 것은 **앞으로 기록되는** `cash_flow.amount_krw`다.
+이미 저장된 행을 다시 계산하는 경로는 어디에도 없다 — 대시보드·수익률 보고서·현금흐름 보고서는
+전부 저장된 `amountKrw`를 그대로 읽는다. 즉 AF-100을 촉발한 그 잘못된 TWR/MWR은
+**기존 데이터에 대해서는 여전히 틀린 채로 남는다.**
+
+소급 정정을 별도 판단으로 미룬 건 의도한 것이지만(아래 미결 참조), "배포하면 수익률이 고쳐진다"고
+읽히면 안 된다. 정정하려면 어느 행이 추정치였는지 골라내야 하고, 지금은 그 표식이 메모 문자열뿐이다.
+
 ## 미결
 
-- ECOS 통계표 코드·항목 코드 — 착수 시 사이트에서 확인 (추정 금지)
+- ECOS 통계표 코드·항목 코드 — 사이트에서 확인 (추정 금지). 찾을 대상은 **일별 원/미국달러
+  매매기준율** 시계열이고, 필요한 값은 그 통계표 코드와 그 안의 원/미국달러 항목 코드 둘이다.
+  틀린 코드는 예외가 아니라 0건을 반환하므로, 백필이 "0건 — 기존 값을 덮지 않고 중단"으로 실패하면
+  코드가 틀렸는지 그 구간이 비었는지부터 갈라야 한다
 - 백필 시작 시점을 언제로 잡을지 — 가장 오래된 거래 체결일 기준으로 정하면 충분
 - **추정치 출처를 데이터로 남길지** (Task 5 코드 리뷰에서 제기, 2026-08-11).
   지금은 `estimated`를 메모 접미사로만 남기므로, 나중에 정정 대상을 고르려면 `LIKE '%환율 추정치%'`밖에
