@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.web.reactive.function.client.WebClientRequestException
 import org.springframework.web.reactive.function.client.WebClientResponseException
 import java.time.Duration
 import java.time.LocalDate
@@ -82,6 +83,12 @@ class EcosStatisticSearchClient(
             val status = e.statusCode.value()
             log.warn("[ECOS] HTTP {} statCode={} preview={}", status, statCode, e.responseBodyAsString.take(BODY_PREVIEW_LENGTH))
             throw EcosApiException("HTTP-$status", "ECOS가 HTTP $status 를 반환했습니다")
+        } catch (e: WebClientRequestException) {
+            // 전송 계층 실패(connection refused·DNS·TLS·reset). 외부 정부 API라 4xx보다 오히려 흔하다.
+            // Reactor가 붙이는 *__checkpoint suppressed 예외에 요청 URI가 통째로 들어 있어 여기도 인증키가 샌다.
+            // 응답 경로와 같은 이유로 cause를 붙이지 않고, 원인은 클래스 이름만 남긴다.
+            log.warn("[ECOS] 연결 실패 statCode={} reason={}", statCode, e.cause?.javaClass?.simpleName)
+            throw EcosApiException("CONN", "ECOS 연결에 실패했습니다")
         }
 
         // 파서는 JSON 모양이 어긋난 경우만 EcosApiException으로 보고한다.

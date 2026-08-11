@@ -45,14 +45,14 @@ class EcosPropertiesBindingTest {
     fun `통계표 코드와 제수가 주입되면 그대로 바인딩된다`() {
         runner.withPropertyValues(
             "ecos.api-key=test-key",
-            "ecos.series.JPY.stat-code=731Y001",
-            "ecos.series.JPY.item-code=0000002",
+            "ecos.series.JPY.stat-code=TEST-STAT-CODE",
+            "ecos.series.JPY.item-code=TEST-ITEM-CODE",
             "ecos.series.JPY.unit-divisor=100",
         ).run { context ->
             val jpy = context.getBean(EcosProperties::class.java).series.getValue("JPY")
 
-            assertThat(jpy.statCode).isEqualTo("731Y001")
-            assertThat(jpy.itemCode).isEqualTo("0000002")
+            assertThat(jpy.statCode).isEqualTo("TEST-STAT-CODE")
+            assertThat(jpy.itemCode).isEqualTo("TEST-ITEM-CODE")
             assertThat(jpy.unitDivisor).isEqualByComparingTo("100")
         }
     }
