@@ -103,6 +103,21 @@ class SyncAccountUseCaseBackdatedInflowTest {
     }
 
     @Test
+    fun `배당만 있는 거래 로그도 초기 편입을 남긴다`() {
+        // 배당은 외부 투입이 아니라 걸러진다. 그렇다고 원금이 0인 건 아니다 —
+        // 여기서 아무것도 안 남기면 다음 sync는 hadAssets=true라 영영 기록되지 않고,
+        // 그 계좌는 NAV 전체가 수익으로 잡힌다.
+        val cashFlows = RecordingCashFlowRepository()
+        val trades = listOf(dividend("삼성전자", amount = 50_000, on = LocalDate.of(2026, 4, 1)))
+
+        useCase(cashFlows, trades, synced = listOf(asset("1800000"))).execute(account.id)
+
+        val flow = cashFlows.saved.single()
+        assertThat(flow.flowDate).isEqualTo(LocalDate.now(java.time.ZoneId.of("Asia/Seoul")))
+        assertThat(flow.amountKrw).isEqualByComparingTo("1800000")
+    }
+
+    @Test
     fun `이미 같은 계좌의 현금흐름이 있으면 중복 생성하지 않는다`() {
         val existing = CashFlow.create(
             userId = userId, accountId = account.id, flowDate = LocalDate.of(2026, 7, 14),

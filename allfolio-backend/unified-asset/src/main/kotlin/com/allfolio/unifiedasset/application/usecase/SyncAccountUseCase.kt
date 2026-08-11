@@ -124,7 +124,8 @@ class SyncAccountUseCase(
      * 날짜·현재 평가액으로 한 건만 남겨서, 1년 전 700만을 넣어 2,315만이 된 계좌가
      * "오늘 2,315만 입금"으로 기록됐다 — 과거 수익 1,615만이 영구히 사라지는 셈이었다.
      *
-     * 잔고 조회만 하는 계좌(API 연동)는 투입 시점을 알 방법이 없어 현행대로 연동 시점·평가액.
+     * 투입 시점을 알아낼 수 없는 계좌 — 잔고 조회만 하는 API 연동, 그리고 거래 로그가
+     * 있어도 소급 흐름이 한 건도 안 나오는 계좌(배당만 있는 경우) — 는 연동 시점·평가액.
      */
     private fun recordInitialInflow(account: Account, assets: List<Asset>) {
         if (hasInitialInflow(account)) return
@@ -135,11 +136,11 @@ class SyncAccountUseCase(
                 emptyList()
             }
 
-        val flows = if (trades.isNotEmpty()) {
-            backdatedFlows(account, trades)
-        } else {
-            listOfNotNull(valuationFlow(account, assets))
-        }
+        // 거래 로그가 있어도 소급 흐름이 안 나올 수 있다 — 배당만 있는 계좌가 그렇다.
+        // 그때 빈 손으로 끝내면 다음 sync는 hadAssets=true라 여기까지 오지도 못하고,
+        // 그 계좌는 외부 투입 0인 채로 남아 NAV 전체가 수익으로 잡힌다.
+        val flows = backdatedFlows(account, trades)
+            .ifEmpty { listOfNotNull(valuationFlow(account, assets)) }
         flows.forEach { cashFlowRepository.save(it) }
     }
 
