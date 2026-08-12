@@ -35,6 +35,10 @@ class SchedulerTriggerController(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
+    // 토큰은 Render 대시보드와 GitHub 시크릿 사이를 손으로 옮긴다. 한쪽에 개행이나 공백이
+    // 딸려 들어가면 401 + "토큰 불일치"가 나는데, 진짜 틀린 토큰과 구분이 안 되는 배포 함정이다.
+    private val expectedToken: ByteArray = configuredToken.trim().toByteArray(StandardCharsets.UTF_8)
+
     /**
      * POST /api/internal/scheduler/fx/hana-collect — 하나은행 고시환율 수집 트리거
      *
@@ -75,7 +79,7 @@ class SchedulerTriggerController(
         }
         // 상수 시간 비교. 길이는 새지만 내용은 새지 않는다.
         val presented = token?.toByteArray(StandardCharsets.UTF_8) ?: ByteArray(0)
-        if (!MessageDigest.isEqual(presented, configuredToken.toByteArray(StandardCharsets.UTF_8))) {
+        if (!MessageDigest.isEqual(presented, expectedToken)) {
             log.warn("[Scheduler] 트리거 토큰 불일치 — 거부")
             throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "인증에 실패했습니다.")
         }

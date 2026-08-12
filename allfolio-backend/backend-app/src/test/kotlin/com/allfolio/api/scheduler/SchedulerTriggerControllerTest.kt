@@ -1,7 +1,11 @@
 package com.allfolio.api.scheduler
 
 import com.allfolio.api.admin.FxRateAdminController
+import com.allfolio.config.GlobalExceptionHandler
+import com.allfolio.fx.FxRateBackfillService
+import com.allfolio.fx.FxRateService
 import com.allfolio.fx.hana.HanaCollectSummary
+import com.allfolio.fx.hana.HanaFxCollectService
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyBoolean
@@ -9,10 +13,8 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
-import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
-import org.springframework.web.server.ResponseStatusException
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
@@ -35,8 +37,12 @@ class SchedulerTriggerControllerTest {
         skipped = 0,
     )
 
+    // GlobalExceptionHandler를 붙이지 않으면 ResponseStatusException이 상태만 있고 본문이 빈
+    // 응답으로 풀려, 운영과 다른 경로를 테스트하게 된다. 워크플로가 --fail을 일부러 안 쓰는 이유가
+    // 이 본문을 잡 요약에 남기기 위해서라, 본문까지 운영과 같아야 의미가 있다.
     private fun mvc(token: String) = MockMvcBuilders
         .standaloneSetup(SchedulerTriggerController(admin, token))
+        .setControllerAdvice(GlobalExceptionHandler())
         .build()
 
     @Test
@@ -58,7 +64,10 @@ class SchedulerTriggerControllerTest {
     fun `토큰이 틀리면 401이고 수집을 부르지 않는다`() {
         mvc("secret").perform(
             post("/api/internal/scheduler/fx/hana-collect").header("X-Scheduler-Token", "wrong")
-        ).andExpect(status().isUnauthorized)
+        )
+            .andExpect(status().isUnauthorized)
+            // 상태만 보면 본문이 비어도 통과한다. Actions 잡 요약에 남는 건 본문이다.
+            .andExpect(jsonPath("$.error").exists())
 
         verify(admin, never()).collectHana(any(), anyBoolean())
     }
@@ -76,7 +85,11 @@ class SchedulerTriggerControllerTest {
     fun `설정 토큰이 비어 있으면 토큰을 제시해도 503으로 닫는다`() {
         mvc("").perform(
             post("/api/internal/scheduler/fx/hana-collect").header("X-Scheduler-Token", "anything")
-        ).andExpect(status().isServiceUnavailable)
+        )
+            .andExpect(status().isServiceUnavailable)
+            // 503은 "토큰이 틀렸다"가 아니라 "서버 설정이 빠졌다"다. 본문이 없으면
+            // Actions 로그를 읽는 사람이 시크릿을 고치러 가는 헛수고를 한다.
+            .andExpect(jsonPath("$.error").exists())
 
         verify(admin, never()).collectHana(any(), anyBoolean())
     }
@@ -116,15 +129,46 @@ class SchedulerTriggerControllerTest {
         verify(admin, never()).collectHana(any(), anyBoolean())
     }
 
-    // 위임이 실제로 어드민 컨트롤러의 상태 매핑을 물려받는지 확인한다.
-    // 이게 없으면 SchedulerTriggerController가 조용히 500을 뱉어도 테스트가 통과한다.
+    // 위임의 값어치는 FxRateAdminController의 예외→상태 매핑을 물려받는 데 있다.
+    // 목이 이미 만들어진 ResponseStatusException을 던지게 하면 그 매핑이 한 번도 실행되지 않아,
+    // catch (IllegalStateException) 블록을 통째로 지워도 테스트가 통과한다.
+    // 그래서 여기서는 진짜 FxRateAdminController를 세우고 수집 서비스가 던지게 한다.
     @Test
-    fun `수집이 안전장치에 걸리면 422가 그대로 전달된다`() {
-        `when`(admin.collectHana(null, false))
-            .thenThrow(ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "2% 초과 변동"))
+    fun `수집 서비스가 안전장치에 걸리면 422로 옮겨진다`() {
+        val collectService = mock(HanaFxCollectService::class.java)
+        // any(LocalDate::class.java)는 매처를 등록하고 null을 돌려주는데, HanaFxCollectService는
+        // Kotlin 파이널 클래스라 원본 바이트코드의 non-null 파라미터 검사가 남아 NPE가 난다.
+        // 엘비스로 아무 값이나 채우면 매처는 그대로 등록된 채 검사만 통과한다.
+        `when`(collectService.collect(any(LocalDate::class.java) ?: LocalDate.EPOCH, anyBoolean()))
+            .thenThrow(IllegalStateException("USD 환율이 2% 넘게 움직였습니다"))
 
-        mvc("secret").perform(
+        val realAdmin = FxRateAdminController(
+            mock(FxRateService::class.java),
+            mock(FxRateBackfillService::class.java),
+            collectService,
+        )
+
+        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, "secret"))
+            .setControllerAdvice(GlobalExceptionHandler())
+            .build()
+            .perform(
+                post("/api/internal/scheduler/fx/hana-collect").header("X-Scheduler-Token", "secret")
+            )
+            .andExpect(status().isUnprocessableEntity)
+            // 502(은행 탓)와 구분되는 신호라 사유 문구가 실려야 한다.
+            .andExpect(jsonPath("$.error").value("USD 환율이 2% 넘게 움직였습니다"))
+    }
+
+    // 설정값 양쪽 끝의 공백은 잘라낸다 — Render 대시보드에서 손으로 옮기다 개행이 붙으면
+    // 진짜 틀린 토큰과 똑같이 401이 나서 첫 배포에서 원인을 찾기 어렵다.
+    @Test
+    fun `설정 토큰에 개행이 붙어 있어도 인증을 통과한다`() {
+        `when`(admin.collectHana(null, false)).thenReturn(ResponseEntity.ok(summary))
+
+        mvc("secret\n").perform(
             post("/api/internal/scheduler/fx/hana-collect").header("X-Scheduler-Token", "secret")
-        ).andExpect(status().isUnprocessableEntity)
+        ).andExpect(status().isOk)
+
+        verify(admin).collectHana(null, false)
     }
 }
