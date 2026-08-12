@@ -20,8 +20,8 @@ class ExchangeFxSourceTest {
 
     private lateinit var server: HttpServer
     private val requestUri = AtomicReference<String>()
-    private var responseCode = 200
-    private var responseBody = ""
+    @Volatile private var responseCode = 200
+    @Volatile private var responseBody = ""
 
     @BeforeEach
     fun start() {
@@ -87,5 +87,21 @@ class ExchangeFxSourceTest {
     fun `소스 이름은 로그에서 구분되도록 고정한다`() {
         assertThat(upbit().sourceName).isEqualTo("UPBIT")
         assertThat(bithumb().sourceName).isEqualTo("BITHUMB")
+    }
+
+    @Test
+    fun `Upbit 본문이 비면 FxQuoteException - 파서까지 가지 않는다`() {
+        // responseBody 기본값이 빈 문자열이다. bodyToMono는 빈 Mono로 완료되므로
+        // block()이 null을 돌려주고 elvis 분기가 걸린다.
+        assertThatThrownBy { upbit().fetchUsdtKrw() }
+            .isInstanceOf(FxQuoteException::class.java)
+            .hasMessageContaining("본문이 비어")
+    }
+
+    @Test
+    fun `Bithumb 본문이 비면 FxQuoteException`() {
+        assertThatThrownBy { bithumb().fetchUsdtKrw() }
+            .isInstanceOf(FxQuoteException::class.java)
+            .hasMessageContaining("본문이 비어")
     }
 }
