@@ -69,6 +69,39 @@ class UpbitFxParserTest {
         assertThat(parser.parse(json)["USDT"]).isEqualByComparingTo("1408.55")
     }
 
+    /**
+     * BigDecimal(double) 생성자를 타지 않는다는 것을 못 박는다.
+     *
+     * 클래스 KDoc이 설명하듯 asText()가 double을 피해 주지는 않는다 — readTree가 이미
+     * DoubleNode를 만든다. 값이 정확한 건 Double.toString이 왕복 가능한 최단 표기를 내기 때문이다.
+     * 하지만 누군가 `BigDecimal(node.asDouble())`로 바꾸면 0.1이
+     * 0.1000000000000000055511151231257827로 펼쳐진다. 그 회귀를 여기서 잡는다.
+     */
+    @Test
+    fun `BigDecimal double 생성자를 타지 않는다`() {
+        // 0.1은 2진수로 정확히 표현되지 않는 대표값이다. KRW 시세로는 비현실적이지만
+        // 생성자 선택을 가리는 데는 이 값이 가장 예리하다.
+        val json = """[{"market":"KRW-USDT","trade_price":0.1}]"""
+
+        val parsed = parser.parse(json).getValue("USDT")
+
+        assertThat(parsed).isEqualByComparingTo("0.1")
+        assertThat(parsed.toPlainString()).isEqualTo("0.1")   // BigDecimal(double)이면 0.1000...0555
+    }
+
+    /**
+     * 큰 값이 지수 표기로 찍혀도 값은 정확하다 (로그의 `BTC=9.0047E+7`이 이것이다).
+     */
+    @Test
+    fun `1e7 이상도 값이 정확하다 - 지수 표기는 표시일 뿐이다`() {
+        val json = """[{"market":"KRW-BTC","trade_price":90047000.0}]"""
+
+        val btc = parser.parse(json).getValue("BTC")
+
+        assertThat(btc).isEqualByComparingTo("90047000")
+        assertThat(btc.toPlainString()).isEqualTo("90047000")
+    }
+
     @Test
     fun `빈 배열이면 예외 - 조용히 빈 맵을 돌려주면 실패가 안 보인다`() {
         assertThatThrownBy { parser.parse("[]") }
