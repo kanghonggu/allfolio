@@ -1,5 +1,7 @@
 package com.allfolio.dashboard
 
+import com.allfolio.fx.CurrencyConverter
+import com.allfolio.fx.FxRateService
 import com.allfolio.snapshot.infrastructure.entity.PerformanceDailyEntity
 import com.allfolio.snapshot.infrastructure.entity.SnapshotDailyId
 import com.allfolio.snapshot.infrastructure.repository.BenchmarkDailyJpaRepository
@@ -37,6 +39,14 @@ class GetDashboardUseCaseReturnsTest {
         override fun toKrw(amount: BigDecimal, currency: String): BigDecimal = amount
     }
 
+    /** 항등 환산 — 위 FxConverter 스텁과 같은 환율(1)을 본다. 이 테스트는 자산이 없어 출처도 없다. */
+    private object IdentityFxRates : FxRateService {
+        override fun getUsdtToKrw(): BigDecimal = BigDecimal.ONE
+        override fun setUsdtToKrw(rate: BigDecimal) = Unit
+        override fun getCryptoToKrw(symbol: String): BigDecimal = BigDecimal.ONE
+        override fun setCryptoToKrw(symbol: String, rate: BigDecimal) = Unit
+    }
+
     private class FixedCashFlows(private val flows: List<CashFlow>) : CashFlowRepository {
         override fun save(cashFlow: CashFlow): CashFlow = cashFlow
         override fun findById(id: UUID): CashFlow? = null
@@ -67,6 +77,7 @@ class GetDashboardUseCaseReturnsTest {
             .thenReturn(series)
         return GetDashboardUseCase(
             assetRepository, performanceRepo, riskRepo, benchmarkRepo, fx, FixedCashFlows(flows),
+            CurrencyConverter(IdentityFxRates),
         )
     }
 

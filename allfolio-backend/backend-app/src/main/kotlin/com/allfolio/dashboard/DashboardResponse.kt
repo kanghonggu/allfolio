@@ -8,6 +8,13 @@ data class DashboardResponse(
     val netWorth: NetWorthDto,
     val portfolio: PortfolioDto,
     val realAssets: List<RealAssetDto>,
+    /**
+     * 이 순자산을 만드는 데 실제로 쓰인 환율들 (AF-105). 통화 코드 사전순.
+     *
+     * **원화 자산만 가진 사용자에게는 빈 배열이다.** 조건부 노출을 프론트의 if가 아니라
+     * 여기 결과로 만든 것 — 두 곳이 각자 판단하면 언젠가 어긋난다.
+     */
+    val fxSources: List<FxSourceDto>,
 )
 
 data class NetWorthDto(
@@ -78,4 +85,14 @@ data class RealAssetDto(
     val currency: String,
     val maturityDate: LocalDate?,
     val daysUntilMaturity: Long?,
+)
+
+/** @see com.allfolio.fx.FxSource */
+data class FxSourceDto(
+    val currency: String,
+    val rate: BigDecimal,
+    val source: String,
+    /** 하나은행 고시일 때만 채워진다 */
+    val baseDate: LocalDate?,
+    val roundNo: Int?,
 )

@@ -1,5 +1,7 @@
 package com.allfolio.dashboard
 
+import com.allfolio.fx.CurrencyConverter
+import com.allfolio.fx.FxRateService
 import com.allfolio.snapshot.infrastructure.entity.PerformanceDailyEntity
 import com.allfolio.snapshot.infrastructure.entity.SnapshotDailyId
 import com.allfolio.snapshot.infrastructure.repository.BenchmarkDailyJpaRepository
@@ -144,6 +146,9 @@ class GetDashboardUseCaseNetWorthChangeTest {
                 override fun toKrw(amount: BigDecimal, currency: String): BigDecimal = amount
             },
             FixedCashFlows(flows),
+            // 이 테스트의 자산은 전부 KRW라 출처가 실리지 않는다. 환율을 1로 두는 것은
+            // 위 FxConverter 스텁(항등 환산)과 같은 값이라는 뜻 — 픽스처가 서로 어긋나지 않게 한다.
+            CurrencyConverter(IdentityFxRates),
         )
         return useCase.execute(userId).netWorth
     }
@@ -178,6 +183,14 @@ class GetDashboardUseCaseNetWorthChangeTest {
     /** Kotlin non-null 파라미터에 Mockito any()를 쓰기 위한 캐스팅 헬퍼. */
     @Suppress("UNCHECKED_CAST")
     private fun <T> anyArg(): T = ArgumentMatchers.any<T>() as T
+
+    /** 항등 환산 — FxConverter 스텁과 같은 환율(1)을 본다. */
+    private object IdentityFxRates : FxRateService {
+        override fun getUsdtToKrw(): BigDecimal = BigDecimal.ONE
+        override fun setUsdtToKrw(rate: BigDecimal) = Unit
+        override fun getCryptoToKrw(symbol: String): BigDecimal = BigDecimal.ONE
+        override fun setCryptoToKrw(symbol: String, rate: BigDecimal) = Unit
+    }
 
     private class FixedCashFlows(private val flows: List<CashFlow>) : CashFlowRepository {
         override fun save(cashFlow: CashFlow): CashFlow = cashFlow

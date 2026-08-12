@@ -1,5 +1,8 @@
 package com.allfolio.dashboard
 
+import com.allfolio.fx.CurrencyConverter
+import com.allfolio.fx.FxRateService
+import com.allfolio.fx.UsdQuoteRef
 import com.allfolio.snapshot.infrastructure.repository.BenchmarkDailyJpaRepository
 import com.allfolio.snapshot.infrastructure.repository.PerformanceDailyJpaRepository
 import com.allfolio.snapshot.infrastructure.repository.RiskDailyJpaRepository
@@ -15,6 +18,8 @@ import org.junit.jupiter.api.Test
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
 import java.math.BigDecimal
+import java.math.RoundingMode
+import java.time.LocalDate
 import java.util.UUID
 
 // QA P1 #9/#11 — 대시보드 순자산은 KRW 환산 후 합산(navInKrw 규약), KRW 집계는 scale 0.
@@ -32,9 +37,22 @@ class GetDashboardUseCaseFxTest {
             if (currency.uppercase() == "KRW") amount else amount * BigDecimal("1400")
     }
 
+    // AF-105 — 출처 표기가 쓰는 환율. 위 fx 스텁과 **일부러 같은 1400**이다.
+    // 운영에서도 둘은 같은 값일 수밖에 없다(UnifiedAssetFxConverterAdapter.toKrw가
+    // CurrencyConverter.toKrw에 위임하고, 그쪽이 sourceOf의 rate를 그대로 쓴다).
+    // 픽스처에서 둘을 다르게 두면 "밝히는 환율 = 쓰는 환율" 불변식을 검증할 수 없게 된다.
+    private val fxRateService = object : FxRateService {
+        override fun getUsdtToKrw(): BigDecimal = BigDecimal("1400")
+        override fun setUsdtToKrw(rate: BigDecimal) = Unit
+        override fun getCryptoToKrw(symbol: String): BigDecimal = BigDecimal("1400")
+        override fun setCryptoToKrw(symbol: String, rate: BigDecimal) = Unit
+        override fun usdQuoteRef() = UsdQuoteRef(BigDecimal("1400"), LocalDate.of(2026, 8, 11), 32)
+    }
+
     private val useCase = GetDashboardUseCase(
         assetRepository, performanceRepo, riskRepo, benchmarkRepo, fx,
         mock(com.allfolio.unifiedasset.application.port.CashFlowRepository::class.java),
+        CurrencyConverter(fxRateService),
     )
 
     private fun asset(name: String, currentValue: String, currency: String) = Asset.create(
@@ -92,5 +110,48 @@ class GetDashboardUseCaseFxTest {
         assertThat(apple.weight).isEqualByComparingTo("0.5")   // raw sum이면 1000/1401000≈0.0007
         val allocation = res.portfolio.allocation.single { it.type == "STOCK" }
         assertThat(allocation.value).isEqualByComparingTo("2800000")
+    }
+
+    // ── AF-105 환율 출처 표기 ─────────────────────────────────────
+
+    @Test
+    fun `원화 자산만 있으면 환율 출처가 비어 있다`() {
+        `when`(assetRepository.findByUserId(userId)).thenReturn(listOf(
+            asset("삼성전자", "1000000", "KRW"),
+        ))
+
+        val result = useCase.execute(userId)
+
+        assertThat(result.fxSources).isEmpty()
+    }
+
+    @Test
+    fun `보유한 통화만 사전순으로 실린다`() {
+        `when`(assetRepository.findByUserId(userId)).thenReturn(listOf(
+            asset("USDT지갑", "1000", "USDT"),
+            asset("AAPL", "1000", "USD"),
+        ))
+
+        val result = useCase.execute(userId)
+
+        assertThat(result.fxSources.map { it.currency }).containsExactly("USD", "USDT")
+    }
+
+    // 화면이 밝히는 환율이 그 순자산을 만든 환율과 달라지면, 신뢰를 만들려던 표기가 반대로 동작한다.
+    @Test
+    fun `밝히는 환율은 그 자산을 환산한 환율과 같다`() {
+        `when`(assetRepository.findByUserId(userId)).thenReturn(listOf(
+            asset("AAPL", "1234.567", "USD"),
+        ))
+
+        val result = useCase.execute(userId)
+
+        val source   = result.fxSources.single()
+        val position = result.portfolio.positions.single()
+        // 1234.567 × 1400 = 1,728,393.8 → HALF_UP → 1,728,394
+        assertThat(position.currentValueKrw).isEqualByComparingTo("1728394")
+        assertThat(position.currentValueKrw).isEqualByComparingTo(
+            (position.currentValue * source.rate).setScale(0, RoundingMode.HALF_UP),
+        )
     }
 }
