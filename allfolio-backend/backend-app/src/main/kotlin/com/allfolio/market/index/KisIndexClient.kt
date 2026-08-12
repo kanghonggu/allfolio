@@ -2,7 +2,6 @@ package com.allfolio.market.index
 
 import com.allfolio.broker.kis.KisApiClient
 import com.allfolio.broker.kis.KisProperties
-import org.slf4j.LoggerFactory
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.client.WebClient
@@ -26,8 +25,6 @@ class KisIndexClient(
     private val kisProperties: KisProperties,
     private val kisApiClient: KisApiClient,
 ) {
-    private val log = LoggerFactory.getLogger(javaClass)
-
     private val webClient = WebClient.builder()
         .baseUrl(kisProperties.baseUrl)
         .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
