@@ -158,10 +158,20 @@ HTTP는 얇은 껍데기만 남긴다.
   수정을 배포해도 Render에서 손으로 켜기 전까진 여전히 1350이다 — 즉 조용히 안 고쳐진다.
 - `FX_SCHEDULER_ENABLED`·`FX_USDT_KRW_FALLBACK`을 `render.yaml` `envVars`에 명시한다.
   현재 `render.yaml`에는 `FX_*`가 하나도 없어 대시보드 전용 설정이 코드에 문서화되어 있지 않다.
-- `binance.base-url` → `${BINANCE_BASE_URL:https://api.binance.com}`
+- `binance.base-url` → `${BINANCE_API_BASE_URL:https://api.binance.com}`
   (`application.yml:196`과 `BinanceProperties`의 `@DefaultValue` 양쪽).
   FX 클라이언트가 Binance를 떠나므로 결합은 자연히 끊기고, 남은 사용처
   (`BinanceApiClient`의 `myTrades`)는 운영 기본값이 맞다.
+
+  **환경변수 이름을 `BINANCE_BASE_URL`로 쓰면 안 된다.** `market-data`의
+  `application.yml:46`이 그 이름을 이미 WebSocket 스트림 주소
+  (`wss://stream.binance.com:9443`)에 쓰고 있다. 재사용하면 한 변수가 `https://`와 `wss://`를
+  동시에 뜻하게 되어 두 서비스를 같은 환경에 올리는 순간 한쪽이 깨진다.
+
+  같은 맥락에서 `binance` 프리픽스가 `BinanceProperties`(backend-app)와
+  `BinanceWsProperties`(market-data) 양쪽에 걸쳐 있고, `BinanceWsAdapter:72`가
+  `baseUrl.contains("testnet")`으로 WS 엔드포인트를 고른다. 다만 **backend-app은
+  `market-data`에 의존하지 않으므로**(`build.gradle.kts` 35~46행) 이번 변경이 그쪽에 닿지 않는다.
 - Redis TTL 60초 → **180초.** 폴링 2회를 놓쳐도 상수로 떨어지지 않는다.
 - `fx.usdt-krw.fallback-rate` 기본값 1350 → **1400.**
 
