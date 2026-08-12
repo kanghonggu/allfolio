@@ -28,6 +28,11 @@ data class HanaFxSnapshot(
     val skipped: Int,
 )
 
+/**
+ * 마크업 파싱 실패만이 아니라 **"하나은행 응답을 신뢰할 수 없다"** 를 폭넓게 뜻한다 —
+ * 호출 실패·빈 본문·구조 부재는 물론, 기준일이 미래라 응답 자체가 앞뒤가 안 맞는 경우도 포함한다.
+ * Task 11이 이 타입 하나로 502(외부 문제)를 판별하므로, 우리 쪽 판단 실패와 섞지 않는다.
+ */
 class HanaFxParseException(message: String) : RuntimeException("하나은행 응답 파싱 실패: $message")
 
 /**

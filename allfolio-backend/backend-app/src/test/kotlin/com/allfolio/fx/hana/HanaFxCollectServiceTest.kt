@@ -43,7 +43,6 @@ class HanaFxCollectServiceTest {
         assertThat(summary.currencies).isEqualTo(2)
         assertThat(summary.inserted).isEqualTo(2)
         assertThat(summary.updated).isZero()
-        assertThat(summary.anomalies).isEmpty()
     }
 
     @Test
@@ -73,12 +72,50 @@ class HanaFxCollectServiceTest {
     }
 
     @Test
+    fun `매매기준율이 같아도 현찰 환율이 움직였으면 갱신으로 센다`() {
+        // 매매기준율만 보고 무변화로 세면서 overwrite는 실제로 값을 쓴다 —
+        // 요약이 "안 바뀌었다"고 하는데 DB는 바뀐다
+        val existing = entity(friday, 32, "USD", "1390").apply { cashBuy = BigDecimal("1414") }
+        val repo = FakeRepo(existing)
+        val moved = HanaFxSnapshot(
+            friday, 32,
+            listOf(HanaFxRow("USD", BigDecimal("1390"), BigDecimal("1420"), null, null, null)),
+            skipped = 0,
+        )
+
+        val summary = service(repo, moved).collect(requested, force = false)
+
+        assertThat(summary.updated).isEqualTo(1)
+        assertThat(summary.unchanged).isZero()
+        assertThat(repo.saved.single().cashBuy).isEqualByComparingTo("1420")
+    }
+
+    @Test
+    fun `현찰·송금 네 필드는 어느 하나만 움직여도 갱신이다`() {
+        // 한 필드만 비교에서 빠져도 그 필드가 움직인 회차는 조용히 무변화로 집계된다.
+        // null↔값 전환도 변화다 — 그 통화에 없던 고시가 생기거나 사라진 것이다
+        listOf("cashBuy", "cashSell", "remitSend", "remitReceive").forEachIndexed { i, name ->
+            fun collect(before: String?, after: String?) = service(
+                FakeRepo(entityWith(i, before?.let(::BigDecimal))),
+                HanaFxSnapshot(friday, 32, listOf(rowWith(i, after?.let(::BigDecimal))), skipped = 0),
+            ).collect(requested, force = false)
+
+            assertThat(collect("1414", "1420").updated).describedAs("$name 값 변경").isEqualTo(1)
+            assertThat(collect(null, "1420").updated).describedAs("$name null→값").isEqualTo(1)
+            assertThat(collect("1414", null).updated).describedAs("$name 값→null").isEqualTo(1)
+            assertThat(collect("1414", "1414.0000").unchanged).describedAs("$name scale만 다름").isEqualTo(1)
+        }
+    }
+
+    @Test
     fun `안전장치에 걸리면 아무것도 쓰지 않고 실패한다`() {
         val repo = FakeRepo()
 
         assertThatThrownBy {
             service(repo, snapshot(friday, 32, "JPY" to "9.5")).collect(requested, force = false)
         }.isInstanceOf(IllegalStateException::class.java)
+            // 안전장치는 우리 판단이라 422다 — 은행 응답 오류(502)로 새면 원인을 밖으로 떠넘긴다
+            .isNotInstanceOf(HanaFxParseException::class.java)
             .hasMessageContaining("USD")
 
         assertThat(repo.saved).isEmpty()
@@ -119,15 +156,17 @@ class HanaFxCollectServiceTest {
     }
 
     @Test
-    fun `응답 기준일이 요청일보다 미래면 거부한다`() {
+    fun `응답 기준일이 요청일보다 미래면 외부 오류로 거부한다`() {
         // pbldDvCd가 틀렸거나 응답이 뒤바뀐 경우다. 미래 고시는 존재할 수 없다.
-        // 주말에 직전 영업일이 오는 건 정상이므로 같은지는 따지지 않는다 — 미래인지만 본다
+        // 주말에 직전 영업일이 오는 건 정상이므로 같은지는 따지지 않는다 — 미래인지만 본다.
+        // 은행 응답이 틀린 것이므로 안전장치 실패(422)가 아니라 외부 오류(502) 쪽 타입이어야 한다
         val repo = FakeRepo()
         val future = requested.plusDays(3)
 
         assertThatThrownBy {
             service(repo, snapshot(future, 32, "USD" to "1390")).collect(requested, force = false)
-        }.isInstanceOf(IllegalStateException::class.java)
+        }.isInstanceOf(HanaFxParseException::class.java)
+            .isNotInstanceOf(IllegalStateException::class.java)
             .hasMessageContaining("기준일")
 
         assertThat(repo.saved).isEmpty()
@@ -222,6 +261,24 @@ class HanaFxCollectServiceTest {
 
     private fun row(currency: String, rate: String) =
         HanaFxRow(currency, BigDecimal(rate), null, null, null, null)
+
+    /** 매매기준율은 고정하고 index가 가리키는 부가 환율 하나만 채운다 */
+    private fun rowWith(index: Int, value: BigDecimal?) = HanaFxRow(
+        currency = "USD",
+        baseRate = BigDecimal("1390"),
+        cashBuy = value.takeIf { index == 0 },
+        cashSell = value.takeIf { index == 1 },
+        remitSend = value.takeIf { index == 2 },
+        remitReceive = value.takeIf { index == 3 },
+    )
+
+    private fun entityWith(index: Int, value: BigDecimal?) =
+        entity(friday, 32, "USD", "1390").apply {
+            cashBuy = value.takeIf { index == 0 }
+            cashSell = value.takeIf { index == 1 }
+            remitSend = value.takeIf { index == 2 }
+            remitReceive = value.takeIf { index == 3 }
+        }
 
     private fun entity(date: LocalDate, round: Int, currency: String, rate: String) =
         HanaFxQuoteEntity(

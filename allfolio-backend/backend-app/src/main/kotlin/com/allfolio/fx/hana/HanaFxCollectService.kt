@@ -4,15 +4,18 @@ import com.allfolio.unifiedasset.infrastructure.entity.HanaFxQuoteEntity
 import com.allfolio.unifiedasset.infrastructure.jpa.HanaFxQuoteJpaRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * @param baseDate  하나은행이 응답에 담아 준 기준일. 요청한 조회일자가 아니다
- * @param skipped   파싱 단계에서 버린 행 수. 안전장치에 걸려 저장이 막힌 것과는 다르다
- * @param anomalies 안전장치에 걸린 항목. 비어 있어야 저장된다
+ * 수집이 성공했을 때의 결과. 안전장치에 걸리면 요약이 아니라 예외가 나가므로
+ * "이상 항목" 필드는 두지 않는다 — 항상 비어 있을 수밖에 없어 정보를 주는 척만 한다.
+ *
+ * @param baseDate 하나은행이 응답에 담아 준 기준일. 요청한 조회일자가 아니다
+ * @param skipped  파싱 단계에서 버린 행 수. 안전장치에 걸려 저장이 막힌 것과는 다르다
  */
 data class HanaCollectSummary(
     val requestedDate: LocalDate,
@@ -23,7 +26,6 @@ data class HanaCollectSummary(
     val updated: Int,
     val unchanged: Int,
     val skipped: Int,
-    val anomalies: List<String>,
 )
 
 /**
@@ -63,11 +65,13 @@ class HanaFxCollectService(
         }
 
         // 주말·공휴일에 직전 영업일 고시가 오는 건 정상이므로 같은지는 따지지 않는다.
-        // 다만 미래 고시는 존재할 수 없다 — pbldDvCd가 틀렸거나 응답이 뒤바뀐 것이다
+        // 다만 미래 고시는 존재할 수 없다 — pbldDvCd가 틀렸거나 응답이 뒤바뀐 것이다.
+        // 이건 우리 판단이 아니라 은행 응답이 틀린 것이라 HanaFxParseException(→502)으로 올린다.
+        // IllegalStateException(→422)으로 던지면 운영자가 제 요청부터 의심하게 된다
         if (snapshot.baseDate.isAfter(date)) {
             val reason = "응답 기준일이 요청일보다 미래입니다 (${snapshot.baseDate} > $date)"
             recordFailure(date, reason)
-            throw IllegalStateException(reason)
+            throw HanaFxParseException(reason)
         }
 
         // 조회일자가 아니라 응답이 말하는 기준일·회차로 저장한다
@@ -103,12 +107,12 @@ class HanaFxCollectService(
                     toEntity(snapshot, row)
                 }
                 // 분류는 덮기 **전에** 끝낸다 — 덮은 뒤 비교하면 전부 무변화가 된다
-                prev.baseRate.compareTo(row.baseRate) != 0 -> {
-                    updated++
+                prev.sameAs(row) -> {
+                    unchanged++
                     prev.apply { overwrite(row) }
                 }
                 else -> {
-                    unchanged++
+                    updated++
                     prev.apply { overwrite(row) }
                 }
             }
@@ -125,11 +129,28 @@ class HanaFxCollectService(
             updated = updated,
             unchanged = unchanged,
             skipped = snapshot.skipped,
-            anomalies = emptyList(),
         )
         log.info("[하나은행] 수집 완료 {}", summary)
         return summary
     }
+
+    /**
+     * overwrite가 쓰는 다섯 필드를 모두 본다. 매매기준율만 보면 현찰·송금 환율이 움직인 회차를
+     * "무변화"로 세면서 overwrite는 실제로 값을 쓴다 — 요약이 운영자에게 거짓말을 한다.
+     */
+    private fun HanaFxQuoteEntity.sameAs(row: HanaFxRow): Boolean =
+        baseRate.compareTo(row.baseRate) == 0 &&
+            sameRate(cashBuy, row.cashBuy) &&
+            sameRate(cashSell, row.cashSell) &&
+            sameRate(remitSend, row.remitSend) &&
+            sameRate(remitReceive, row.remitReceive)
+
+    /**
+     * BigDecimal은 scale까지 따지므로 1390과 1390.0000이 equals로는 다르다 — compareTo로 본다.
+     * null은 "그 통화에 그 고시가 없다"는 뜻이라 값과 같을 수 없고, null끼리만 같다.
+     */
+    private fun sameRate(a: BigDecimal?, b: BigDecimal?): Boolean =
+        if (a == null || b == null) a == null && b == null else a.compareTo(b) == 0
 
     private fun HanaFxQuoteEntity.overwrite(row: HanaFxRow) {
         baseRate = row.baseRate
