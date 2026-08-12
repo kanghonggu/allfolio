@@ -2,6 +2,7 @@ package com.allfolio.unifiedasset.application.usecase
 
 import com.allfolio.unifiedasset.application.port.CashFlowRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
+import com.allfolio.unifiedasset.application.port.KrwConversion
 import com.allfolio.unifiedasset.domain.cashflow.CashFlow
 import com.allfolio.unifiedasset.domain.cashflow.FlowType
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -138,5 +139,51 @@ class RecordCashFlowUseCaseTest {
                 )
             }
         }
+    }
+
+    @Test
+    fun `과거 날짜 입금은 그날 환율로 환산하고 사용자 메모를 건드리지 않는다`() {
+        val past = LocalDate.of(2025, 8, 11)
+        val datedFx = object : FxConverter {
+            override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
+                amount * BigDecimal("1400")
+
+            override fun toKrwOn(amount: BigDecimal, currency: String, date: LocalDate) =
+                KrwConversion(amount * BigDecimal("1100"), date, estimated = false)
+        }
+        val repo = InMemoryRepo()
+
+        val flow = RecordCashFlowUseCase(repo, datedFx, accountRepo).record(
+            userId = userId, accountId = null, flowDate = past, type = FlowType.DEPOSIT,
+            amount = BigDecimal("1000"), currency = "USD", memo = "달러 입금",
+        )
+
+        // 오늘 환율 1400이 아니라 발생일 환율 1100
+        assertEquals(0, BigDecimal("1100000").compareTo(flow.amountKrw))
+        // 사용자가 쓴 메모는 그대로다
+        assertEquals("달러 입금", flow.memo)
+    }
+
+    @Test
+    fun `과거 환율을 못 찾으면 현재 환율로 근사하고 메모는 그대로 둔다`() {
+        val past = LocalDate.of(2025, 8, 11)
+        val estimatingFx = object : FxConverter {
+            override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
+                amount * BigDecimal("1400")
+
+            override fun toKrwOn(amount: BigDecimal, currency: String, date: LocalDate) =
+                KrwConversion(amount * BigDecimal("1400"), null, estimated = true)
+        }
+        val repo = InMemoryRepo()
+
+        val flow = RecordCashFlowUseCase(repo, estimatingFx, accountRepo).record(
+            userId = userId, accountId = null, flowDate = past, type = FlowType.DEPOSIT,
+            amount = BigDecimal("1000"), currency = "USD", memo = "달러 입금",
+        )
+
+        // 폴백이므로 현재 환율(1400) 기반
+        assertEquals(0, BigDecimal("1400000").compareTo(flow.amountKrw))
+        // 폴백이어도 사용자가 쓴 메모는 그대로다
+        assertEquals("달러 입금", flow.memo)
     }
 }

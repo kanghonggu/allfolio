@@ -3,6 +3,7 @@ package com.allfolio.app
 import com.allfolio.broker.samsung.SamsungProperties
 import com.allfolio.broker.toss.TossProperties
 import com.allfolio.external.crypto.BinanceProperties
+import com.allfolio.fx.EcosProperties
 import com.allfolio.market.BithumbWsProperties
 import com.allfolio.market.BybitWsProperties
 import com.allfolio.market.CoinoneWsProperties
@@ -25,6 +26,7 @@ import org.springframework.scheduling.annotation.EnableScheduling
     BinanceProperties::class, TossProperties::class, SamsungProperties::class,
     UpbitWsProperties::class, BithumbWsProperties::class, BybitWsProperties::class,
     OkxWsProperties::class, CoinoneWsProperties::class,
+    EcosProperties::class,
 )
 class BackendApplication
 
