@@ -6,6 +6,7 @@ import com.allfolio.auth.UserEntity
 import com.allfolio.auth.UserRole
 import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
+import com.allfolio.fx.hana.HanaFxCollectService
 import org.springframework.boot.test.mock.mockito.MockBean
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -41,10 +42,13 @@ import java.math.BigDecimal
 @AutoConfigureMockMvc
 class SecurityConfigAdminTest {
 
-    // 이 테스트가 보는 건 인가 경로뿐이라 백필은 호출되지 않는다.
+    // 이 테스트가 보는 건 인가 경로뿐이라 백필·하나은행 수집은 호출되지 않는다.
     // FxRateAdminController가 요구하므로 자리만 채운다.
     @MockBean
     private lateinit var fxRateBackfillService: FxRateBackfillService
+
+    @MockBean
+    private lateinit var hanaFxCollectService: HanaFxCollectService
 
     @Autowired
     private lateinit var mockMvc: MockMvc
@@ -126,5 +130,17 @@ class SecurityConfigAdminTest {
             override fun getCryptoToKrw(symbol: String): BigDecimal = BigDecimal("90000000")
             override fun setCryptoToKrw(symbol: String, rate: BigDecimal) = Unit
         }
+    }
+
+    @Test
+    fun `admin USD 환율 조회는 토큰 없이 403으로 차단된다`() {
+        mockMvc.get("/api/admin/fx/usdkrw").andExpect { status { isForbidden() } }
+    }
+
+    @Test
+    fun `admin USD 환율 조회는 ADMIN 토큰이면 200으로 허용된다`() {
+        mockMvc.get("/api/admin/fx/usdkrw") {
+            header("Authorization", "Bearer ${tokenFor(UserRole.ADMIN)}")
+        }.andExpect { status { isOk() } }
     }
 }

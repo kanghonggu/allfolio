@@ -849,3 +849,26 @@ CREATE TABLE IF NOT EXISTS fx_rate_daily (
 
 CREATE INDEX IF NOT EXISTS idx_fx_rate_daily_lookup
     ON fx_rate_daily (currency, base_date DESC);
+
+-- ── hana_fx_quote ──────────────────────────────────────────────
+-- AF-99 하나은행 회차별 고시환율. ECOS 일별 확정 종가(fx_rate_daily)와 섞지 않는다 —
+-- 저쪽은 하루 한 건, 이쪽은 하루 안 여러 회차 × 통화별 6개 환율이다.
+-- 키가 (기준일, 회차, 통화)인 이유: 하나은행은 주말·공휴일에 조회하면 직전 영업일 고시를
+-- 돌려준다. 조회일자를 키로 쓰면 연휴 사흘 동안 같은 고시가 세 번 들어간다.
+CREATE TABLE IF NOT EXISTS hana_fx_quote (
+    id            UUID          NOT NULL,
+    base_date     DATE          NOT NULL,
+    round_no      INT           NOT NULL,
+    currency      VARCHAR(10)   NOT NULL,
+    base_rate     NUMERIC(18,4) NOT NULL,
+    cash_buy      NUMERIC(18,4),
+    cash_sell     NUMERIC(18,4),
+    remit_send    NUMERIC(18,4),
+    remit_receive NUMERIC(18,4),
+    collected_at  TIMESTAMP     NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_hana_fx_quote PRIMARY KEY (id),
+    CONSTRAINT uk_hana_fx_quote UNIQUE (base_date, round_no, currency)
+);
+
+CREATE INDEX IF NOT EXISTS idx_hana_fx_quote_latest
+    ON hana_fx_quote (currency, base_date DESC, round_no DESC);

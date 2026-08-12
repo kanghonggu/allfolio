@@ -11,6 +11,7 @@ import com.allfolio.fx.BackfillSummary
 import com.allfolio.fx.EcosApiException
 import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
+import com.allfolio.fx.hana.HanaFxCollectService
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
@@ -61,6 +62,9 @@ class FxRateAdminBackfillControllerTest {
 
     @MockBean private lateinit var fxRateService: FxRateService
     @MockBean private lateinit var backfillService: FxRateBackfillService
+
+    // 백필만 보는 테스트라 호출되지 않는다. FxRateAdminController가 요구하므로 자리만 채운다.
+    @MockBean private lateinit var hanaCollectService: HanaFxCollectService
 
     private val from: LocalDate = LocalDate.of(2020, 1, 1)
     private val to: LocalDate = LocalDate.of(2020, 1, 31)

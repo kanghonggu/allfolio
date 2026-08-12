@@ -8,6 +8,7 @@ class CurrencyConverterTest {
 
     private val fxRates = object : FxRateService {
         override fun getUsdtToKrw(): BigDecimal = BigDecimal("1400")
+        override fun getUsdToKrw(): BigDecimal = BigDecimal("1390")
         override fun setUsdtToKrw(rate: BigDecimal) {}
         override fun getCryptoToKrw(symbol: String): BigDecimal = when (symbol.uppercase()) {
             "BTC" -> BigDecimal("90000000")
@@ -24,14 +25,15 @@ class CurrencyConverterTest {
     }
 
     @Test
-    fun `usdt converts with cached rate`() {
-        assertEquals(0, BigDecimal("140000").compareTo(converter.toKrw(BigDecimal("100"), "USDT")))
+    fun `usd는 공식 매매기준율로 환산한다`() {
+        // AF-99: USD는 하나은행 고시(1390), USDT는 Binance(1400) — 소스가 다르다
+        assertEquals(0, BigDecimal("139000").compareTo(converter.toKrw(BigDecimal("100"), "USD")))
     }
 
     @Test
-    fun `usd converts like usdt`() {
-        // Binance 등 달러 표시 자산 — USDT≈USD 환율 적용 (1:1 폴백은 1400배 축소 버그)
-        assertEquals(0, BigDecimal("140000").compareTo(converter.toKrw(BigDecimal("100"), "USD")))
+    fun `usdt는 거래소 시세를 유지한다`() {
+        // 김치 프리미엄은 부정확이 아니라 거래소 보유자에게 실현 가능한 값이다
+        assertEquals(0, BigDecimal("140000").compareTo(converter.toKrw(BigDecimal("100"), "USDT")))
     }
 
     @Test
