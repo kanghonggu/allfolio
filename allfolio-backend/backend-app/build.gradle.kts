@@ -45,6 +45,8 @@ dependencies {
     implementation(project(":reconciliation"))
     implementation(project(":workflow"))
     implementation("com.opencsv:opencsv:5.9")
+    // 하나은행 고시환율 HTML 파싱 (AF-99) — 공식 API가 없어 화면을 긁는다
+    implementation("org.jsoup:jsoup:1.17.2")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.kafka:spring-kafka-test")
