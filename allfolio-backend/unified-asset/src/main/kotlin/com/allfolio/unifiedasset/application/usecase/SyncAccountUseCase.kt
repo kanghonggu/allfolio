@@ -124,7 +124,8 @@ class SyncAccountUseCase(
      * 날짜·현재 평가액으로 한 건만 남겨서, 1년 전 700만을 넣어 2,315만이 된 계좌가
      * "오늘 2,315만 입금"으로 기록됐다 — 과거 수익 1,615만이 영구히 사라지는 셈이었다.
      *
-     * 잔고 조회만 하는 계좌(API 연동)는 투입 시점을 알 방법이 없어 현행대로 연동 시점·평가액.
+     * 투입 시점을 알아낼 수 없는 계좌 — 잔고 조회만 하는 API 연동, 그리고 거래 로그가
+     * 있어도 소급 흐름이 한 건도 안 나오는 계좌(배당만 있는 경우) — 는 연동 시점·평가액.
      */
     private fun recordInitialInflow(account: Account, assets: List<Asset>) {
         if (hasInitialInflow(account)) return
@@ -135,11 +136,11 @@ class SyncAccountUseCase(
                 emptyList()
             }
 
-        val flows = if (trades.isNotEmpty()) {
-            backdatedFlows(account, trades)
-        } else {
-            listOfNotNull(valuationFlow(account, assets))
-        }
+        // 거래 로그가 있어도 소급 흐름이 안 나올 수 있다 — 배당만 있는 계좌가 그렇다.
+        // 그때 빈 손으로 끝내면 다음 sync는 hadAssets=true라 여기까지 오지도 못하고,
+        // 그 계좌는 외부 투입 0인 채로 남아 NAV 전체가 수익으로 잡힌다.
+        val flows = backdatedFlows(account, trades)
+            .ifEmpty { listOfNotNull(valuationFlow(account, assets)) }
         flows.forEach { cashFlowRepository.save(it) }
     }
 
@@ -178,7 +179,24 @@ class SyncAccountUseCase(
             }
             if (amount <= BigDecimal.ZERO) return@mapNotNull null
 
-            val amountKrw = fx.toKrw(amount, account.currency)
+            // 오늘이 아니라 체결일 환율 — 오늘 환율로 환산하면 과거 USD 거래의 원금이 틀어진다.
+            // StockTrade에 통화 필드가 없어 계좌 통화를 거래의 통화로 본다. 국내 KRW와 해외 USD를
+            // 한 계좌에 섞어 담았다면 이 가정이 깨지는데(이전 코드도 같은 가정), 그때는 틀린 값이
+            // "일률적으로 틀린 오늘 환율"에서 "정밀하게 틀린 과거 환율"로 바뀔 뿐이다.
+            val conversion = fx.toKrwOn(amount, account.currency, trade.tradedAt)
+            if (conversion.estimated) {
+                // 어댑터 WARN은 통화·날짜만 찍어 어느 계좌·어느 거래인지 알 수 없다.
+                // 나중에 정정 대상 집합을 로그에서 추려낼 수 있도록 행 식별자를 여기서 남긴다.
+                log.warn(
+                    "체결일 환율 미보유 — 현재 환율로 근사 accountId={} tradeId={} tradedAt={} currency={}",
+                    account.id, trade.id, trade.tradedAt, account.currency,
+                )
+            }
+            val memo = buildString {
+                append("거래 로그 기준 자동 기록(${trade.stockName})")
+                // 시스템이 만드는 메모이므로 부정확함을 여기 남긴다
+                if (conversion.estimated) append(" · 환율 추정치")
+            }
             CashFlow.create(
                 userId = account.userId,
                 accountId = account.id,
@@ -186,8 +204,8 @@ class SyncAccountUseCase(
                 type = type,
                 amount = amount,
                 currency = account.currency,
-                amountKrw = amountKrw,
-                memo = "거래 로그 기준 자동 기록(${trade.stockName})",
+                amountKrw = conversion.amountKrw,
+                memo = memo,
             )
         }
 

@@ -831,3 +831,21 @@ CREATE TABLE IF NOT EXISTS feedback (
 
 CREATE INDEX IF NOT EXISTS idx_feedback_created
     ON feedback (created_at DESC);
+
+-- ── fx_rate_daily ──────────────────────────────────────────────
+-- AF-100 과거 환율 시계열. 현금흐름(cash_flow.amount_krw)을 발생일 환율로 환산하기 위한 것.
+-- 자산 평가는 Redis 현재 환율을 계속 쓴다 — 여기는 "그때 얼마였나" 전용.
+-- rate_krw는 항상 통화 1단위 기준. ECOS는 JPY를 100엔 기준으로 주므로 수집기가 정규화한다.
+CREATE TABLE IF NOT EXISTS fx_rate_daily (
+    id         UUID           NOT NULL,
+    base_date  DATE           NOT NULL,
+    currency   VARCHAR(10)    NOT NULL,
+    rate_krw   NUMERIC(18, 6) NOT NULL,
+    source     VARCHAR(20)    NOT NULL DEFAULT 'ECOS',
+    created_at TIMESTAMP      NOT NULL DEFAULT NOW(),
+    CONSTRAINT pk_fx_rate_daily PRIMARY KEY (id),
+    CONSTRAINT uk_fx_rate_daily UNIQUE (base_date, currency)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fx_rate_daily_lookup
+    ON fx_rate_daily (currency, base_date DESC);

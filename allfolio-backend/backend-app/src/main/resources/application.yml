@@ -256,6 +256,23 @@ fx:
   eth-krw:
     fallback-rate: ${FX_ETH_KRW_FALLBACK:4500000}
 
+# ECOS(한국은행) 과거 환율 시계열 — AF-100
+# stat-code/item-code는 ECOS 사이트에서 확인한 값을 환경변수로 넣는다. 비어 있으면 백필만 실패하고
+# 조회는 현재 환율 폴백으로 떨어지므로 서비스는 정상 동작한다.
+ecos:
+  api-key: ${ECOS_API_KEY:}
+  base-url: ${ECOS_BASE_URL:https://ecos.bok.or.kr}
+  # 통화를 추가하려면 이 YAML을 고쳐야 한다 — 대문자 맵 키는 환경변수로 표현할 수 없다.
+  # 그리고 여기만 고치면 백필은 되는데 조회가 안 된다:
+  # UnifiedAssetFxConverterAdapter.HISTORICAL 집합에도 같은 통화를 넣어야 한다.
+  # (ECOS_SERIES_JPY_STAT_CODE는 relaxed binding을 거치며 ecos.series.jpy.*로 소문자화된다.)
+  # unit-divisor는 고시 단위를 1단위로 되돌리는 제수다. JPY는 100엔 고시라 100. 0 이하면 기동이 실패한다.
+  series:
+    USD:
+      stat-code: ${ECOS_USD_STAT_CODE:}
+      item-code: ${ECOS_USD_ITEM_CODE:}
+      unit-divisor: 1
+
 logging:
   level:
     root: INFO
