@@ -39,7 +39,10 @@ class UnifiedAssetFxConverterAdapterTest {
     }
 
     @Test
-    fun `USDT는 USD 시계열로 환산한다`() {
+    fun `과거 경로의 USDT는 여전히 USD 시계열로 근사한다`() {
+        // toKrw와 toKrwOn이 **의도적으로 다른 규칙**을 쓴다. 과거 USDT 시계열은 존재하지
+        // 않으므로(ECOS는 법정통화만 준다) 여기서는 USD로 접는 게 맞다.
+        // 아래 `현재 경로의 USDT는 USD로 접히지 않는다`와 짝으로 읽을 것 — 불일치가 아니다.
         val repo = FakeRepo(row(date, "1390.200000"))
 
         val result = adapter(repo).toKrwOn(BigDecimal("100"), "usdt", date)
@@ -47,6 +50,29 @@ class UnifiedAssetFxConverterAdapterTest {
         assertThat(result.amountKrw).isEqualByComparingTo("139020")
         assertThat(result.estimated).isFalse()
         assertThat(repo.lastCurrency).isEqualTo("USD")
+    }
+
+    @Test
+    fun `현재 경로의 USDT는 USD로 접히지 않는다`() {
+        // AF-99 분리가 실제로 서는 지점. 어댑터가 USDT를 USD로 접으면 CurrencyConverter에
+        // 닿기도 전에 분리가 무효가 된다 — 거래소 자산이 공식 고시로 환산되는 그 버그다.
+        val adapter = UnifiedAssetFxConverterAdapter(
+            CurrencyConverter(SplitFxRateService()), FakeRepo(),
+        )
+
+        assertThat(adapter.toKrw(BigDecimal("100"), "USDT")).isEqualByComparingTo("135000")
+        assertThat(adapter.toKrw(BigDecimal("100"), "USD")).isEqualByComparingTo("138000")
+    }
+
+    @Test
+    fun `현재 경로는 공백이 섞인 USDT도 접지 않고 거래소 시세로 환산한다`() {
+        // 접기를 뺀 자리에 trim·uppercase는 남아야 한다. 안 그러면 " usdt "가 어느 갈래에도
+        // 안 맞아 1:1로 떨어지고, 100 USDT가 100원이 된다 (AF-100이 고친 버그)
+        val adapter = UnifiedAssetFxConverterAdapter(
+            CurrencyConverter(SplitFxRateService()), FakeRepo(),
+        )
+
+        assertThat(adapter.toKrw(BigDecimal("100"), " usdt ")).isEqualByComparingTo("135000")
     }
 
     @Test
@@ -192,11 +218,16 @@ class UnifiedAssetFxConverterAdapterTest {
         rateKrw = BigDecimal(rate), source = "ECOS", createdAt = LocalDateTime.now(),
     )
 
-    private class StubFxRateService : FxRateService {
+    private open class StubFxRateService : FxRateService {
         override fun getUsdtToKrw(): BigDecimal = BigDecimal("1350")
         override fun setUsdtToKrw(rate: BigDecimal) = Unit
         override fun getCryptoToKrw(symbol: String): BigDecimal = BigDecimal("90000000")
         override fun setCryptoToKrw(symbol: String, rate: BigDecimal) = Unit
+    }
+
+    /** 공식 고시가 수집된 뒤의 상태 — USD 1380, USDT 1350으로 갈린다 */
+    private class SplitFxRateService : StubFxRateService() {
+        override fun getUsdToKrw(): BigDecimal = BigDecimal("1380")
     }
 
     /** 조회 두 메서드만 쓰므로 나머지는 위임하지 않는다. stored가 var인 이유는 백필 시나리오 */

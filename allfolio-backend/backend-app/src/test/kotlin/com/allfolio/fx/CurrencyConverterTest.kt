@@ -29,9 +29,23 @@ class CurrencyConverterTest {
     }
 
     @Test
-    fun `usd converts like usdt`() {
-        // Binance 등 달러 표시 자산 — USDT≈USD 환율 적용 (1:1 폴백은 1400배 축소 버그)
+    fun `usd falls back to the usdt rate when no official quote exists`() {
+        // getUsdToKrw()의 default가 getUsdtToKrw()다 — 하나은행 수집 전에는 현행 동작 그대로.
+        // 1:1 폴백은 달러 자산을 1400배 축소하던 버그라 여기로 떨어지면 안 된다.
         assertEquals(0, BigDecimal("140000").compareTo(converter.toKrw(BigDecimal("100"), "USD")))
+    }
+
+    @Test
+    fun `usd and usdt use different rates once an official quote exists`() {
+        // AF-99 분리의 핵심. 공식 고시(1380)와 거래소 시세(1400)가 갈리면 USD는 고시로,
+        // USDT는 거래소 시세로 가야 한다. 한쪽으로 접히면 이 테스트가 잡는다.
+        val split = object : FxRateService by fxRates {
+            override fun getUsdToKrw(): BigDecimal = BigDecimal("1380")
+        }
+        val converter = CurrencyConverter(split)
+
+        assertEquals(0, BigDecimal("138000").compareTo(converter.toKrw(BigDecimal("100"), "USD")))
+        assertEquals(0, BigDecimal("140000").compareTo(converter.toKrw(BigDecimal("100"), "USDT")))
     }
 
     @Test

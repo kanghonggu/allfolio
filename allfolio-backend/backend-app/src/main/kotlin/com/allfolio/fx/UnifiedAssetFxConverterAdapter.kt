@@ -65,11 +65,32 @@ class UnifiedAssetFxConverterAdapter(
         private val CRYPTO = setOf("BTC", "ETH")
     }
 
-    // Account.reconstruct는 DB 값을 재정규화 없이 되살리므로 Currencies.normalize를 우회한 코드가
-    // 그대로 도달한다. 정규화 없이 넘기면 " usdt "가 1:1로 떨어져 100 USDT가 100원이 된다
+    /**
+     * 현재 환율 경로 — 자산 평가액용. **[canonical]을 거치지 않는다.**
+     *
+     * 여기서 `USDT → USD`로 접으면 [CurrencyConverter]에 닿기도 전에 USD가 되어
+     * AF-99의 USD·USDT 분리가 통째로 무효가 된다. 거래소에 실제 USDT를 들고 있는 계정이
+     * 공식 고시로 환산되는, 정확히 그 분리가 막으려던 상황이다.
+     *
+     * trim·uppercase는 남긴다. `Account.reconstruct`는 DB 값을 재정규화 없이 되살리므로
+     * `Currencies.normalize`를 우회한 코드가 그대로 도달하는데, 정규화 없이 넘기면
+     * `" usdt "`가 어느 갈래에도 안 맞아 1:1로 떨어지고 100 USDT가 100원이 된다.
+     *
+     * **[toKrwOn]과 규칙이 다른 것은 의도다** — 저쪽 KDoc을 읽고 나서 통일할 것.
+     */
     override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
-        currencyConverter.toKrw(amount, canonical(currency))
+        currencyConverter.toKrw(amount, currency.trim().uppercase())
 
+    /**
+     * 지정일 환율 경로 — 현금흐름용. [canonical]을 거쳐 USDT를 USD 시계열로 근사한다.
+     *
+     * ECOS는 법정통화만 주므로 **과거 USDT 시계열은 존재하지 않는다.** 접지 않으면
+     * `HISTORICAL`에 없는 통화로 떨어져 현재 환율 폴백이 되는데, 그건 체결일 환율을
+     * 쓰겠다는 이 메서드의 존재 이유를 무너뜨린다. USD로 근사하는 편이 낫다.
+     *
+     * 즉 **두 경로가 의도적으로 다른 규칙을 쓴다** — 현재가는 USDT를 별개 자산으로,
+     * 과거는 USD로 근사. 불일치로 보고 통일하지 말 것.
+     */
     override fun toKrwOn(amount: BigDecimal, currency: String, date: LocalDate): KrwConversion {
         val code = canonical(currency)
 
@@ -123,8 +144,9 @@ class UnifiedAssetFxConverterAdapter(
         KrwConversion(currencyConverter.toKrw(amount, code), rateDate = null, estimated = true)
 
     /**
-     * 별칭을 정리한 통화 코드. USDT는 USD 시계열로 근사한다 —
-     * 현재 환율 경로(CurrencyConverter)와 같은 취급이다.
+     * 과거 시계열 조회용 통화 코드. USDT는 USD 시계열로 근사한다.
+     *
+     * **[toKrwOn]에서만 쓴다.** 현재 환율 경로가 이걸 거치면 AF-99의 분리가 무효가 된다.
      *
      * 화이트리스트 검증을 겸하는 `Currencies.normalize`와 달리 여기서는 별칭 치환만 한다.
      */

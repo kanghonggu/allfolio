@@ -8,7 +8,7 @@ import java.math.RoundingMode
  * 통화 변환 유틸리티
  *
  * KRW 기준 통합 — 모든 가격을 KRW 원화 기준으로 환산.
- * 지원 통화: KRW (1:1), USDT (Redis 캐시 환율 적용)
+ * 지원 통화: KRW (1:1), USD (공식 매매기준율), USDT (거래소 시세), BTC·ETH (코인당 KRW 시세)
  * 미지원 통화: KRW 그대로 반환 + 경고 로그
  */
 @Component
@@ -27,8 +27,19 @@ class CurrencyConverter(
     fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
         when (currency.uppercase()) {
             "KRW"  -> amount
-            // USD는 USDT 환율로 근사 — 1:1(원화 취급) 폴백은 달러 자산을 1/1400로 축소하는 버그
-            "USDT", "USD" -> {
+            // AF-99: USD와 USDT는 **의도적으로 다른 환율**을 쓴다.
+            //
+            // USDT는 거래소 시세다. 김치 프리미엄이 섞여 있지만 그건 "부정확"이 아니라
+            // 거래소에 실제 USDT를 들고 있는 사용자에게 실현 가능한 값이다. 공식 고시로
+            // 바꾸면 더 정확해 보이지만 그 계정에서는 덜 현실적이 된다.
+            //
+            // 한쪽으로 접지 말 것. 하나은행 고시가 없는 동안은 getUsdToKrw()의 default가
+            // getUsdtToKrw()라 두 값이 같지만, 그건 폴백이지 같은 개념이라서가 아니다.
+            "USD" -> {
+                val rate = fxRateService.getUsdToKrw()
+                (amount * rate).setScale(0, RoundingMode.HALF_UP)
+            }
+            "USDT" -> {
                 val rate = fxRateService.getUsdtToKrw()
                 (amount * rate).setScale(0, RoundingMode.HALF_UP)
             }

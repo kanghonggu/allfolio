@@ -27,10 +27,23 @@ class FxRateAdminController(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    /** GET /api/admin/fx/usdtkrw — 현재 환율 조회 */
+    /** GET /api/admin/fx/usdtkrw — 거래소 USDT 환율 조회 */
     @GetMapping("/usdtkrw")
     fun getUsdtKrw(): ResponseEntity<FxRateResponse> =
         ResponseEntity.ok(FxRateResponse(fxRateService.getUsdtToKrw()))
+
+    /**
+     * GET /api/admin/fx/usdkrw — 공식 원/미국달러 매매기준율 조회 (AF-99)
+     *
+     * `usdtkrw`만 있으면 USD·USDT 분리 후 **자산 평가 경로가 실제로 무슨 값을 쓰는지
+     * 확인할 방법이 없다.** 두 응답이 갈리는지가 분리가 살아 있다는 운영 증거다.
+     *
+     * 하나은행 고시를 아직 수집하지 않았다면 `getUsdToKrw()`의 default가 USDT 환율이라
+     * 두 값이 같게 나온다 — 그건 정상이고, 수집을 돌리면 갈린다.
+     */
+    @GetMapping("/usdkrw")
+    fun getUsdKrw(): ResponseEntity<UsdRateResponse> =
+        ResponseEntity.ok(UsdRateResponse(fxRateService.getUsdToKrw()))
 
     /** PUT /api/admin/fx/usdtkrw — 환율 갱신 (어드민 전용) */
     @PutMapping("/usdtkrw")
@@ -104,4 +117,7 @@ class FxRateAdminController(
 
 data class FxRateRequest(val rate: BigDecimal)
 data class FxRateResponse(val usdtKrw: BigDecimal)
+
+/** 필드 이름을 `usdtKrw`와 나눠 둔다 — 응답만 보고 어느 환율인지 알 수 있어야 한다 */
+data class UsdRateResponse(val usdKrw: BigDecimal)
 data class CryptoRateResponse(val symbol: String, val krw: BigDecimal)
