@@ -78,10 +78,14 @@ fun usdQuoteRef(): UsdQuoteRef? = null
 | BTC · ETH | 코인 시세 | `코인 시세` | null |
 | 그 외 | 환산 안 함 | — (null 반환) | — |
 
-**USD 폴백에서 `getUsdToKrw()`가 아니라 `getUsdtToKrw()`를 부른다.** 이유는 조회 횟수다 —
-`getUsdToKrw()`를 부르면 고시 조회가 한 번 더 나가고, 고시가 없는 상태(배포 직후 첫 수집 전)에서는
-`HanaFxRateService`가 실패를 캐시하지 않으므로 매 호출마다 DB를 두 번 치게 된다.
-인터페이스의 default 구현이 이미 `getUsdToKrw() = getUsdtToKrw()`라 의미는 같다.
+**USD 폴백은 `getUsdToKrw()`를 부른다.** 한때 `getUsdtToKrw()`를 직접 부르는 안을 검토했다 —
+고시가 없는 상태에서 `HanaFxRateService`가 미스를 캐시하지 않아 조회가 한 번 더 나가기 때문이다.
+접었다. `getUsdToKrw()`는 인터페이스의 공개 계약이고, 구현체가 `usdQuoteRef()` 없이 그것만
+오버라이드할 수 있다. 우회하면 `CurrencyConverter`가 그 계약을 더 이상 존중하지 않게 되어,
+"USD 환율"의 정의가 구현체마다 갈린다. 조회 한 번을 아끼려고 낼 값이 아니다.
+
+남는 비용은 **고시가 하나도 없는 상태에서만** 호출당 쿼리 한 번이 두 번이 되는 것이다.
+그 상태는 첫 수집 전 한때뿐이고, AF-103 이후 수집이 평일 4회 자동으로 도니 오래 머물지 않는다.
 
 **KRW와 미지원 통화가 똑같이 null인 것은 의도다.** 둘 다 "환산이 일어나지 않았다"이고,
 일어나지 않은 환산에는 밝힐 출처가 없다.

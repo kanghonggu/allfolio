@@ -281,13 +281,15 @@ git commit -m "feat(af-105): 하나은행 고시 메타(기준일·회차) 캐�
 
     // 고시가 없는 날에도 줄은 사라지지 않고 문구만 바뀐다.
     // 숨기면 값이 가장 못 미더운 순간에 출처 표기가 사라져, 신뢰가 목적인 기능이 반대로 동작한다.
+    // 기존 스텁(`fxRates`)은 usdQuoteRef()를 오버라이드하지 않아 기본값 null이고,
+    // getUsdToKrw()=1390 / getUsdtToKrw()=1400으로 갈라 둔다. 그 스텁을 그대로 쓰면
+    // 폴백이 getUsdToKrw()를 존중하는지가 바로 드러난다 — 1400이 나오면 계약을 우회한 것이다.
     @Test
     fun `고시가 없으면 근사임을 밝히되 표기를 없애지 않는다`() {
-        // usdQuoteRef()가 null이고 getUsdtToKrw()가 1350을 돌려주는 스텁
         val source = converter.sourceOf("USD")
 
         assertThat(source).isNotNull
-        assertThat(source!!.rate).isEqualByComparingTo(BigDecimal("1350"))
+        assertThat(source!!.rate).isEqualByComparingTo(BigDecimal("1390"))
         assertThat(source.source).contains("고시 없음")
         assertThat(source.baseDate).isNull()
         assertThat(source.roundNo).isNull()
@@ -366,13 +368,12 @@ data class FxSource(
             // AF-99: 법정통화 USD는 하나은행 공식 매매기준율.
             // 고시가 없으면 근사로 떨어지지만 표기를 없애지는 않는다 — 문구로 밝힌다.
             //
-            // 폴백에서 getUsdToKrw()가 아니라 getUsdtToKrw()를 부르는 건 조회 횟수 때문이다.
-            // getUsdToKrw()를 부르면 고시 조회가 한 번 더 나가는데, 고시가 없는 상태에서는
-            // HanaFxRateService가 실패를 캐시하지 않아 매 호출마다 DB를 두 번 치게 된다.
-            // 인터페이스 default가 이미 getUsdToKrw() = getUsdtToKrw()라 의미는 같다.
+            // 폴백은 getUsdToKrw()를 부른다. getUsdtToKrw()를 직접 부르면 고시 조회를 한 번
+            // 아낄 수 있지만, getUsdToKrw()는 인터페이스의 공개 계약이고 구현체가 usdQuoteRef()
+            // 없이 그것만 오버라이드할 수 있다. 우회하면 "USD 환율"의 정의가 구현체마다 갈린다.
             "USD" -> fxRateService.usdQuoteRef()
                 ?.let { FxSource("USD", it.rate, "하나은행 매매기준율", it.baseDate, it.roundNo) }
-                ?: FxSource("USD", fxRateService.getUsdtToKrw(), "고시 없음 · 거래소 시세 근사", null, null)
+                ?: FxSource("USD", fxRateService.getUsdToKrw(), "고시 없음 · 거래소 시세 근사", null, null)
             // 스테이블코인은 거래소 시세를 유지한다 — 김치 프리미엄은 부정확이 아니라
             // 거래소에 실제 USDT를 들고 있는 사용자에게 실현 가능한 값이다
             "USDT" -> FxSource("USDT", fxRateService.getUsdtToKrw(), "거래소 시세", null, null)
