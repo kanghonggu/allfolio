@@ -64,16 +64,4 @@ class CurrencyConverter(
             "BTC", "ETH" -> FxSource(code, fxRateService.getCryptoToKrw(code), "코인 시세", null, null)
             else -> null
         }
-
-    /**
-     * marketPrices(Map<assetId, price>)를 tradeCurrency 기준으로 KRW 환산.
-     * tradeCurrency가 모두 동일하다는 가정 하에 일괄 변환.
-     */
-    fun convertPricesToKrw(
-        prices: Map<java.util.UUID, BigDecimal>,
-        currency: String,
-    ): Map<java.util.UUID, BigDecimal> {
-        if (currency.uppercase() == "KRW") return prices
-        return prices.mapValues { (_, price) -> toKrw(price, currency) }
-    }
 }
