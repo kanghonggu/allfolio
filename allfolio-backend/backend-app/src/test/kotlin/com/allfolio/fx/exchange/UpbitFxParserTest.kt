@@ -50,4 +50,13 @@ class UpbitFxParserTest {
         assertThatThrownBy { parser.parse("<html>maintenance</html>") }
             .isInstanceOf(FxQuoteException::class.java)
     }
+
+    @Test
+    fun `trade_price가 문자열이면 예외 - 응답 형태가 바뀐 것이다`() {
+        val json = """[{"market":"KRW-USDT","trade_price":"1408.0"}]"""
+
+        assertThatThrownBy { parser.parse(json) }
+            .isInstanceOf(FxQuoteException::class.java)
+            .hasMessageContaining("숫자가 아닙니다")
+    }
 }
