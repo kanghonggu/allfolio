@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component
  *
  * 실패 시:
  *   - ERROR 로그만 남기고 계속 실행
- *   - Redis 기존 값 유지 (TTL 60초 만료 전까지)
+ *   - Redis 기존 값 유지 (TTL 180초 만료 전까지)
  *   - TTL 만료 후 RedisFxRateService 가 fallback-rate 반환
  */
 @Component
