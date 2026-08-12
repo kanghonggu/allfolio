@@ -60,4 +60,11 @@ class BithumbFxParserTest {
             .isInstanceOf(FxQuoteException::class.java)
             .hasMessageContaining("closing_price")
     }
+
+    @Test
+    fun `status 필드가 아예 없으면 예외 - 없는 것을 정상으로 읽으면 안 된다`() {
+        assertThatThrownBy { parser.parse("""{"data":{"closing_price":"1409"}}""") }
+            .isInstanceOf(FxQuoteException::class.java)
+            .hasMessageContaining("status=null")
+    }
 }

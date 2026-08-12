@@ -32,7 +32,8 @@ class BithumbFxParser(private val objectMapper: ObjectMapper) {
 
         val status = root.get("status")?.asText()
         if (status != STATUS_OK) {
-            throw FxQuoteException("Bithumb status=$status")
+            val message = root.get("message")?.asText()
+            throw FxQuoteException("Bithumb status=$status message=$message")
         }
 
         val data = root.get("data")
