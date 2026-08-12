@@ -5,6 +5,7 @@ import com.allfolio.auth.JwtTokenService
 import com.allfolio.auth.UserEntity
 import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
+import com.allfolio.fx.hana.HanaFxCollectService
 import org.springframework.boot.test.mock.mockito.MockBean
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -46,10 +47,13 @@ import java.math.BigDecimal
 )
 class SecurityConfigErrorDispatchTest {
 
-    // 인가·오류 디스패치만 보는 테스트라 백필은 호출되지 않는다.
+    // 인가·오류 디스패치만 보는 테스트라 백필·하나은행 수집은 호출되지 않는다.
     // FxRateAdminController가 요구하므로 자리만 채운다.
     @MockBean
     private lateinit var fxRateBackfillService: FxRateBackfillService
+
+    @MockBean
+    private lateinit var hanaFxCollectService: HanaFxCollectService
 
     @Autowired
     private lateinit var restTemplate: TestRestTemplate
