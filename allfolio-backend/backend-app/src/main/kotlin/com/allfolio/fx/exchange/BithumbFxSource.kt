@@ -6,7 +6,7 @@ import java.math.BigDecimal
 import java.time.Duration
 
 /**
- * Bithumb USDT_KRW 시세 소스 (폴백).
+ * Bithumb KRW 시세 소스 (폴백). ALL_KRW로 USDT·BTC·ETH를 한 번에 가져온다.
  *
  * `GET /public/ticker/USDT_KRW` — 무인증, 무료.
  *
@@ -27,16 +27,18 @@ class BithumbFxSource(
     private val webClient: WebClient by lazy {
         WebClient.builder()
             .baseUrl(baseUrl)
-            .codecs { it.defaultCodecs().maxInMemorySize(256 * 1024) }
+            // ALL_KRW는 상장 전 종목을 다 준다 — 2026-08-12 실측 169KB(480종목, 종목당 약 350B).
+            // 기존 256KB로는 여유가 1.5배뿐이라 상장이 265개만 늘어도 조용히 실패한다.
+            .codecs { it.defaultCodecs().maxInMemorySize(1024 * 1024) }
             .build()
     }
 
     companion object {
-        private const val PATH = "/public/ticker/USDT_KRW"
+        private const val PATH = "/public/ticker/ALL_KRW"
         private val TIMEOUT = Duration.ofSeconds(5)
     }
 
-    override fun fetchUsdtKrw(): BigDecimal {
+    override fun fetchKrwRates(): Map<String, BigDecimal> {
         val body = try {
             webClient.get()
                 .uri(PATH)
