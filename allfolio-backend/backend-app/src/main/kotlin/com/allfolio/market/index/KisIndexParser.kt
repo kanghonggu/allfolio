@@ -47,7 +47,7 @@ class KisIndexParser {
      * **실측으로 확인된 것은 2뿐이다.** 그 밖의 값은 거부한다 —
      * 기본값을 상승으로 두면 모르는 코드가 왔을 때 하락을 상승으로 저장한다.
      */
-    private fun direction(sign: String): Int = when (sign.trim()) {
+    private fun direction(sign: String): Int = when (sign) {
         "1", "2" -> 1
         "3" -> 0
         "4", "5" -> -1
