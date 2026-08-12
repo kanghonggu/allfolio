@@ -23,9 +23,13 @@ class HanaFxGuards {
 
     /**
      * @param previousRates   통화별 직전 고시 매매기준율. 없는 통화는 변동 검사를 건너뛴다
-     * @param previousRowCount 직전 수집의 통화 수. null이면 첫 수집이라 검사를 건너뛴다
-     * @param force           2% 변동 가드만 무시한다. 실제로 2% 넘게 움직인 날 영구히 막히는 걸 푸는 용도
-     * @return 걸린 항목. 비어 있으면 저장 가능
+     * @param previousRowCount 직전 수집의 통화 수. null·0이면 비교 대상이 없으므로 행 수 검사를 건너뛴다.
+     *                        0을 건너뛰는 것은 의도된 계약이다 — 직전 회차 조회가 빈 목록을 주면
+     *                        호출자가 null 대신 0을 넘기기 쉬운데, 없는 데이터와 비교해 막으면 안 된다
+     * @param force           변동 가드만 무시한다. 실제로 임계값 넘게 움직인 날 영구히 막히는 걸 푸는 용도
+     * @return 걸린 항목. 여러 개가 동시에 걸리면 모두 담는다 — 빈 테이블은 USD 부재와 행 급감이
+     *         함께 걸리고, 그 조합이 "마크업이 바뀌었다"와 "USD가 빠졌다"를 가른다.
+     *         비어 있으면 저장 가능
      */
     fun check(
         rows: List<HanaFxRow>,
@@ -43,7 +47,9 @@ class HanaFxGuards {
         if (previousRowCount != null) {
             val threshold = BigDecimal(previousRowCount).multiply(MIN_ROW_RATIO)
             if (BigDecimal(rows.size) < threshold) {
-                anomalies += "행 수가 직전 수집의 절반 미만입니다 (${rows.size} < $previousRowCount)"
+                // 직전 행 수만 보이면 조금만 줄어도 걸리는 것처럼 읽힌다 — 적용된 임계값을 같이 준다
+                val limit = threshold.stripTrailingZeros().toPlainString()
+                anomalies += "행 수가 직전 수집의 절반 미만입니다 (${rows.size} < $limit, 직전 $previousRowCount)"
             }
         }
 
@@ -54,7 +60,9 @@ class HanaFxGuards {
                 val change = (row.baseRate - previous).abs()
                     .divide(previous, 6, RoundingMode.HALF_UP)
                 if (change > MAX_CHANGE_RATIO) {
-                    anomalies += "${row.currency} 변동이 2%를 넘습니다 ($previous → ${row.baseRate})"
+                    // 임계값을 문자열에 박아두면 상수를 조정한 날 메시지가 코드에 없는 숫자를 주장한다
+                    val limit = MAX_CHANGE_RATIO.movePointRight(2).stripTrailingZeros().toPlainString()
+                    anomalies += "${row.currency} 변동이 $limit%를 넘습니다 ($previous → ${row.baseRate})"
                 }
             }
         }

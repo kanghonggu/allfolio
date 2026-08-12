@@ -198,6 +198,60 @@ class HanaFxGuardsTest {
     }
 
     @Test
+    fun `빈 테이블은 USD 부재와 행 수 급감을 모두 보고한다`() {
+        // 가장 흔한 실패 모드다. 둘이 함께 걸린다는 사실이 "마크업이 바뀌었다"와
+        // "USD가 빠졌다"를 가르므로, 하나로 줄이면 운영자가 보강 신호를 잃는다
+        val anomalies = guards.check(
+            rows = emptyList(),
+            previousRates = mapOf("USD" to BigDecimal("1385")),
+            previousRowCount = 58,
+            force = false,
+        )
+
+        assertThat(anomalies).hasSize(2)
+        assertThat(anomalies[0]).contains("USD")
+        assertThat(anomalies[1]).contains("행 수")
+    }
+
+    @Test
+    fun `직전 행 수가 0이면 행 수 검사를 건너뛴다`() {
+        // 직전 회차 조회가 빈 목록이면 호출자는 null이 아니라 0을 넘기기 쉽다.
+        // 없는 데이터와 비교해 막으면 안 된다 — 사고가 아니라 계약이다
+        val anomalies = guards.check(
+            rows = rows("USD" to "1390"),
+            previousRates = emptyMap(),
+            previousRowCount = 0,
+            force = false,
+        )
+
+        assertThat(anomalies).isEmpty()
+    }
+
+    @Test
+    fun `행 수 메시지가 적용된 임계값을 보여준다`() {
+        val anomalies = guards.check(
+            rows = rowsOfSize(49),
+            previousRates = emptyMap(),
+            previousRowCount = 100,
+            force = false,
+        )
+
+        assertThat(anomalies).singleElement().matches { it.contains("49 < 50") && it.contains("직전 100") }
+    }
+
+    @Test
+    fun `변동 메시지가 임계값을 상수에서 가져온다`() {
+        val anomalies = guards.check(
+            rows = rows("USD" to "1420"),
+            previousRates = mapOf("USD" to BigDecimal("1385")),
+            previousRowCount = 1,
+            force = false,
+        )
+
+        assertThat(anomalies).singleElement().matches { it.contains("2%를 넘습니다") }
+    }
+
+    @Test
     fun `비교 대상이 없는 첫 수집은 통과시킨다`() {
         // 직전 값도 직전 행 수도 없다. 여기서 막으면 수집을 영영 시작할 수 없다
         val anomalies = guards.check(
