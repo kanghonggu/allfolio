@@ -107,6 +107,37 @@ class GlobalExceptionHandler {
         ResponseEntity.status(HttpStatus.CONFLICT)
             .body(mapOf("error" to (e.message ?: SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE)))
 
+    /**
+     * ECOS(한국은행) 환율 조회 실패 (AF-100).
+     *
+     * `code`를 본문에 함께 싣는 이유는 운영자의 다음 행동이 code마다 갈리기 때문이다 —
+     * `INFO-200`(해당 기간 자료 없음)은 구간을 좁혀 재실행, `CONN`/`HTTP-5xx`는 그냥 재시도,
+     * `NO_KEY`/`NO_SERIES`는 Render 환경변수 등록이다. 이 분기를 [ResponseStatusException]으로
+     * 옮길 수 없어 전용 핸들러를 둔다: reason 하나뿐이라 code를 실을 자리가 없다.
+     *
+     * **상태 코드가 둘로 갈린다.** 기본은 502다 — 상류가 실패한 것이지 우리 서버가 깨진 게 아니다.
+     * 다만 `NO_KEY`/`NO_SERIES`는 **우리 설정 누락**이라 500으로 보낸다.
+     * `EcosStatisticSearchClient`가 이 둘을 [IllegalArgumentException](→400)이 아니라
+     * [com.allfolio.fx.EcosApiException]으로 던진 이유가 정확히 이것("설정 누락은 서버 문제다")인데,
+     * 여기서 502로 뭉뚱그리면 같은 오진을 반대편으로 반복한다 — 502를 본 운영자는 한국은행 상태를
+     * 확인하러 가지만 실제 할 일은 `ECOS_API_KEY`를 등록하는 것이다.
+     *
+     * **예외 객체를 로깅하지 않는다 — 의도된 것이다.**
+     * ECOS 인증키가 URL 경로에 들어가서, 원본 스택(Reactor checkpoint·되울린 URI)에 키가 박힌다.
+     * `EcosStatisticSearchClient`가 던지기 전에 정제하므로 지금 도달하는 예외는 안전하지만,
+     * 나중에 누군가 정제되지 않은 throw 지점을 추가해도 여기서 새지 않도록 code와 클래스 이름만 남긴다.
+     * (원인 진단에 필요한 응답 미리보기는 클라이언트가 마스킹해 자기 로그에 이미 남긴다.)
+     */
+    @ExceptionHandler(com.allfolio.fx.EcosApiException::class)
+    fun handleEcosApi(e: com.allfolio.fx.EcosApiException): ResponseEntity<Map<String, String>> {
+        val status =
+            if (e.code == "NO_KEY" || e.code == "NO_SERIES") HttpStatus.INTERNAL_SERVER_ERROR
+            else HttpStatus.BAD_GATEWAY
+        log.warn("ECOS API failed type={} code={} status={}", e.javaClass.simpleName, e.code, status.value())
+        return ResponseEntity.status(status)
+            .body(mapOf("error" to e.detail, "code" to e.code))
+    }
+
     @ExceptionHandler(Exception::class)
     fun handleUnexpected(e: Exception): ResponseEntity<Map<String, String>> {
         if (e.requiresSensitiveDataReconnection()) {

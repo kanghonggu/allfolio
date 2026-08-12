@@ -4,7 +4,9 @@ import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.auth.JwtTokenService
 import com.allfolio.auth.UserEntity
 import com.allfolio.auth.UserRole
+import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
+import org.springframework.boot.test.mock.mockito.MockBean
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.SpringBootConfiguration
@@ -38,6 +40,11 @@ import java.math.BigDecimal
 )
 @AutoConfigureMockMvc
 class SecurityConfigAdminTest {
+
+    // 이 테스트가 보는 건 인가 경로뿐이라 백필은 호출되지 않는다.
+    // FxRateAdminController가 요구하므로 자리만 채운다.
+    @MockBean
+    private lateinit var fxRateBackfillService: FxRateBackfillService
 
     @Autowired
     private lateinit var mockMvc: MockMvc
