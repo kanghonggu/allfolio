@@ -36,18 +36,20 @@ class HanaFxQuoteJpaRepositoryTest {
     @Test
     fun `같은 날 여러 회차가 있으면 회차가 큰 것을 준다`() {
         save(friday, 1, "USD", "1380.0000")
-        save(friday, 32, "USD", "1390.5000")
+        // 소수점 4자리를 끝까지 채운 값 — 컬럼 스케일이 좁으면 여기서 반올림돼 단언이 깨진다.
+        // 4자리가 필요한 이유는 (100) 단위 통화를 1단위로 정규화할 때 100으로 나누기 때문.
+        save(friday, 32, "USD", "1390.5678")
         save(friday, 12, "USD", "1385.0000")
 
         val found = repository.findTopByCurrencyOrderByBaseDateDescRoundNoDesc("USD")
 
         assertThat(found?.roundNo).isEqualTo(32)
-        assertThat(found?.baseRate).isEqualByComparingTo("1390.5")
+        assertThat(found?.baseRate).isEqualByComparingTo("1390.5678")
     }
 
     @Test
     fun `기준일이 더 최근이면 회차가 작아도 그것을 준다`() {
-        save(friday, 32, "USD", "1390.5000")
+        save(friday, 32, "USD", "1390.5678")
         save(monday, 1, "USD", "1400.0000")
 
         val found = repository.findTopByCurrencyOrderByBaseDateDescRoundNoDesc("USD")
@@ -70,18 +72,22 @@ class HanaFxQuoteJpaRepositoryTest {
 
     @Test
     fun `회차 단위 조회는 그 회차의 통화만 준다`() {
-        save(friday, 32, "USD", "1390.5000")
+        save(friday, 32, "USD", "1390.5678")
         save(friday, 32, "JPY", "9.5000")
         save(friday, 31, "USD", "1389.0000")
+        // 같은 회차 다른 기준일 — 회차만 보고 날짜를 놓치면 수집기가 전날 32회차를
+        // 오늘 값으로 덮어써 (기준일, 회차, 통화) 키가 지키려던 이력이 조용히 사라진다
+        save(monday, 32, "USD", "1400.0000")
 
         val rows = repository.findAllByBaseDateAndRoundNo(friday, 32)
 
+        assertThat(rows).hasSize(2)
         assertThat(rows.map { it.currency }).containsExactlyInAnyOrder("USD", "JPY")
     }
 
     @Test
     fun `같은 기준일 회차 통화는 두 번 들어갈 수 없다`() {
-        save(friday, 32, "USD", "1390.5000")
+        save(friday, 32, "USD", "1390.5678")
 
         assertThatThrownBy {
             repository.saveAndFlush(
@@ -93,7 +99,7 @@ class HanaFxQuoteJpaRepositoryTest {
     @Test
     fun `조회해 온 행을 고쳐 다시 저장하면 행이 늘지 않고 값만 바뀐다`() {
         val id = UUID.randomUUID()
-        repository.saveAndFlush(entity(id, friday, 32, "USD", "1390.5000"))
+        repository.saveAndFlush(entity(id, friday, 32, "USD", "1390.5678"))
         entityManager.clear()
 
         val loaded = repository.findAllByBaseDateAndRoundNo(friday, 32).single()
