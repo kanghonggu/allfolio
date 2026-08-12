@@ -34,17 +34,21 @@ class ExchangeFxApiClient(
     }
 
     override fun getUsdtKrw(): BigDecimal {
+        var lastFailure: FxQuoteException? = null
+
         for (source in sources) {
             val rate = try {
                 source.fetchUsdtKrw()
             } catch (e: FxQuoteException) {
                 log.warn("[ExchangeFx] {} 실패: {}", source.sourceName, e.message)
+                lastFailure = e
                 continue
             }
 
             if (rate < MIN_RATE || rate > MAX_RATE) {
                 // 예외를 안 던지고 값을 돌려준 소스가 범위를 벗어났다 = 파싱이 깨졌다는 뜻이다.
                 log.warn("[ExchangeFx] {} 값이 범위 밖이라 무시: {}", source.sourceName, rate)
+                lastFailure = FxQuoteException("${source.sourceName} 값이 범위 밖: $rate")
                 continue
             }
 
@@ -52,6 +56,12 @@ class ExchangeFxApiClient(
             return rate
         }
 
-        throw FxQuoteException("모든 소스에서 USDT/KRW를 가져오지 못했습니다 (시도=${sources.size})")
+        // cause를 붙이는 이유: 스케줄러는 e.message만 찍는다. 원인을 안 달면
+        // 전량 실패했을 때 로그 한 줄로는 왜 실패했는지 알 수 없고,
+        // 위쪽 WARN 줄과 눈으로 짝지어야 한다 — 로그 파이프라인에서는 그 줄이 없을 수도 있다.
+        throw FxQuoteException(
+            "모든 소스에서 USDT/KRW를 가져오지 못했습니다 (시도=${sources.size})",
+            lastFailure,
+        )
     }
 }

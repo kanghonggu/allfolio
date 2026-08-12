@@ -83,4 +83,15 @@ class ExchangeFxApiClientTest {
         assertThatThrownBy { ExchangeFxApiClient(emptyList()).getUsdtKrw() }
             .isInstanceOf(FxQuoteException::class.java)
     }
+
+    @Test
+    fun `FxQuoteException이 아닌 예외는 전파한다 - 진짜 버그를 폴백으로 삼키면 안 된다`() {
+        val broken = FakeSource("UPBIT", Result.failure(IllegalStateException("파서 버그")))
+        val healthy = ok("BITHUMB", "1409")
+
+        assertThatThrownBy { ExchangeFxApiClient(listOf(broken, healthy)).getUsdtKrw() }
+            .isInstanceOf(IllegalStateException::class.java)
+
+        assertThat(healthy.callCount).isZero()
+    }
 }
