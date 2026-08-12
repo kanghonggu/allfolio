@@ -52,34 +52,38 @@ class BinanceSyncAdapter(private val objectMapper: ObjectMapper) : SyncAdapter {
         // 가격 조회 (심볼별 USDT 가격)
         val prices = fetchPrices()
 
-        return balances.mapNotNull { node ->
+        return toAssets(account, parseBalances(balances), prices)
+    }
+
+    /** free + locked 합계가 양수인 잔고만. */
+    internal fun parseBalances(balances: JsonNode): List<Pair<String, BigDecimal>> =
+        balances.mapNotNull { node ->
             val asset  = node["asset"]?.asText() ?: return@mapNotNull null
             val free   = node["free"]?.asText()?.let { BigDecimal(it) } ?: BigDecimal.ZERO
             val locked = node["locked"]?.asText()?.let { BigDecimal(it) } ?: BigDecimal.ZERO
             val total  = free + locked
-            if (total <= BigDecimal.ZERO) return@mapNotNull null
-
-            val usdPrice = when (asset) {
-                "USDT", "BUSD", "USDC" -> BigDecimal.ONE
-                else -> prices["${asset}USDT"] ?: BigDecimal.ZERO
-            }
-            val currentValue = total.multiply(usdPrice)
-
-            Asset.create(
-                userId          = account.userId,
-                accountId       = account.id,
-                category        = AssetCategory.FINANCIAL,
-                type            = AssetType.CRYPTO,
-                sourceType      = AssetSourceType.EXCHANGE_API,
-                name            = asset,
-                symbol          = asset,
-                quantity        = total,
-                purchasePrice   = BigDecimal.ZERO, // 평균단가 별도 조회 필요
-                currentValue    = currentValue,
-                currency        = "USD",
-                valuationMethod = ValuationMethod.MARKET_PRICE,
-            )
+            if (total <= BigDecimal.ZERO) null else asset to total
         }
+
+    /**
+     * 잔고 × USDT 호가 → 자산. HTTP와 분리해 둔 순수 함수다 —
+     * 시세 키 형식(`BTCUSDT`)과 통화 라벨을 네트워크 없이 테스트로 고정한다.
+     *
+     * 평가액 단위는 USD가 아니라 **USDT**다. 왜 라벨이 그런지는 [UsdtQuotedValuation] KDoc.
+     *
+     * **미상장 코인은 평가액 0으로 남긴다** (OKX·Bybit는 건너뛴다). 보유 사실 자체는
+     * 보여 주되 값을 지어내지 않는 쪽이고, 잔고 목록에서 코인이 통째로 사라지는 것보다 낫다.
+     */
+    internal fun toAssets(
+        account: Account,
+        balances: List<Pair<String, BigDecimal>>,
+        prices: Map<String, BigDecimal>,
+    ): List<Asset> = balances.map { (asset, total) ->
+        val usdtPrice = when (asset) {
+            in UsdtQuotedValuation.STABLECOINS -> BigDecimal.ONE
+            else -> prices["${asset}USDT"] ?: BigDecimal.ZERO
+        }
+        UsdtQuotedValuation.asset(account, asset, total, usdtPrice)
     }
 
     override fun testConnection(account: Account): ConnectionTestResult {

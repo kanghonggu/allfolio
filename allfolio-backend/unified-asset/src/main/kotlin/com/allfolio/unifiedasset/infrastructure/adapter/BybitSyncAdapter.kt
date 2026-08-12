@@ -23,32 +23,31 @@ class BybitSyncAdapter(private val objectMapper: ObjectMapper) : SyncAdapter {
     override fun sync(account: Account): List<Asset> {
         if (account.apiKey.isNullOrBlank() || account.apiSecret.isNullOrBlank()) return emptyList()
         return try {
-            val balances = fetchBalances(account)
-            val prices   = fetchPrices()
-            balances.mapNotNull { (coin, total) ->
-                val usdPrice = when (coin) {
-                    "USDT", "USDC", "BUSD" -> BigDecimal.ONE
-                    else -> prices["${coin}USDT"] ?: return@mapNotNull null
-                }
-                Asset.create(
-                    userId          = account.userId,
-                    accountId       = account.id,
-                    category        = AssetCategory.FINANCIAL,
-                    type            = AssetType.CRYPTO,
-                    sourceType      = AssetSourceType.EXCHANGE_API,
-                    name            = coin,
-                    symbol          = coin,
-                    quantity        = total,
-                    purchasePrice   = BigDecimal.ZERO,
-                    currentValue    = total.multiply(usdPrice),
-                    currency        = "USD",
-                    valuationMethod = ValuationMethod.MARKET_PRICE,
-                )
-            }
+            toAssets(account, fetchBalances(account), fetchPrices())
         } catch (e: Exception) {
             log.error("Bybit sync failed: ${e.message}", e)
             emptyList()
         }
+    }
+
+    /**
+     * 잔고 × USDT 호가 → 자산. HTTP와 분리해 둔 순수 함수다 —
+     * 시세 키 형식(`BTCUSDT`)과 통화 라벨을 네트워크 없이 테스트로 고정한다.
+     *
+     * 평가액 단위는 USD가 아니라 **USDT**다. 왜 라벨이 그런지는 [UsdtQuotedValuation] KDoc.
+     *
+     * **호가가 없는 코인은 건너뛴다** (Binance는 평가액 0으로 남긴다).
+     */
+    internal fun toAssets(
+        account: Account,
+        balances: List<Pair<String, BigDecimal>>,
+        prices: Map<String, BigDecimal>,
+    ): List<Asset> = balances.mapNotNull { (coin, total) ->
+        val usdtPrice = when (coin) {
+            in UsdtQuotedValuation.STABLECOINS -> BigDecimal.ONE
+            else -> prices["${coin}USDT"] ?: return@mapNotNull null
+        }
+        UsdtQuotedValuation.asset(account, coin, total, usdtPrice)
     }
 
     override fun testConnection(account: Account): ConnectionTestResult {
