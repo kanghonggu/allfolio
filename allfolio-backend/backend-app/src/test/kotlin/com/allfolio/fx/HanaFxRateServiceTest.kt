@@ -84,6 +84,37 @@ class HanaFxRateServiceTest {
         assertThat(service.getUsdToKrw()).isEqualByComparingTo("1390.5")
     }
 
+    @Test
+    fun `고시가 있으면 usdQuoteRef가 기준일과 회차까지 돌려준다`() {
+        val service = service(FakeRepo(quote("1390.5000", LocalDate.of(2026, 8, 11), 32)))
+
+        val ref = service.usdQuoteRef()
+
+        assertThat(ref).isNotNull
+        assertThat(ref!!.rate).isEqualByComparingTo("1390.5")
+        assertThat(ref.baseDate).isEqualTo(LocalDate.of(2026, 8, 11))
+        assertThat(ref.roundNo).isEqualTo(32)
+    }
+
+    // 둘이 다른 값을 말하면 화면이 밝히는 환율과 환산에 쓰인 환율이 갈라진다.
+    // AF-105 전체가 이 둘이 같다는 전제 위에 서 있다.
+    @Test
+    fun `usdQuoteRef와 getUsdToKrw는 같은 환율을 말한다`() {
+        val service = service(FakeRepo(quote("1390.5000")))
+
+        assertThat(service.usdQuoteRef()!!.rate).isEqualByComparingTo(service.getUsdToKrw())
+    }
+
+    @Test
+    fun `고시가 없으면 usdQuoteRef는 null이다`() {
+        assertThat(service(FakeRepo()).usdQuoteRef()).isNull()
+    }
+
+    @Test
+    fun `조회가 실패해도 usdQuoteRef는 예외 대신 null이다`() {
+        assertThat(service(ExplodingRepo()).usdQuoteRef()).isNull()
+    }
+
     // ── helpers ──────────────────────────────────────────────────
 
     /**
@@ -95,15 +126,19 @@ class HanaFxRateServiceTest {
         val field = HanaFxRateService::class.java.getDeclaredField("cached").apply { isAccessible = true }
 
         @Suppress("UNCHECKED_CAST")
-        val ref = field.get(service) as AtomicReference<Pair<Long, BigDecimal>?>
-        val (at, rate) = requireNotNull(ref.get()) { "캐시가 비어 있다 — 테스트 전제가 깨졌다" }
-        ref.set((at - 60_001L) to rate)
+        val ref = field.get(service) as AtomicReference<Pair<Long, UsdQuoteRef>?>
+        val (at, quoteRef) = requireNotNull(ref.get()) { "캐시가 비어 있다 — 테스트 전제가 깨졌다" }
+        ref.set((at - 60_001L) to quoteRef)
     }
 
     private fun service(repo: HanaFxQuoteJpaRepository) = HanaFxRateService(StubDelegate(), repo)
 
-    private fun quote(rate: String) = HanaFxQuoteEntity(
-        id = UUID.randomUUID(), baseDate = LocalDate.of(2026, 8, 7), roundNo = 32,
+    private fun quote(
+        rate: String,
+        baseDate: LocalDate = LocalDate.of(2026, 8, 7),
+        roundNo: Int = 32,
+    ) = HanaFxQuoteEntity(
+        id = UUID.randomUUID(), baseDate = baseDate, roundNo = roundNo,
         currency = "USD", baseRate = BigDecimal(rate), cashBuy = null, cashSell = null,
         remitSend = null, remitReceive = null, collectedAt = LocalDateTime.now(),
     )

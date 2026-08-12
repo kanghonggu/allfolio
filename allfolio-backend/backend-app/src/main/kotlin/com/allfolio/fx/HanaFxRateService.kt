@@ -51,7 +51,7 @@ class HanaFxRateService(
      * TTL이 60초라 AF-100의 무기한 캐시만큼 위험하진 않지만, 다중 인스턴스로 가는 날에는
      * 이 경로도 함께 점검할 것.
      */
-    private val cached = AtomicReference<Pair<Long, BigDecimal>?>(null)
+    private val cached = AtomicReference<Pair<Long, UsdQuoteRef>?>(null)
 
     companion object {
         private const val CURRENCY = "USD"
@@ -79,20 +79,33 @@ class HanaFxRateService(
      *
      * 수집을 한 번도 안 돌렸을 뿐인 정상 상태(테이블은 있고 행이 없음)는 예외가 아니라 null이라 무관하다.
      */
-    override fun getUsdToKrw(): BigDecimal {
-        val now = System.currentTimeMillis()
-        cached.get()?.let { (at, rate) -> if (now - at < TTL_MILLIS) return rate }
+    override fun getUsdToKrw(): BigDecimal =
+        usdQuoteRef()?.rate ?: delegate.getUsdtToKrw()
 
-        val rate = runCatching {
-            quotes.findTopByCurrencyOrderByBaseDateDescRoundNoDesc(CURRENCY)?.baseRate
+    /**
+     * 고시 한 건을 통째로 돌려준다 (AF-105). 없거나 조회에 실패하면 null.
+     *
+     * [getUsdToKrw]가 이 위에 올라타 있어 둘이 다른 값을 말할 수 없다.
+     * 화면이 "이 환율로 계산했다"고 밝히는 근거가 실제 환산에 쓰인 값과 갈라지면
+     * 신뢰를 만들려던 표기가 반대로 동작한다.
+     */
+    override fun usdQuoteRef(): UsdQuoteRef? {
+        val now = System.currentTimeMillis()
+        cached.get()?.let { (at, ref) -> if (now - at < TTL_MILLIS) return ref }
+
+        val quote = runCatching {
+            quotes.findTopByCurrencyOrderByBaseDateDescRoundNoDesc(CURRENCY)
         }.getOrElse { e ->
             log.error("[하나은행] 고시 조회 실패 — USDT 환율로 근사한다: {}", e.message)
             null
-        }
+        } ?: return null
 
-        if (rate == null) return delegate.getUsdtToKrw()
-
-        cached.set(now to rate)
-        return rate
+        val ref = UsdQuoteRef(
+            rate = quote.baseRate,
+            baseDate = quote.baseDate,
+            roundNo = quote.roundNo,
+        )
+        cached.set(now to ref)
+        return ref
     }
 }
