@@ -11,16 +11,16 @@ import java.time.Duration
  * Redis 기반 환율 캐시 서비스
  *
  * Redis key: fx:usdtkrw
- * TTL: 60초 (갱신 주기와 별개 — 어드민 SET 시 TTL 리셋)
+ * TTL: 180초 — 폴링 주기(fx.scheduler.delay-ms, 기본 60초)의 3배. 아래 TTL 상수 주석 참조.
  *
  * 폴백 우선순위:
  *   1. Redis 캐시
- *   2. 환경 변수 (USDT_KRW_FALLBACK_RATE, 기본값 1350)
+ *   2. 설정값 (FX_USDT_KRW_FALLBACK, 기본값 1400)
  */
 @Service
 class RedisFxRateService(
     private val redisTemplate: StringRedisTemplate,
-    @Value("\${fx.usdt-krw.fallback-rate:1350}")
+    @Value("\${fx.usdt-krw.fallback-rate:1400}")
     private val fallbackRate: BigDecimal,
     @Value("\${fx.btc-krw.fallback-rate:90000000}")
     private val btcFallback: BigDecimal,
@@ -32,7 +32,21 @@ class RedisFxRateService(
 
     companion object {
         private const val KEY = "fx:usdtkrw"
-        private val TTL = Duration.ofSeconds(60)
+
+        /**
+         * 폴링 주기(기본 60초)의 3배.
+         *
+         * TTL이 폴링 주기와 같으면 안 된다. @Scheduled(fixedDelay)는 직전 실행이 *끝난*
+         * 시점부터 재므로 다음 쓰기는 항상 `주기 + fetch 시간` 뒤에 일어나는데,
+         * 키는 정확히 주기에 만료된다 — 즉 매 주기 갱신 직전에 반드시 만료 창이 생기고
+         * 그 동안 수집기가 멀쩡한데도 폴백 상수가 반환된다.
+         *
+         * 3배로 두면 연속 2회 실패까지는 마지막 정상 환율을 지킨다.
+         *
+         * 이 값은 fx.scheduler.delay-ms(기본 60초)와 짝이다. 한쪽만 바꾸면 이 관계가 깨지는데
+         * 컴파일러도 테스트도 잡아 주지 않는다.
+         */
+        private val TTL = Duration.ofSeconds(180)
     }
 
     private fun cryptoKey(symbol: String) = "fx:${symbol.lowercase()}krw"
