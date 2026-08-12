@@ -27,7 +27,9 @@ jobs:
   hana-fx:
     name: 하나은행 고시환율 수집
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 아래 curl 재시도 예산(최악 9분)보다 커야 한다. 잡이 먼저 잘리면 요약도 애너테이션도
+    # 남지 않고 "cancelled"만 떠서 백엔드 문제가 러너 문제처럼 보인다.
+    timeout-minutes: 12
     steps:
       - name: Trigger collection
         env:
@@ -41,21 +43,51 @@ jobs:
             exit 1
           fi
 
+          # 끝의 슬래시를 지운다. 남겨두면 경로가 "//api/internal/..."이 되어 404가 난다.
+          while [ "${BACKEND_URL}" != "${BACKEND_URL%/}" ]; do
+            BACKEND_URL="${BACKEND_URL%/}"
+          done
+
+          # https만 허용한다. http로 두면 Render가 301로 넘기는데 -L이 없어 POST가 아예
+          # 전달되지 않고 HTTP 301만 남는다(-L을 붙여도 --post301 없이는 POST가 GET으로
+          # 바뀌어 소용없다). 아래 에러 범례에도 없는 코드라 원인 파악이 오래 걸린다.
+          case "${BACKEND_URL}" in
+            https://*) ;;
+            *)
+              # 값 자체는 찍지 않는다(시크릿). 형식만 알린다.
+              echo "::error::BACKEND_URL 시크릿은 https://로 시작하고 끝에 슬래시가 없어야 합니다. 예: https://<서비스>.onrender.com"
+              exit 1
+              ;;
+          esac
+
           # 무료 인스턴스가 잠들어 있으면 첫 요청이 30~90초 걸리거나 502가 난다.
           # 재시도가 안전한 이유는 수집이 멱등하기 때문이다 — 같은 기준일·회차는
           # uk_hana_fx_quote가 막고, 서비스가 변경분만 갱신한다.
           #
           # -o/-w로 본문과 상태를 분리해 받는다. --fail을 쓰면 4xx/5xx에서 본문이 버려져
           # 왜 실패했는지(422 안전장치인지 502 은행 문제인지) 알 수 없게 된다.
+          #
+          # --max-time은 전체가 아니라 "시도 1회당" 상한이다. 그래서 최악 소요는
+          # 120초 x 4회 시도 + 20초 x 3회 대기 = 540초(9분)이고, 이 값은 위
+          # timeout-minutes(12)보다 작아야 한다 — 두 숫자는 따로 노는 값이 아니다.
+          # 콜드 스타트가 30~90초이므로 시도당 120초면 충분히 넉넉하다.
+          #
+          # set -e 아래에서 명령 치환 대입은 그 종료 코드를 그대로 물려받는다. curl은 HTTP
+          # 응답만 오면 4xx/5xx라도 0으로 끝나지만 전송 계층 실패(7 연결거부 / 28 타임아웃 /
+          # 6 DNS / 35 TLS)에서는 0이 아니다(--retry-all-errors는 재시도 대상만 바꿀 뿐
+          # 최종 종료 코드를 바꾸지 않는다). 그대로 두면 이 워크플로가 견디려고 만들어진
+          # 바로 그 상황 — 콜드 인스턴스가 매 시도 --max-time을 넘기는 경우 — 에서 여기서
+          # 죽어 요약도 에러 범례도 남지 않는다. 그래서 실패를 삼키고 센티널을 세운다.
+          # curl 자신도 전송 실패 시 %{http_code}로 000을 찍으므로 000 = "HTTP 응답 없음".
           HTTP_CODE=$(curl -sS -X POST \
             "${BACKEND_URL}/api/internal/scheduler/fx/hana-collect" \
             -H "X-Scheduler-Token: ${SCHEDULER_TOKEN}" \
-            --max-time 150 \
-            --retry 4 \
-            --retry-delay 30 \
+            --max-time 120 \
+            --retry 3 \
+            --retry-delay 20 \
             --retry-all-errors \
             -o response.json \
-            -w '%{http_code}')
+            -w '%{http_code}') || HTTP_CODE="000"
 
           echo "HTTP ${HTTP_CODE}"
 
@@ -73,6 +105,6 @@ jobs:
           if [ "${HTTP_CODE}" != "200" ]; then
             # 422는 2% 급변동 가드다. 이 실패는 버그가 아니라 신호다 —
             # 진짜 크게 움직인 날은 사람이 값을 보고 force로 다시 돌릴지 판단해야 한다.
-            echo "::error::수집 실패 (HTTP ${HTTP_CODE}). 422=안전장치 / 502=하나은행 응답 이상 / 409=동시 실행 / 503=SCHEDULER_TOKEN 미설정"
+            echo "::error::수집 실패 (HTTP ${HTTP_CODE}). 422=안전장치 / 502=하나은행 응답 이상 / 409=동시 실행 / 503=SCHEDULER_TOKEN 미설정 / 000=백엔드 응답 없음(콜드 스타트 지연·네트워크)"
             exit 1
           fi
