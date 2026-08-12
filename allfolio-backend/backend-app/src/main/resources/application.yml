@@ -254,7 +254,8 @@ fx:
   scheduler:
     enabled: ${FX_SCHEDULER_ENABLED:true}    # ExchangeFxApiClient + FxRateScheduler 활성화
     delay-ms: 60000                          # 갱신 주기 (ms). RedisFxRateService의 TTL이 이 값의 3배다
-  # USDT/KRW 시세 소스. Upbit 우선, 실패 시 Bithumb.
+  # KRW 시세 소스 (USDT·BTC·ETH). Upbit 우선, 실패 시 Bithumb.
+  # 두 거래소 모두 한 요청으로 세 마켓을 주므로 심볼이 늘어도 호출 수는 그대로다.
   # Binance는 한국 철수 후 KRW 마켓이 없어 쓸 수 없다 — USDTKRW·USDKRW 모두 -1121 Invalid symbol.
   exchange:
     upbit-base-url: ${UPBIT_FX_BASE_URL:https://api.upbit.com}
@@ -263,11 +264,9 @@ fx:
     # 수집이 3주기 연속 실패했을 때만 쓰이는 최후 상수. 상수인 이상 반드시 어긋나므로
     # 이 값이 실제로 쓰이고 있다면 [FxScheduler] 로그를 먼저 봐야 한다.
     fallback-rate: ${FX_USDT_KRW_FALLBACK:1400}
-  # 코인 KRW 시세 폴백 (QA P3) — 라이브 피드 없을 때 어드민 PUT /api/admin/fx/crypto/{symbol}로 갱신
-  btc-krw:
-    fallback-rate: ${FX_BTC_KRW_FALLBACK:90000000}
-  eth-krw:
-    fallback-rate: ${FX_ETH_KRW_FALLBACK:4500000}
+  # 코인(BTC·ETH)에는 폴백 상수를 두지 않는다. 갱신 주체가 없는 상수는 반드시 어긋나고
+  # 조용히 평가에 들어간다 — ETH가 4,500,000으로 박혀 실제 2,663,000 대비 69% 과대평가였다.
+  # 값이 없으면 RedisFxRateService가 예외를 던진다. 코인 키의 TTL은 24시간이다.
 
 # ECOS(한국은행) 과거 환율 시계열 — AF-100
 # stat-code/item-code는 ECOS 사이트에서 확인한 값을 환경변수로 넣는다. 비어 있으면 백필만 실패하고
