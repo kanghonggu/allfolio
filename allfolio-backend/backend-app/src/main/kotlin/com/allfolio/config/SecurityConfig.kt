@@ -59,6 +59,11 @@ class SecurityConfig(
                     // logout은 HttpOnly 쿠키의 refresh token만으로 revoke하므로 액세스 토큰 불요 (QA P0 #5)
                     .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout").permitAll()
                     .requestMatchers("/api/broker/*/callback").permitAll()
+                    // AF-103: 외부 스케줄러(GitHub Actions) 트리거.
+                    // Security는 통과시키고 SchedulerTriggerController가 X-Scheduler-Token을 검증한다.
+                    // 어드민 JWT는 15분 만료라 CI가 들고 있을 수 없고, 어드민 비밀번호를 CI 시크릿에
+                    // 넣으면 유출 시 전권이 넘어간다. 수집 트리거만 가능한 토큰이 폭발 반경이 가장 작다.
+                    .requestMatchers("/api/internal/scheduler/**").permitAll()
                     .requestMatchers("/api/sse/prices").permitAll()
                     .requestMatchers("/api/sse/pnl/**").authenticated()
                     .requestMatchers("/api/sse/closing").hasRole("ADMIN")
