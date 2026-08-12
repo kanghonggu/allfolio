@@ -1,6 +1,7 @@
 package com.allfolio.config
 
 import com.allfolio.api.admin.FxRateAdminController
+import com.allfolio.api.scheduler.SchedulerTriggerController
 import com.allfolio.auth.JwtTokenService
 import com.allfolio.auth.UserEntity
 import com.allfolio.auth.UserRole
@@ -19,6 +20,7 @@ import org.springframework.context.annotation.Bean
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.put
 import java.math.BigDecimal
 
@@ -31,6 +33,7 @@ import java.math.BigDecimal
         SseTokenFilter::class,
         JwtTokenService::class,
         FxRateAdminController::class,
+        SchedulerTriggerController::class,
     ],
     properties = [
         "allfolio.auth.jwt-secret=test-secret-test-secret-test-secret-1234",
@@ -142,5 +145,18 @@ class SecurityConfigAdminTest {
         mockMvc.get("/api/admin/fx/usdkrw") {
             header("Authorization", "Bearer ${tokenFor(UserRole.ADMIN)}")
         }.andExpect { status { isOk() } }
+    }
+
+    /**
+     * AF-103: 스케줄러 트리거는 Security를 통과해 컨트롤러까지 도달해야 한다.
+     *
+     * 이 컨텍스트에는 scheduler.trigger-token 프로퍼티가 없어 기본값 빈 문자열이 주입되고,
+     * 컨트롤러가 503으로 닫는다. **503이 나온다는 것 자체가 요청이 컨트롤러에 닿았다는 증거다** —
+     * permitAll이 빠져 있으면 Security가 먼저 401로 끊어 503이 나올 수 없다.
+     */
+    @Test
+    fun `스케줄러 트리거는 Security를 통과해 컨트롤러까지 도달한다`() {
+        mockMvc.post("/api/internal/scheduler/fx/hana-collect")
+            .andExpect { status { isServiceUnavailable() } }
     }
 }
