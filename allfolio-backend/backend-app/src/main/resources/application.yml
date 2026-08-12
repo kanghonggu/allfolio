@@ -221,6 +221,20 @@ kis:
   ws-enabled: ${KIS_WS_ENABLED:false}
   symbols: ${KIS_SYMBOLS:}          # 실시간 구독 종목 ex) 005930,000660
 
+# 지수 수집 — AF-101
+# 코드를 소스에 박지 않는 이유: KIS 공식 샘플이 문서화한 FID_INPUT_ISCD는
+# 0001(코스피)·1001(코스닥)·2001(코스피200) 셋뿐이다. KOSDAQ150·KRX300은 확인되지 않았고,
+# 추측한 코드를 넣으면 KIS가 오류를 주거나 — 더 나쁘게 — 엉뚱한 업종 지수를 조용히 돌려준다.
+# 코드가 확인되는 대로 여기 한 줄씩 추가한다.
+market-index:
+  domestic:
+    - code: KOSPI
+      kis-iscd: "0001"
+    - code: KOSDAQ
+      kis-iscd: "1001"
+    - code: KOSPI200
+      kis-iscd: "2001"
+
 # 암호화폐 거래소 WebSocket (국내)
 upbit:
   ws-enabled: ${UPBIT_WS_ENABLED:false}
