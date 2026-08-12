@@ -193,7 +193,7 @@ unified-asset:
 binance:
   api-key: ${BINANCE_API_KEY:}
   secret-key: ${BINANCE_API_SECRET:}
-  base-url: https://testnet.binance.vision   # testnet — 실제 운영 시 https://api.binance.com
+  base-url: ${BINANCE_API_BASE_URL:https://api.binance.com}   # 테스트넷은 BINANCE_API_BASE_URL로 덮는다
   tenant-id: ${BINANCE_TENANT_ID:ffff0000-0000-0000-0000-000000000001}
   portfolio-id: ${BINANCE_PORTFOLIO_ID:dddd0000-0000-0000-0000-000000000001}
   symbols: BTCUSDT,ETHUSDT
@@ -246,10 +246,17 @@ okx:
 # FX 환율 자동 수집
 fx:
   scheduler:
-    enabled: ${FX_SCHEDULER_ENABLED:false}   # true 시 BinanceFxApiClient + FxRateScheduler 활성화
-    delay-ms: 60000                          # 갱신 주기 (ms)
+    enabled: ${FX_SCHEDULER_ENABLED:true}    # ExchangeFxApiClient + FxRateScheduler 활성화
+    delay-ms: 60000                          # 갱신 주기 (ms). RedisFxRateService의 TTL이 이 값의 3배다
+  # USDT/KRW 시세 소스. Upbit 우선, 실패 시 Bithumb.
+  # Binance는 한국 철수 후 KRW 마켓이 없어 쓸 수 없다 — USDTKRW·USDKRW 모두 -1121 Invalid symbol.
+  exchange:
+    upbit-base-url: ${UPBIT_FX_BASE_URL:https://api.upbit.com}
+    bithumb-base-url: ${BITHUMB_FX_BASE_URL:https://api.bithumb.com}
   usdt-krw:
-    fallback-rate: ${FX_USDT_KRW_FALLBACK:1350}  # Redis miss 시 사용할 fallback 환율
+    # 수집이 3주기 연속 실패했을 때만 쓰이는 최후 상수. 상수인 이상 반드시 어긋나므로
+    # 이 값이 실제로 쓰이고 있다면 [FxScheduler] 로그를 먼저 봐야 한다.
+    fallback-rate: ${FX_USDT_KRW_FALLBACK:1400}
   # 코인 KRW 시세 폴백 (QA P3) — 라이브 피드 없을 때 어드민 PUT /api/admin/fx/crypto/{symbol}로 갱신
   btc-krw:
     fallback-rate: ${FX_BTC_KRW_FALLBACK:90000000}
