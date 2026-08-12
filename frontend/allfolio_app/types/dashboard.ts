@@ -68,5 +68,17 @@ export interface DashboardResponse {
     allocation: AllocationItem[]
     positions: Position[]
   }
+  /** 이 순자산을 만든 환율들. 원화 자산만 있으면 빈 배열 (AF-105) */
+  fxSources: FxSource[]
   realAssets: RealAsset[]
+}
+
+export interface FxSource {
+  currency: string
+  rate: number
+  /** 화면에 그대로 노출되는 한국어 문구 */
+  source: string
+  /** "2026-08-11" — 하나은행 고시일 때만 채워진다 */
+  baseDate: string | null
+  roundNo: number | null
 }
