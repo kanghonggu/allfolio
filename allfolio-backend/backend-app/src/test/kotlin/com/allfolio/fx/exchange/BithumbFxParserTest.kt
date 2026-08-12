@@ -51,4 +51,13 @@ class BithumbFxParserTest {
         assertThatThrownBy { parser.parse("<html>점검중</html>") }
             .isInstanceOf(FxQuoteException::class.java)
     }
+
+    @Test
+    fun `data는 있는데 closing_price가 없으면 예외`() {
+        val json = """{"status":"0000","data":{"opening_price":"1409"}}"""
+
+        assertThatThrownBy { parser.parse(json) }
+            .isInstanceOf(FxQuoteException::class.java)
+            .hasMessageContaining("closing_price")
+    }
 }
