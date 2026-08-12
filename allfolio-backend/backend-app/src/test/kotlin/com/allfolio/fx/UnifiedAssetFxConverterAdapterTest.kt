@@ -40,6 +40,8 @@ class UnifiedAssetFxConverterAdapterTest {
 
     @Test
     fun `USDT는 USD 시계열로 환산한다`() {
+        // 과거 USDT 시계열은 존재하지 않으므로 USD로 근사한다 —
+        // 현재 환율 경로(toKrw)는 AF-99부터 둘을 구분한다. 통일하지 말 것
         val repo = FakeRepo(row(date, "1390.200000"))
 
         val result = adapter(repo).toKrwOn(BigDecimal("100"), "usdt", date)
@@ -53,8 +55,8 @@ class UnifiedAssetFxConverterAdapterTest {
     fun `과거 환율이 없으면 현재 환율로 폴백하고 추정치로 표시한다`() {
         val result = adapter(FakeRepo()).toKrwOn(BigDecimal("100"), "USD", date)
 
-        // 현재 환율 경로로 넘어간다 — StubFxRateService가 USD 1350을 준다
-        assertThat(result.amountKrw).isEqualByComparingTo("135000")
+        // 현재 환율 경로로 넘어간다 — StubFxRateService가 공식 USD 고시 1340을 준다
+        assertThat(result.amountKrw).isEqualByComparingTo("134000")
         assertThat(result.estimated).isTrue()
         assertThat(result.rateDate).isNull()
     }
@@ -80,12 +82,14 @@ class UnifiedAssetFxConverterAdapterTest {
     }
 
     @Test
-    fun `현재 환율 경로도 공백이 섞인 통화 코드를 환산한다`() {
-        // Account.reconstruct는 DB 값을 재정규화 없이 되살리므로, 정규화 없이 저장된
-        // 과거 행은 Currencies.normalize 방어를 우회한다. 자산 평가 경로가 이 메서드를 쓴다
-        val result = adapter(FakeRepo()).toKrw(BigDecimal("100"), " usdt ")
+    fun `현재 환율 경로에서 USDT는 USD로 접히지 않는다`() {
+        // AF-99: 두 경로가 의도적으로 다른 규칙을 쓴다 — 현재가는 USDT를 별개 자산으로 본다.
+        // 공백이 섞인 코드도 함께 본다: Account.reconstruct는 DB 값을 재정규화 없이 되살리므로
+        // Currencies.normalize를 우회한 과거 행이 그대로 도달한다. 자산 평가 경로가 이 메서드를 쓴다
+        val adapter = adapter(FakeRepo())
 
-        assertThat(result).isEqualByComparingTo("135000")
+        assertThat(adapter.toKrw(BigDecimal("100"), " usdt ")).isEqualByComparingTo("135000")
+        assertThat(adapter.toKrw(BigDecimal("100"), "USD")).isEqualByComparingTo("134000")
     }
 
     @Test
@@ -102,7 +106,7 @@ class UnifiedAssetFxConverterAdapterTest {
     fun `조회가 실패해도 예외를 던지지 않고 현재 환율로 폴백한다`() {
         val result = adapter(ExplodingRepo()).toKrwOn(BigDecimal("100"), "USD", date)
 
-        assertThat(result.amountKrw).isEqualByComparingTo("135000")
+        assertThat(result.amountKrw).isEqualByComparingTo("134000")
         assertThat(result.estimated).isTrue()
     }
 
@@ -157,7 +161,7 @@ class UnifiedAssetFxConverterAdapterTest {
         repo.stored = row(date, "1390.200000")
         val afterBackfill = adapter.toKrwOn(BigDecimal("100"), "USD", date)
 
-        assertThat(beforeBackfill.amountKrw).isEqualByComparingTo("135000")
+        assertThat(beforeBackfill.amountKrw).isEqualByComparingTo("134000")
         assertThat(beforeBackfill.estimated).isTrue()
         assertThat(afterBackfill.amountKrw).isEqualByComparingTo("139020")
         assertThat(afterBackfill.estimated).isFalse()
@@ -194,6 +198,7 @@ class UnifiedAssetFxConverterAdapterTest {
 
     private class StubFxRateService : FxRateService {
         override fun getUsdtToKrw(): BigDecimal = BigDecimal("1350")
+        override fun getUsdToKrw(): BigDecimal = BigDecimal("1340")
         override fun setUsdtToKrw(rate: BigDecimal) = Unit
         override fun getCryptoToKrw(symbol: String): BigDecimal = BigDecimal("90000000")
         override fun setCryptoToKrw(symbol: String, rate: BigDecimal) = Unit

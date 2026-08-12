@@ -65,10 +65,19 @@ class UnifiedAssetFxConverterAdapter(
         private val CRYPTO = setOf("BTC", "ETH")
     }
 
-    // Account.reconstruct는 DB 값을 재정규화 없이 되살리므로 Currencies.normalize를 우회한 코드가
-    // 그대로 도달한다. 정규화 없이 넘기면 " usdt "가 1:1로 떨어져 100 USDT가 100원이 된다
+    /**
+     * 현재 환율 환산 — 자산 평가액용.
+     *
+     * [canonical]이 아니라 [normalized]를 쓴다. **의도적이다.**
+     * AF-99부터 USD는 하나은행 공식 매매기준율, USDT는 거래소 시세로 갈렸다.
+     * 여기서 USDT를 USD로 접으면 그 분리가 무효가 된다.
+     * 과거 환율([toKrwOn])은 반대로 접는다 — 과거 USDT 시계열이 존재하지 않기 때문이다.
+     *
+     * Account.reconstruct는 DB 값을 재정규화 없이 되살리므로 Currencies.normalize를 우회한 코드가
+     * 그대로 도달한다. 정규화 없이 넘기면 " usdt "가 1:1로 떨어져 100 USDT가 100원이 된다
+     */
     override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
-        currencyConverter.toKrw(amount, canonical(currency))
+        currencyConverter.toKrw(amount, normalized(currency))
 
     override fun toKrwOn(amount: BigDecimal, currency: String, date: LocalDate): KrwConversion {
         val code = canonical(currency)
@@ -122,14 +131,18 @@ class UnifiedAssetFxConverterAdapter(
     private fun estimatedNow(amount: BigDecimal, code: String) =
         KrwConversion(currencyConverter.toKrw(amount, code), rateDate = null, estimated = true)
 
+    /** 공백·대소문자만 정리한다. 통화 별칭은 접지 않는다 — 현재 환율 경로용. */
+    private fun normalized(currency: String): String = currency.trim().uppercase()
+
     /**
-     * 별칭을 정리한 통화 코드. USDT는 USD 시계열로 근사한다 —
-     * 현재 환율 경로(CurrencyConverter)와 같은 취급이다.
+     * 별칭까지 접는다 — 과거 환율 경로용.
+     * USDT는 과거 시계열이 없으므로 USD로 근사한다. 현재 환율 경로([toKrw])는
+     * AF-99부터 둘을 구분하므로 이 함수를 쓰지 않는다. 통일하지 말 것.
      *
      * 화이트리스트 검증을 겸하는 `Currencies.normalize`와 달리 여기서는 별칭 치환만 한다.
      */
     private fun canonical(currency: String): String =
-        when (val code = currency.trim().uppercase()) {
+        when (val code = normalized(currency)) {
             "USDT" -> "USD"
             else -> code
         }
