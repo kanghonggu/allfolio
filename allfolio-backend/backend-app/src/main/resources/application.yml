@@ -243,6 +243,12 @@ okx:
   ws-enabled: ${OKX_WS_ENABLED:false}
   symbols: ${OKX_SYMBOLS:BTC-USDT,ETH-USDT}
 
+# 외부 스케줄러(GitHub Actions) 트리거 토큰 — AF-103
+# 비어 있으면 /api/internal/scheduler/** 가 503으로 닫힌다. 빈 값이 "토큰 불필요"가 되면
+# 환경변수를 빠뜨린 순간 엔드포인트가 완전 공개되므로, 설정 누락의 기본값은 "닫힘"이다.
+scheduler:
+  trigger-token: ${SCHEDULER_TOKEN:}
+
 # FX 환율 자동 수집
 fx:
   scheduler:
