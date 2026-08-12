@@ -1,5 +1,6 @@
 package com.allfolio.dashboard
 
+import com.allfolio.fx.CurrencyConverter
 import com.allfolio.report.domain.returns.Flow
 import com.allfolio.report.domain.returns.NavPoint
 import com.allfolio.report.domain.returns.ReturnsCalculator
@@ -30,6 +31,7 @@ class GetDashboardUseCase(
     private val benchmarkRepo: BenchmarkDailyJpaRepository,
     private val fx: FxConverter,
     private val cashFlowRepository: CashFlowRepository,
+    private val currencyConverter: CurrencyConverter,
 ) {
     fun execute(userId: UUID): DashboardResponse {
         val assets = assetRepository.findByUserId(userId)
@@ -227,6 +229,15 @@ class GetDashboardUseCase(
                 )
             }
 
+        // 실제로 보유한 통화만 밝힌다. 안 가진 통화의 환율을 보여주면 "내 숫자가 어떻게 나왔나"라는
+        // 질문에 답하는 대신 잡음이 된다. 정렬을 코드 사전순으로 고정하는 이유는, 자산 구성이
+        // 조금 바뀔 때마다 줄 순서가 뒤바뀌면 화면이 불안정해 보이기 때문이다.
+        val fxSources = (positions.map { it.currency } + realAssets.map { it.currency })
+            .distinct()
+            .sorted()
+            .mapNotNull { currencyConverter.sourceOf(it) }
+            .map { FxSourceDto(it.currency, it.rate, it.source, it.baseDate, it.roundNo) }
+
         return DashboardResponse(
             netWorth = NetWorthDto(
                 total         = totalNow,
@@ -245,6 +256,7 @@ class GetDashboardUseCase(
                 positions  = positions,
             ),
             realAssets = realAssets,
+            fxSources = fxSources,
         )
     }
 

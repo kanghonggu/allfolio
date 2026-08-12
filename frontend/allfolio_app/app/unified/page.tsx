@@ -133,7 +133,7 @@ export default function UnifiedDashboard() {
   }
   if (!data) return null
 
-  const { netWorth, portfolio, realAssets } = data
+  const { netWorth, portfolio, realAssets, fxSources } = data
   const hasMetrics = Object.values(portfolio.metrics).some(Boolean)
   const accountCount = syncStatus.length
 
@@ -239,6 +239,7 @@ export default function UnifiedDashboard() {
         change30d={netWorth.change30d}
         changeRate30d={netWorth.changeRate30d}
         netFlow30d={netWorth.netFlow30d}
+        fxSources={fxSources}
       />
 
       {/* 수익률·리스크 + 자산군 배분 */}
