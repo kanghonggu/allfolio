@@ -55,12 +55,26 @@ class EcosResponseParser(
             val date = runCatching { LocalDate.parse(time, TIME_FORMAT) }.getOrNull()
             val rate = runCatching { BigDecimal(value) }.getOrNull()
 
-            if (date == null || rate == null || !valuePolicy.accepts(rate)) {
-                skipped++
-                log.warn("[ECOS] 행 건너뜀 TIME={} DATA_VALUE={} policy={}", time, value, valuePolicy)
-                null
-            } else {
-                EcosObservation(date, rate)
+            // 원인을 셋으로 가른다 — 세 경우 다 이 log.warn 한 줄로 모이는데, policy를 무조건 찍으면
+            // 날짜가 깨진 행에도 "policy=POSITIVE"가 붙어 마치 정책이 그 행을 걸러낸 것처럼 읽힌다.
+            // 정책은 실제로 정책이 원인일 때만 찍는다.
+            when {
+                date == null -> {
+                    skipped++
+                    log.warn("[ECOS] 행 건너뜀 TIME={} DATA_VALUE={} reason=BAD_DATE", time, value)
+                    null
+                }
+                rate == null -> {
+                    skipped++
+                    log.warn("[ECOS] 행 건너뜀 TIME={} DATA_VALUE={} reason=BAD_NUMBER", time, value)
+                    null
+                }
+                !valuePolicy.accepts(rate) -> {
+                    skipped++
+                    log.warn("[ECOS] 행 건너뜀 TIME={} DATA_VALUE={} reason=POLICY policy={}", time, value, valuePolicy)
+                    null
+                }
+                else -> EcosObservation(date, rate)
             }
         }
 
