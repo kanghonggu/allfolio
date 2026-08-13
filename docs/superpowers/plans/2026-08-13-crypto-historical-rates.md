@@ -654,6 +654,58 @@ class UpbitCandleRateSourceTest {
     }
 
     @Test
+    fun `이력이 요청 구간보다 짧으면 채운 것만 돌려주고 경고를 남긴다`() {
+        // Upbit에 그 이전 이력이 없는 경우(상장 이전 등). 예외는 아니지만 조용해서도 안 된다 —
+        // 부분 결과가 완전한 성공과 구분되지 않으면 못 채운 날짜가 현재가 폴백으로 떨어진다.
+        server.removeContext("/")
+        val oldest = LocalDate.of(2026, 7, 20)
+        server.createContext("/") { exchange ->
+            requests += exchange.requestURI.query ?: ""
+            // 200건이 아니라 3건만 있고 그마저 from보다 최신이다
+            val body = (0 until 3).joinToString(",") { i ->
+                val d = oldest.plusDays(i.toLong())
+                """{"candle_date_time_kst":"${d}T09:00:00","trade_price":90000000.0}"""
+            }
+            val bytes = "[$body]".toByteArray(Charsets.UTF_8)
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+
+        val to = LocalDate.of(2026, 8, 1)
+        val fetched = source().fetch("BTC", to.minusDays(300), to)
+
+        // 있는 만큼은 돌려준다
+        assertThat(fetched.rates.map { it.baseDate }).containsExactlyInAnyOrder(
+            oldest, oldest.plusDays(1), oldest.plusDays(2),
+        )
+    }
+
+    @Test
+    fun `최대 페이지를 넘기면 예외 - 부분 결과를 성공처럼 돌려주지 않는다`() {
+        // 한 번에 한 건씩만 주는 서버. 100페이지를 넘겨도 from에 닿지 못한다.
+        // WARN만 남기고 부분 결과를 돌려주면 "덜 채웠다"가 조용히 성공이 된다.
+        server.removeContext("/")
+        server.createContext("/") { exchange ->
+            val query = exchange.requestURI.query ?: ""
+            requests += query
+            val to = Regex("to=([^&]+)").find(query)?.groupValues?.get(1)?.let {
+                LocalDate.parse(java.net.URLDecoder.decode(it.replace("+", "%2B"), "UTF-8").substring(0, 10))
+            } ?: LocalDate.of(2026, 8, 13)
+            val d = to.minusDays(1)
+            val bytes = """[{"candle_date_time_kst":"${d}T09:00:00","trade_price":9.0E7}]"""
+                .toByteArray(Charsets.UTF_8)
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+
+        val to = LocalDate.of(2026, 8, 1)
+
+        assertThatThrownBy { source().fetch("BTC", to.minusDays(500), to) }
+            .isInstanceOf(UpbitCandleException::class.java)
+            .hasMessageContaining("최대치")
+    }
+
+    @Test
     fun `빈 응답이면 더 요청하지 않고 모은 것만 돌려준다`() {
         server.removeContext("/")
         server.createContext("/") { exchange ->
@@ -794,25 +846,55 @@ class UpbitCandleRateSource(
         repeat(MAX_PAGES) {
             val page = parser.parse(client.fetchDays(market, cursor(exclusiveUpper), PAGE))
             skipped += page.skipped
-            if (page.rates.isEmpty()) return SourceFetch(collected, skipped)
+            // 그 이전 이력이 없다 = 정상 종료. 다만 구간을 다 못 채웠으면 finish가 알린다.
+            if (page.rates.isEmpty()) return finish(collected, skipped, market, from, to)
 
             collected += page.rates.filter { it.baseDate in from..to }
 
             val oldest = page.rates.minOf { it.baseDate }
-            if (oldest <= from) return SourceFetch(collected, skipped)
+            if (oldest <= from) return finish(collected, skipped, market, from, to)
 
             // 커서가 반드시 과거로 가야 한다. 안 가면 같은 페이지를 영원히 받는다.
-            val next = oldest
-            if (next >= exclusiveUpper) {
+            if (oldest >= exclusiveUpper) {
                 throw UpbitCandleException(
                     "Upbit 일봉 페이지가 진행하지 못했습니다 (market=$market to=$exclusiveUpper oldest=$oldest)"
                 )
             }
-            exclusiveUpper = next
+            exclusiveUpper = oldest
         }
 
-        log.warn("[UpbitCandle] 최대 페이지({})에 도달해 중단 market={} {}~{}", MAX_PAGES, market, from, to)
-        return SourceFetch(collected, skipped)
+        // 여기 닿으면 구조적으로 이상하다 — 100페이지면 약 54년이라 정상 요청으로는 못 온다.
+        // 위 no-progress 가드와 같은 계열의 사건이므로 같은 방식으로 실패시킨다.
+        // WARN만 남기고 부분 결과를 돌려주면 "덜 채웠다"가 성공과 구분되지 않는다.
+        throw UpbitCandleException(
+            "Upbit 일봉 페이지가 최대치($MAX_PAGES)를 넘었습니다 (market=$market $from~$to)"
+        )
+    }
+
+    /**
+     * 수집을 마치며 **요청 구간을 다 못 채웠으면 알린다.**
+     *
+     * 상장 이전 구간을 요청하면 이력이 없는 게 정상이라 예외로 만들지 않는다.
+     * 하지만 조용히 돌려주면 호출자는 부분 결과를 완전한 성공과 구분할 수 없다 —
+     * `FxRateBackfillService`의 0건 검사는 통과하고 행은 저장되며 아무도 모른다.
+     * 그리고 못 채운 날짜의 현금흐름은 현재가 폴백으로 떨어진다.
+     * **이 기능이 없애려던 바로 그 조용한 구멍이다.**
+     */
+    private fun finish(
+        rates: List<DailyRate>,
+        skipped: Int,
+        market: String,
+        from: LocalDate,
+        to: LocalDate,
+    ): SourceFetch {
+        val covered = rates.minOfOrNull { it.baseDate }
+        if (covered == null || covered > from) {
+            log.warn(
+                "[UpbitCandle] 요청 구간을 다 채우지 못했다 market={} 요청={}~{} 채운시작일={}",
+                market, from, to, covered,
+            )
+        }
+        return SourceFetch(rates, skipped)
     }
 }
 ```
