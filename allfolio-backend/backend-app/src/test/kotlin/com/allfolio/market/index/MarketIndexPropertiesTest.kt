@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.SpringBootConfiguration
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration
 import org.springframework.boot.test.context.SpringBootTest
+import java.time.LocalTime
 import java.time.ZoneId
 
 /**
@@ -59,7 +60,29 @@ class MarketIndexPropertiesTest {
             assertThat(it.nameContains).isNotBlank()
             assertThat(it.zoneId).isNotBlank()
             assertThat(it.schedule).isNotBlank()
+            assertThat(it.closeLocalTime).isNotBlank()
         }
+    }
+
+    // zoneId와 같은 이유다 — "16:00"이 "16.00"이나 "4:00 PM"으로 적히면 컴파일도 not-blank도
+    // 통과하고, 수집이 그 지수만 조용히 실패시킨다. 아홉 종을 여기서 한 번에 판다.
+    @Test
+    fun `모든 마감 시각이 파싱된다`() {
+        assertThat(properties.overseas).allSatisfy {
+            assertThatCode { LocalTime.parse(it.closeLocalTime) }.doesNotThrowAnyException()
+        }
+    }
+
+    // 마감 시각이 전부 같은 값이면 설정이 아니라 상수를 쓴 것과 같다 — 시장마다 다르다는 것이
+    // 이 필드의 존재 이유이므로 대표 셋을 못 박는다(도쿄 15:30은 2024-11 개편 반영값이다)
+    @Test
+    fun `시장마다 마감 시각이 다르다`() {
+        fun closeOf(code: String) = properties.overseas.single { it.code == code }.closeLocalTime
+
+        assertThat(LocalTime.parse(closeOf("SPX"))).isEqualTo(LocalTime.of(16, 0))
+        assertThat(LocalTime.parse(closeOf("NIKKEI225"))).isEqualTo(LocalTime.of(15, 30))
+        assertThat(LocalTime.parse(closeOf("SHANGHAI"))).isEqualTo(LocalTime.of(15, 0))
+        assertThat(LocalTime.parse(closeOf("STOXX50"))).isEqualTo(LocalTime.of(17, 30))
     }
 
     // schedule은 "US" | "ASIA" 둘 중 하나여야 한다. 오타("Us", "usa")는 컴파일도, 위의

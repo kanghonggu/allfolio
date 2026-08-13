@@ -8,8 +8,10 @@ import org.springframework.stereotype.Service
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZoneOffset
+import java.time.format.DateTimeParseException
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -57,7 +59,7 @@ data class OverseasIndexCollectSummary(
  * |---|---|---|
  * | 거래일 | 시계(KST 날짜) | 응답(`output2[0].stck_bsop_date`) |
  * | 슬롯 | OPEN/MID/CLOSE | `CLOSE` 고정 — 일봉이라 하루 한 건 |
- * | 시장상태 | 시계(09:00/15:30) | 최신 봉 날짜 vs 시장 현지 오늘 |
+ * | 시장상태 | 시계(09:00/15:30) | 최신 봉 날짜 + 시장 현지 마감 시각 |
  * | 전일 기준일 | 항상 null(응답에 없다) | `output2[1].stck_bsop_date` |
  * | 이름 대조 | 없음 | **있다 — 이 클래스의 핵심** |
  *
@@ -135,7 +137,8 @@ class OverseasIndexCollectService(
                 // 시장 현지 "오늘". 조회 구간의 끝과 시장상태 판정에 **같은 값을 쓴다** —
                 // 둘을 따로 계산하면 자정 근처에서 하루가 갈려, 존재하지 않는 봉을 기다리거나
                 // 방금 받은 봉을 구간 밖이라고 판정하는 어긋남이 생긴다.
-                val marketToday = LocalDate.ofInstant(now, ZoneId.of(cfg.zoneId))
+                val marketNow = LocalDateTime.ofInstant(now, ZoneId.of(cfg.zoneId))
+                val marketToday = marketNow.toLocalDate()
                 val raw = client.fetchOverseasRaw(cfg.kisIscd, marketToday.minusDays(LOOKBACK_DAYS), marketToday)
                 val reading = parser.parse(cfg.code, raw)
 
@@ -168,7 +171,7 @@ class OverseasIndexCollectService(
                     )
                 }
 
-                val status = marketStatus(reading.tradeDate, marketToday)
+                val status = marketStatus(reading.tradeDate, marketNow, closeTime(cfg))
                 val existing = repository.findByIndexCodeAndTradeDateAndSlot(
                     cfg.code, reading.tradeDate, SLOT.name,
                 )
@@ -227,21 +230,50 @@ class OverseasIndexCollectService(
     }
 
     /**
-     * 최신 봉의 날짜가 **시장 현지 오늘**이면 아직 그 봉은 진행 중이고, 아니면 확정된 종가다.
+     * 최신 봉이 **오늘 것이고 아직 마감 전**이면 진행 중인 봉이고, 그 밖은 확정된 종가다.
      *
-     * 국내처럼 시계(09:00/15:30)로 판정할 수 없다 — 지수마다 개장 시각도 서머타임도 달라
-     * 9종의 장 시간표를 들고 있어야 하고, 그 표는 매년 틀린다. 봉 날짜는 응답이 알려 준다.
+     * **봉 날짜만 보면 안 된다 — 그게 처음 구현이었고 틀렸다.** 예약 실행은 아시아 08:30 UTC
+     * (홍콩 16:30), 미국 21:30 UTC(뉴욕 17:30)로 **둘 다 마감 이후**인데 봉 날짜는 여전히
+     * "현지 오늘"이라, 평일 정상 수집 전건이 확정 종가를 `장중`으로 저장하고 `장마감`은
+     * 주말·휴장에만 나왔다. 라벨이 뜻하는 것의 정반대다.
      *
-     * **`PRE_OPEN`은 쓰지 않는다.** 해외 수집은 그 시장이 마감한 뒤에만 돈다(미국·유럽 21:30 UTC,
-     * 아시아 08:30 UTC). 개장 전에 부르지 않으므로 그 상태로 저장될 일이 없고, 억지로 판정하려면
-     * 위에서 말한 장 시간표가 다시 필요해진다.
+     * 마감 시각은 [MarketIndexProperties.OverseasIndex.closeLocalTime]에서 온다 — 근사치이고
+     * 왜 그래도 되는지는 그 KDoc에 있다. **경계는 마감 포함이다**(정각은 장마감).
+     * 개장 시각은 두지 않는다: 봉이 없으면 애초에 여기까지 오지 않고, 있는데 개장 전일 수는 없다.
+     *
+     * **`PRE_OPEN`은 쓰지 않는다.** 해외 수집은 그 시장이 마감한 뒤에만 돈다. 개장 전에 부르지
+     * 않으므로 그 상태로 저장될 일이 없고, 억지로 판정하려면 개장 시각표가 하나 더 필요해진다.
      *
      * **거래량으로 판정하지 말 것.** `acml_vol == "0"`이면 진행 중인 봉이라는 규칙은 그럴듯하지만
      * 틀렸다 — `SPX`는 **확정된 봉도** `acml_vol: "0"`으로 온다(지수라 거래량이 없다).
      * 그 규칙을 쓰면 S&P가 영원히 "장중"으로 저장된다.
      */
-    private fun marketStatus(tradeDate: LocalDate, marketToday: LocalDate): MarketStatus =
-        if (tradeDate == marketToday) MarketStatus.OPEN else MarketStatus.CLOSED
+    private fun marketStatus(
+        tradeDate: LocalDate,
+        marketNow: LocalDateTime,
+        closeLocalTime: LocalTime,
+    ): MarketStatus =
+        if (tradeDate == marketNow.toLocalDate() && marketNow.toLocalTime() < closeLocalTime) {
+            MarketStatus.OPEN
+        } else {
+            MarketStatus.CLOSED
+        }
+
+    /**
+     * 설정 문자열을 [LocalTime]으로. **루프 안(지수별 try 안)에서 부른다** — 형식이 틀린 값이
+     * 하나 있어도 그 지수만 실패로 남고 나머지 여덟은 저장돼야 한다. 시작할 때 한꺼번에 파싱하면
+     * 오타 하나가 그 슬롯 전체를 날린다. (형식 자체는 `MarketIndexPropertiesTest`가 배포 전에 판다)
+     */
+    private fun closeTime(cfg: MarketIndexProperties.OverseasIndex): LocalTime =
+        try {
+            LocalTime.parse(cfg.closeLocalTime)
+        } catch (e: DateTimeParseException) {
+            throw IllegalStateException(
+                "마감 시각 설정이 시각 형식이 아닙니다: close-local-time='${cfg.closeLocalTime}' " +
+                    "(code=${cfg.code}, \"16:00\" 형식이어야 합니다)",
+                e,
+            )
+        }
 
     private fun MarketIndexQuoteEntity.overwrite(
         reading: OverseasIndexReading,

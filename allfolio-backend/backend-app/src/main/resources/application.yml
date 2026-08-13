@@ -260,24 +260,32 @@ market-index:
   # KIS가 돌려준 hts_kor_isnm과 대조하는 것이 유일한 방어다.
   # ✅ 실측 확인: SPX · .DJI · HK#HS. 나머지 여섯은 마스터에서 읽었을 뿐이므로
   #    배포 후 raw-overseas로 hts_kor_isnm을 대조할 것.
+  #
+  # close-local-time은 zone-id 기준 현지 마감 시각이다. 이게 없으면 봉 날짜만 보게 되어
+  # **평일 정상 수집 전건이 확정 종가를 `장중`으로 저장한다** — 아시아 슬롯(08:30 UTC)은
+  # 홍콩 16:30, 미국 슬롯(21:30 UTC)은 뉴욕 17:30으로 둘 다 마감 이후이기 때문이다.
+  # 현지 시각으로 적으므로 서머타임은 zone-id가 알아서 맞춘다(유로스톡스 17:30은 UTC로
+  # 여름 15:30·겨울 16:30을 오가지만 현지로는 그대로다).
+  # **근사치다** — 반일장·특별휴장·거래소 개편(도쿄 2024-11 15:00→15:30)까지 따라가지 않는다.
+  # 예약 실행은 전부 마감 한참 뒤라(가장 빠듯한 홍콩도 30분) 몇 분 오차로 판정이 뒤집히지 않는다.
   overseas:
-    - { code: SPX,       kis-iscd: "SPX",       zone-id: America/New_York, schedule: US,   name-contains: "S&P500" }
-    - { code: NASDAQ,    kis-iscd: "COMP",      zone-id: America/New_York, schedule: US,   name-contains: "나스닥" }
+    - { code: SPX,       kis-iscd: "SPX",       zone-id: America/New_York, schedule: US,   name-contains: "S&P500",   close-local-time: "16:00" }
+    - { code: NASDAQ,    kis-iscd: "COMP",      zone-id: America/New_York, schedule: US,   name-contains: "나스닥",    close-local-time: "16:00" }
     # 다우존스(.DJI)는 옆에 .DJT(운송)·.DJU(유틸리티)가 붙어 있다 — 한 글자 차이.
-    - { code: DOW,       kis-iscd: ".DJI",      zone-id: America/New_York, schedule: US,   name-contains: "다우존스" }
-    - { code: NASDAQ100, kis-iscd: "NDX",       zone-id: America/New_York, schedule: US,   name-contains: "나스닥" }
-    - { code: VIX,       kis-iscd: "VIX",       zone-id: America/New_York, schedule: US,   name-contains: "VIX" }
+    - { code: DOW,       kis-iscd: ".DJI",      zone-id: America/New_York, schedule: US,   name-contains: "다우존스",  close-local-time: "16:00" }
+    - { code: NASDAQ100, kis-iscd: "NDX",       zone-id: America/New_York, schedule: US,   name-contains: "나스닥",    close-local-time: "16:00" }
+    - { code: VIX,       kis-iscd: "VIX",       zone-id: America/New_York, schedule: US,   name-contains: "VIX",      close-local-time: "16:00" }
     # STOXX50의 schedule이 US인 것은 오타가 아니다. 마감은 현지 17:30(CEST 서머타임 기준)이며
     # UTC로는 서머타임이면 15:30, 표준시(CET, 겨울)면 16:30이다 — 계절에 따라 15:30~16:30 UTC를
     # 오간다. 어느 쪽이든 아시아 슬롯(08:30 UTC)보다 늦어 거기 두면 늘 전일 종가를 받는다.
     # 미국 슬롯(21:30 UTC)은 두 계절 모두 마감 이후라 US 슬롯 결정 자체는 연중 유효하다.
     # zone-id는 여전히 유럽이다(진행 중인 봉 판별용, 수집 시각과는 별개).
-    - { code: STOXX50,   kis-iscd: "SX5E",      zone-id: Europe/Berlin,    schedule: US,   name-contains: "STOXX" }
-    - { code: NIKKEI225, kis-iscd: "JP#NI225",  zone-id: Asia/Tokyo,       schedule: ASIA, name-contains: "니케이" }
+    - { code: STOXX50,   kis-iscd: "SX5E",      zone-id: Europe/Berlin,    schedule: US,   name-contains: "STOXX",    close-local-time: "17:30" }
+    - { code: NIKKEI225, kis-iscd: "JP#NI225",  zone-id: Asia/Tokyo,       schedule: ASIA, name-contains: "니케이",    close-local-time: "15:30" }
     # 항셍 옆에 HSCE(홍콩H)·HK#HSSI(소형주)가 붙어 있다 — 코드가 아니라 이름으로 잡는다.
-    - { code: HANGSENG,  kis-iscd: "HK#HS",     zone-id: Asia/Hong_Kong,   schedule: ASIA, name-contains: "항셍" }
+    - { code: HANGSENG,  kis-iscd: "HK#HS",     zone-id: Asia/Hong_Kong,   schedule: ASIA, name-contains: "항셍",      close-local-time: "16:00" }
     # 상해(SHANG) 옆에 CH#SHA/CH#SHB(A·B주)가 붙어 있다.
-    - { code: SHANGHAI,  kis-iscd: "SHANG",     zone-id: Asia/Shanghai,    schedule: ASIA, name-contains: "상해" }
+    - { code: SHANGHAI,  kis-iscd: "SHANG",     zone-id: Asia/Shanghai,    schedule: ASIA, name-contains: "상해",      close-local-time: "15:00" }
     # 아래 넷은 name-contains가 약한 검사다 — 실측 없이는 더 좁힐 수 없어 값은 그대로 두되,
     # 배포 후 raw-overseas로 hts_kor_isnm을 대조할 때 특히 이 넷을 확인할 것:
     #   - NASDAQ·NASDAQ100: 둘 다 "나스닥"을 포함한다. 마스터 한글명은 각각 "나스닥 종합"·

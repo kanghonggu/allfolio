@@ -17,8 +17,8 @@ import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
-import java.time.ZoneOffset
 import java.util.UUID
 
 /**
@@ -119,12 +119,14 @@ class OverseasIndexCollectServiceTest {
     }
 
     @Test
-    fun `최신 봉이 시장 현지 오늘이면 장중이다`() {
-        // 15:30 UTC는 홍콩 08-13 23:30(= 봉의 날짜와 같은 날)이지만 **KST로는 이미 08-14**다.
-        // 즉 시장 현지 타임존 대신 KST를 쓰면 이 테스트가 장마감으로 뒤집힌다.
-        val now = Instant.parse("2026-08-13T15:30:00Z")
-        assertThat(LocalDate.ofInstant(now, hongKong)).isEqualTo(tradeDate)
-        assertThat(LocalDate.ofInstant(now, kst)).isNotEqualTo(tradeDate)
+    fun `최신 봉이 시장 현지 오늘이고 마감 전이면 장중이다`() {
+        // 07:30 UTC = 홍콩 08-13 15:30 → 마감(16:00) 30분 전이라 아직 진행 중인 봉이다.
+        // **KST로는 16:30이라 이미 마감을 지난 것으로 보인다** — 시장 현지 타임존 대신 KST를 쓰면
+        // 이 테스트가 장마감으로 뒤집힌다.
+        val now = Instant.parse("2026-08-13T07:30:00Z")
+        assertThat(LocalDateTime.ofInstant(now, hongKong))
+            .isEqualTo(LocalDateTime.of(2026, 8, 13, 15, 30))
+        assertThat(LocalDateTime.ofInstant(now, kst).toLocalTime()).isAfter(LocalTime.of(16, 0))
 
         val repo = FakeRepo()
         service(repo).collect("ASIA", now)
@@ -133,18 +135,46 @@ class OverseasIndexCollectServiceTest {
     }
 
     @Test
-    fun `최신 봉이 어제면 장마감이다`() {
-        // 16:30 UTC는 홍콩 08-14 00:30이라 08-13 봉은 이미 확정된 어제 것이다.
-        // 반면 **UTC로는 아직 08-13**이라, 시장 현지 타임존 대신 UTC를 쓰면 장중으로 뒤집힌다.
-        // 위 테스트(KST가 걸리는 쪽)와 짝을 이뤄 zoneId가 실제로 일하는지를 양쪽에서 못 박는다.
-        val now = Instant.parse("2026-08-13T16:30:00Z")
-        assertThat(LocalDate.ofInstant(now, hongKong)).isNotEqualTo(tradeDate)
-        assertThat(LocalDate.ofInstant(now, ZoneOffset.UTC)).isEqualTo(tradeDate)
+    fun `최신 봉이 현지 오늘이어도 마감 시각을 지났으면 장마감이다`() {
+        // 09:00 UTC = 홍콩 17:00. 봉 날짜는 **여전히 "현지 오늘"**이라, 봉 날짜만 보던 처음
+        // 구현은 여기서 장중이라고 우겼다. 확정된 종가를 장중으로 저장하는 그 버그의 자리다.
+        // UTC로는 09:00이라 마감 전으로 보인다 — zoneId 대신 UTC를 쓰면 뒤집힌다.
+        val now = Instant.parse("2026-08-13T09:00:00Z")
+        assertThat(LocalDate.ofInstant(now, hongKong)).isEqualTo(tradeDate)
+        assertThat(LocalDateTime.ofInstant(now, hongKong).toLocalTime()).isAfter(LocalTime.of(16, 0))
 
         val repo = FakeRepo()
         service(repo).collect("ASIA", now)
 
         assertThat(repo.row("HANGSENG").marketStatus).isEqualTo("장마감")
+    }
+
+    @Test
+    fun `예약 시각의 정상 수집은 장마감으로 저장된다`() {
+        // **운영에서 매일 일어나는 정상 경로다.** 아시아 슬롯은 08:30 UTC = 홍콩 16:30(마감 30분 뒤),
+        // 도쿄로는 17:30(마감 15:30의 두 시간 뒤)이라 둘 다 확정된 종가다.
+        // 봉 날짜만 보던 처음 구현은 이 경로에서 **평일 전건을 장중으로** 저장했다 —
+        // 그러면 장마감은 주말·휴장에만 나와 라벨의 뜻이 뒤집힌다.
+        val repo = FakeRepo()
+
+        service(repo).collect("ASIA", asiaRun)
+
+        assertThat(repo.row("HANGSENG").marketStatus).isEqualTo("장마감")
+        assertThat(repo.row("NIKKEI225").marketStatus).isEqualTo("장마감")
+    }
+
+    @Test
+    fun `최신 봉이 어제면 장마감이다`() {
+        // 16:30 UTC는 홍콩 08-14 00:30이라 08-13 봉은 이미 확정된 어제 것이다.
+        // (현지 시각 00:30은 마감 전이지만 **날짜가 다르므로** 장마감이다 — 시각만 보면 뒤집힌다)
+        val now = Instant.parse("2026-08-13T16:30:00Z")
+        assertThat(LocalDate.ofInstant(now, hongKong)).isNotEqualTo(tradeDate)
+
+        val repo = FakeRepo()
+        service(repo).collect("ASIA", now)
+
+        val row = repo.row("HANGSENG")
+        assertThat(row.marketStatus).isEqualTo("장마감")
     }
 
     @Test
@@ -285,6 +315,7 @@ class OverseasIndexCollectServiceTest {
         assertThat(repo.rows.map { it.indexCode }).doesNotContain("HANGSENG")
     }
 
+
     @Test
     fun `삽입이 유니크 충돌을 내면 다시 읽어 갱신으로 끝낸다`() {
         // 국내에서 그대로 가져온 동작이라 **국내를 지키던 테스트도 같이 가져온다.**
@@ -303,7 +334,7 @@ class OverseasIndexCollectServiceTest {
         assertThat(repo.rows).hasSize(2)
         // 먼저 도착한 요청이 넣어 둔 행 위에 이번 값이 얹힌다
         assertThat(repo.row("HANGSENG").price).isEqualByComparingTo("25365.14")
-        assertThat(repo.row("HANGSENG").marketStatus).isEqualTo("장중")
+        assertThat(repo.row("HANGSENG").marketStatus).isEqualTo("장마감")
     }
 
     @Test
@@ -345,11 +376,12 @@ class OverseasIndexCollectServiceTest {
             properties = properties(),
         )
 
+    // 마감 시각은 application.yml과 같은 값이다 — 홍콩 16:00, 도쿄 15:30, 뉴욕 16:00
     private fun properties() = MarketIndexProperties().apply {
         overseas = listOf(
-            overseas("HANGSENG", "HK#HS", "Asia/Hong_Kong", "ASIA", "항셍"),
-            overseas("NIKKEI225", "JP#NI225", "Asia/Tokyo", "ASIA", "니케이"),
-            overseas("SPX", "SPX", "America/New_York", "US", "S&P500"),
+            overseas("HANGSENG", "HK#HS", "Asia/Hong_Kong", "ASIA", "항셍", "16:00"),
+            overseas("NIKKEI225", "JP#NI225", "Asia/Tokyo", "ASIA", "니케이", "15:30"),
+            overseas("SPX", "SPX", "America/New_York", "US", "S&P500", "16:00"),
         )
     }
 
@@ -359,12 +391,14 @@ class OverseasIndexCollectServiceTest {
         zoneId: String,
         schedule: String,
         nameContains: String,
+        closeLocalTime: String,
     ) = MarketIndexProperties.OverseasIndex().apply {
         this.code = code
         this.kisIscd = iscd
         this.zoneId = zoneId
         this.schedule = schedule
         this.nameContains = nameContains
+        this.closeLocalTime = closeLocalTime
     }
 
     private fun serviceLogger() =
@@ -421,6 +455,7 @@ class OverseasIndexCollectServiceTest {
 
         /** 여기 담긴 지수는 첫 삽입에서 유니크 충돌을 낸다(겹쳐 도는 요청의 재현) */
         val collideOnInsert = mutableSetOf<String>()
+
 
         fun row(indexCode: String) = rows.single { it.indexCode == indexCode }
 
