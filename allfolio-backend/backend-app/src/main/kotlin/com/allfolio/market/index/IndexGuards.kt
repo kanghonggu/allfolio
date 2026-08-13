@@ -32,11 +32,19 @@ class IndexGuards {
     }
 
     /**
+     * @param reportedPrevClose 응답이 **직접 준** 전일종가(해외의 `ovrs_nmix_prdy_clpr`).
+     *        [IndexQuote.prevClose]는 `현재가 − 전일대비`로 역산한 값이므로, 이 둘은
+     *        서로 독립적인 출처다. 어긋나면 필드가 밀렸거나 소수점이 틀린 것이다.
+     *
+     *        **기본값이 null인 이유:** 국내 응답에는 전일종가 필드가 아예 없다. 즉 null은
+     *        "출처가 안 준다"는 뜻이지 "호출부가 빠뜨렸다"가 아니다. 이 둘이 타입으로
+     *        구분되지 않는 위험은 감수한다 — 전일종가를 줄 수 없는 국내 호출부에
+     *        `null`을 억지로 적게 만드는 편이 더 나쁘다.
      * @return 걸린 항목. 첫 건에서 멈추지 않고 모두 담는다 — 파싱이 어긋난 응답은
      *         보통 한 곳만 틀리지 않고, 운영자는 어디까지 망가졌는지를 한 번에 봐야 한다.
      *         비어 있으면 저장 가능
      */
-    fun check(quote: IndexQuote): List<String> {
+    fun check(quote: IndexQuote, reportedPrevClose: BigDecimal? = null): List<String> {
         val anomalies = mutableListOf<String>()
 
         // 파싱이 실패해 0으로 떨어지면 지수가 0이 된다. 지수는 0이 될 수 없다
@@ -63,6 +71,27 @@ class IndexGuards {
                     "(계산 ${plain(computed)}%, 응답 ${plain(quote.changeRate)}%, 허용 ±${limit}%p, " +
                     "전일종가 ${plain(quote.prevClose)}, 전일대비 ${plain(quote.change)})"
             }
+        }
+
+        // 해외 응답만 전일종가를 직접 준다. 그래서 여기서 처음으로 **독립적인 출처 둘**이 생긴다 —
+        // 역산값(현재가 − 전일대비)과 응답값. 국내는 역산 말고는 대조할 것이 없어 이 검사가 없었다.
+        // 등락률 검사와는 별개다: 등락률은 change와 prevClose끼리만 맞으면 통과하므로,
+        // 셋이 통째로 다른 지수의 값이어도 등락률은 멀쩡히 맞는다.
+        //
+        // **허용오차를 두지 않는다 — 정확히 일치해야 한다.** 지나가다 "장중엔 두 출처가 갈라질 수
+        // 있으니 오차를 두자"고 완화하지 말 것. 근거 셋:
+        //  1. 2026-08-13 실측(HK#HS)은 **홍콩 장중 시각**에 찍은 것인데도 output1의 현재가와
+        //     output2[0]의 현재가가 25365.14로 완전히 같았다. 장중에도 갈라지지 않는다는 실측이다
+        //  2. 실제 수집은 전부 장 마감 이후에 돈다(미국·유럽 21:30 UTC, 아시아 08:30 UTC)
+        //  3. 어긋남은 시장 사건이 아니라 파싱 실패다. 오차를 두면 "소수점 한 칸"처럼
+        //     이 클래스가 잡으라고 있는 어긋남이 그 폭 안에 숨는다
+        //
+        // 비교는 compareTo로 한다. equals/==는 스케일까지 보므로 6345.53 != 6345.5300이 되어
+        // 자릿수만 다른 정상 응답을 이상으로 신고한다.
+        if (reportedPrevClose != null && reportedPrevClose.compareTo(quote.prevClose) != 0) {
+            anomalies += "${quote.indexCode} 응답 전일종가가 역산값과 다릅니다 " +
+                "(응답 ${plain(reportedPrevClose)}, 역산 ${plain(quote.prevClose)}, " +
+                "현재가 ${plain(quote.price)}, 전일대비 ${plain(quote.change)})"
         }
 
         return anomalies

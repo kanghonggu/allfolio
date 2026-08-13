@@ -100,4 +100,33 @@ class IndexGuardsTest {
 
         assertThat(guards.check(bad)).hasSizeGreaterThan(1)
     }
+
+    // 해외는 전일종가를 응답이 직접 준다. 역산값과 어긋나면 필드가 밀렸거나 소수점이 틀린 것이다.
+    // 등락률 검사와 독립적이다 — 등락률이 맞아도 이게 틀릴 수 있다.
+    //
+    // "전일종가"만 보고 단언하면 안 된다. 전일종가 0 이하 메시지와 등락률 어긋남 메시지에도
+    // 같은 낱말이 들어 있어서, 구현이 엉뚱한 검사를 걸었는데도 통과할 수 있다.
+    // 이 검사만이 낼 수 있는 것 — 응답값과 역산값 두 숫자가 함께 실렸는지 — 으로 가른다.
+    @Test
+    fun `응답이 준 전일종가가 역산값과 다르면 걸린다`() {
+        assertThat(guards.check(realQuote(), reportedPrevClose = BigDecimal("6000.00")))
+            .anyMatch { it.contains("6000") && it.contains("6345.53") }
+    }
+
+    @Test
+    fun `응답이 준 전일종가가 역산값과 같으면 통과한다`() {
+        assertThat(guards.check(realQuote(), reportedPrevClose = BigDecimal("6345.53"))).isEmpty()
+    }
+
+    // 국내는 응답에 전일종가가 없다. null은 "출처가 안 준다"는 뜻이지 "우리가 빠뜨렸다"가 아니다.
+    @Test
+    fun `전일종가를 안 주면 그 검사를 건너뛴다`() {
+        assertThat(guards.check(realQuote(), reportedPrevClose = null)).isEmpty()
+    }
+
+    // 스케일이 달라도 값이 같으면 통과해야 한다. equals()로 비교하면 6345.53 != 6345.5300이다.
+    @Test
+    fun `스케일이 달라도 값이 같으면 통과한다`() {
+        assertThat(guards.check(realQuote(), reportedPrevClose = BigDecimal("6345.5300"))).isEmpty()
+    }
 }
