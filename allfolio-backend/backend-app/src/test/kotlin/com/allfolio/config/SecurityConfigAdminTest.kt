@@ -2,12 +2,15 @@ package com.allfolio.config
 
 import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.api.admin.MarketIndexAdminController
+import com.allfolio.api.admin.MarketRateAdminController
 import com.allfolio.api.scheduler.SchedulerTriggerController
 import com.allfolio.market.index.IndexCollectService
 import com.allfolio.market.index.KisIndexClient
+import com.allfolio.market.rate.RateCollectService
 import com.allfolio.auth.JwtTokenService
 import com.allfolio.auth.UserEntity
 import com.allfolio.auth.UserRole
+import com.allfolio.fx.EcosStatListClient
 import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
 import com.allfolio.fx.hana.HanaFxCollectService
@@ -37,6 +40,7 @@ import java.math.BigDecimal
         JwtTokenService::class,
         FxRateAdminController::class,
         MarketIndexAdminController::class,
+        MarketRateAdminController::class,
         SchedulerTriggerController::class,
     ],
     properties = [
@@ -64,6 +68,14 @@ class SecurityConfigAdminTest {
 
     @MockBean
     private lateinit var indexCollectService: IndexCollectService
+
+    // 금리도 같다 — SchedulerTriggerController가 MarketRateAdminController를,
+    // 그쪽이 이 둘을 요구한다 (AF-102).
+    @MockBean
+    private lateinit var rateCollectService: RateCollectService
+
+    @MockBean
+    private lateinit var ecosStatListClient: EcosStatListClient
 
     @Autowired
     private lateinit var mockMvc: MockMvc
