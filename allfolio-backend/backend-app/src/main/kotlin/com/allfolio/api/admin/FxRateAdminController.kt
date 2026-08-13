@@ -1,8 +1,10 @@
 package com.allfolio.api.admin
 
 import com.allfolio.fx.BackfillSummary
+import com.allfolio.fx.CashFlowRecomputeService
 import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
+import com.allfolio.fx.RecomputeSummary
 import com.allfolio.fx.hana.HanaCollectSummary
 import com.allfolio.fx.hana.HanaFxCollectService
 import com.allfolio.fx.hana.HanaFxParseException
@@ -29,6 +31,7 @@ class FxRateAdminController(
     private val fxRateService: FxRateService,
     private val backfillService: FxRateBackfillService,
     private val hanaCollectService: HanaFxCollectService,
+    private val recomputeService: CashFlowRecomputeService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -167,6 +170,32 @@ class FxRateAdminController(
             throw ResponseStatusException(HttpStatus.CONFLICT, "동시 실행이 감지되었습니다. 다시 실행해주세요.")
         }
     }
+
+    /**
+     * POST /api/admin/fx/cashflow-recompute?apply=false — 현금흐름 KRW 환산액 소급 재계산 (AF-100 2단계).
+     *
+     * ### 실행 순서가 중요하다
+     * 1. `ECOS_API_KEY`·`ECOS_USD_STAT_CODE`·`ECOS_USD_ITEM_CODE`를 Render에 등록
+     * 2. **재배포** — env만 넣고 재배포를 안 하면 앱이 옛 설정으로 돈다
+     * 3. **백필 먼저** (`POST /api/admin/fx/backfill`)
+     * 4. 드라이런 → 보고서 확인 → `apply=true`
+     *
+     * **3을 건너뛰면 아무것도 안 고쳐진다.** `fx_rate_daily`가 비어 있으면 전 행이
+     * "과거 환율 없음"으로 떨어져 재계산이 통째로 `stillEstimated`로 끝난다.
+     * 응답은 200이고 실패도 아니라서, 순서를 모르면 "돌렸는데 안 바뀌네"로 끝난다.
+     *
+     * `apply` 기본값이 `false`인 것이 이 엔드포인트의 안전장치다 — **위험한 방향이 기본이 되면
+     * 안 된다.** 같은 컨트롤러의 백필이 `currency`에 기본값을 두지 않은 것과 같은 계열의 판단이되,
+     * 여기서는 안전한 쪽이 명확하므로 기본값을 둔다.
+     *
+     * 스케줄러 트리거를 만들지 않는다 — 일회성 운영 작업이지 주기 작업이 아니다.
+     * 주기로 돌면 백필이 더 과거를 확보할 때마다 금융 이력이 사람 모르게 바뀐다.
+     */
+    @PostMapping("/cashflow-recompute")
+    fun recomputeCashFlows(
+        @RequestParam(defaultValue = "false") apply: Boolean,
+    ): ResponseEntity<RecomputeSummary> =
+        ResponseEntity.ok(recomputeService.recompute(apply))
 
     companion object {
         private val KST: ZoneId = ZoneId.of("Asia/Seoul")
