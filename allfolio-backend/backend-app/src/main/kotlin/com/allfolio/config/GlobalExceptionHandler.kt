@@ -116,11 +116,13 @@ class GlobalExceptionHandler {
      * 옮길 수 없어 전용 핸들러를 둔다: reason 하나뿐이라 code를 실을 자리가 없다.
      *
      * **상태 코드가 둘로 갈린다.** 기본은 502다 — 상류가 실패한 것이지 우리 서버가 깨진 게 아니다.
-     * 다만 `NO_KEY`/`NO_SERIES`는 **우리 설정 누락**이라 500으로 보낸다.
-     * `EcosStatisticSearchClient`가 이 둘을 [IllegalArgumentException](→400)이 아니라
+     * 다만 `NO_KEY`/`NO_SERIES`/`CYCLE`은 **우리 설정 누락·오류**라 500으로 보낸다.
+     * `EcosStatisticSearchClient`가 이들을 [IllegalArgumentException](→400)이 아니라
      * [com.allfolio.fx.EcosApiException]으로 던진 이유가 정확히 이것("설정 누락은 서버 문제다")인데,
      * 여기서 502로 뭉뚱그리면 같은 오진을 반대편으로 반복한다 — 502를 본 운영자는 한국은행 상태를
-     * 확인하러 가지만 실제 할 일은 `ECOS_API_KEY`를 등록하는 것이다.
+     * 확인하러 가지만 실제 할 일은 `ECOS_API_KEY`를 등록하거나(NO_KEY/NO_SERIES) 우리 쪽 주기 설정을
+     * 고치는 것이다(CYCLE). CYCLE은 지금 프로덕션 호출부가 전부 "D"를 고정으로 넘겨 발생하지
+     * 않지만, 나중에 설정값으로 주기를 받는 호출부가 생기면 바로 이 분기를 타야 한다.
      *
      * **예외 객체를 로깅하지 않는다 — 의도된 것이다.**
      * ECOS 인증키가 URL 경로에 들어가서, 원본 스택(Reactor checkpoint·되울린 URI)에 키가 박힌다.
@@ -131,7 +133,7 @@ class GlobalExceptionHandler {
     @ExceptionHandler(com.allfolio.fx.EcosApiException::class)
     fun handleEcosApi(e: com.allfolio.fx.EcosApiException): ResponseEntity<Map<String, String>> {
         val status =
-            if (e.code == "NO_KEY" || e.code == "NO_SERIES") HttpStatus.INTERNAL_SERVER_ERROR
+            if (e.code == "NO_KEY" || e.code == "NO_SERIES" || e.code == "CYCLE") HttpStatus.INTERNAL_SERVER_ERROR
             else HttpStatus.BAD_GATEWAY
         log.warn("ECOS API failed type={} code={} status={}", e.javaClass.simpleName, e.code, status.value())
         return ResponseEntity.status(status)

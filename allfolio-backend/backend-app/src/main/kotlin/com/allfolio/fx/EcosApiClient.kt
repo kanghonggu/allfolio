@@ -11,7 +11,8 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 /**
- * ECOS 시계열 하나를 가리키는 좌표.
+ * ECOS 한 번 조회에 필요한 것 — 어느 시계열을 볼지(statCode·itemCode·cycle)와
+ * 그 결과를 어떻게 받아들일지(valuePolicy). 둘 다 같은 설정 한 행에서 나오므로 묶는다.
  *
  * @param cycle ECOS 주기 코드. 현재 지원은 `D`뿐이다 — 다른 주기는 요청 날짜 형식과
  *              응답 `TIME` 형식이 함께 바뀌므로, 확인되지 않은 채 넓히면 조용히 0건이 된다.
@@ -22,7 +23,12 @@ data class EcosQuery(
     val itemCode: String,
     val cycle: String,
     val valuePolicy: EcosValuePolicy,
-)
+) {
+    companion object {
+        /** 현재 유일하게 지원하는 주기. [EcosHistoricalRateSource]와 클라이언트가 같이 참조한다 — 리터럴 중복 방지. */
+        internal const val DAILY_CYCLE = "D"
+    }
+}
 
 interface EcosApiClient {
     /** 지정 기간의 통계를 가져온다. 실패하면 예외를 던진다 — 호출자가 기존 값을 지키도록. */
@@ -72,9 +78,6 @@ class EcosStatisticSearchClient(
         /** 실패 시 로그에 남길 응답 앞부분 길이. 본문 전체는 남기지 않는다(길고, 되울린 URI가 섞인다). */
         private const val BODY_PREVIEW_LENGTH = 200
 
-        /** 현재 유일하게 지원하는 주기. 다른 주기는 요청 날짜 형식·TIME 파싱이 모두 달라진다. */
-        private const val DAILY_CYCLE = "D"
-
         /**
          * 되울려 온 우리 요청 URI. 경로 첫 세그먼트가 인증키라 통째로 지운다.
          * 공백·따옴표·꺾쇠에서 멈춘다 — HTML 안에 박혀 와도 뒤따르는 마크업까지 먹지 않도록.
@@ -115,7 +118,7 @@ class EcosStatisticSearchClient(
         }
         // 아래 DATE_FORMAT(yyyyMMdd)과 파서의 TIME 해석이 둘 다 일별 전제다.
         // 다른 주기를 통과시키면 ECOS가 0건을 돌려주고, 그건 "코드가 틀렸다"와 구분되지 않는다.
-        if (query.cycle != DAILY_CYCLE) {
+        if (query.cycle != EcosQuery.DAILY_CYCLE) {
             throw EcosApiException("CYCLE", "지원하지 않는 주기입니다: ${query.cycle} (현재 D만 지원)")
         }
 
@@ -182,7 +185,7 @@ class EcosStatisticSearchClient(
             // 파서는 RESULT.MESSAGE를 그대로 detail에 넣는다. 그건 서버가 준 문자열이라
             // 우리 요청 URI가 되울려 올 수 있고 길이 제한도 없다 — 본문 미리보기와 똑같은 경로다.
             // code는 우리가 분기에 쓰므로 보존하고 detail만 마스킹·절단한다.
-            // (위 NO_KEY·NO_SERIES는 우리가 만든 문자열이고 try 밖에 있어 여기 오지 않는다.)
+            // (위 NO_KEY·NO_SERIES·CYCLE은 우리가 만든 문자열이고 try 밖에 있어 여기 오지 않는다.)
             throw EcosApiException(e.code, preview(e.detail))
         } catch (e: JsonProcessingException) {
             // 본문 미리보기는 우리 로그에만 남기고 예외에는 싣지 않는다. 예외 메시지는 어드민 응답까지

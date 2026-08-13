@@ -303,8 +303,36 @@ class EcosStatisticSearchClientTest {
 
     @Test
     fun `D가 아닌 주기는 호출 전에 거부한다`() {
-        assertThatThrownBy { client(9999).fetch(query("M"), LocalDate.now(), LocalDate.now()) }
-            .isInstanceOf(EcosApiException::class.java)
-            .hasMessageContaining("주기")
+        // 살아있는 포트를 쓴다 — 죽은 포트나 하드코딩된 번호로는 "거부돼서 요청이 안 갔다"와
+        // "요청이 갔는데 실패했다"를 구분 못 한다. hit로 실제 도달 여부를 본다.
+        val hit = AtomicBoolean(false)
+        val port = serve { ex -> hit.set(true); respond(ex, 200, "{}") }
+
+        val raw = catchThrowable { client(port).fetch(query("M"), LocalDate.now(), LocalDate.now()) }
+
+        assertThat(raw).isInstanceOf(EcosApiException::class.java)
+        val thrown = raw as EcosApiException
+        assertThat(thrown.code).isEqualTo("CYCLE") // GlobalExceptionHandler가 분기하는 키다
+        assertThat(thrown.detail).contains("주기")
+        assertThat(hit).isFalse() // 이게 "호출 전에"를 실제로 본다
+    }
+
+    @Test
+    fun `valuePolicy가 파서까지 실제로 전달된다`() {
+        // 이 테스트가 없으면 parser.parse(body, query.valuePolicy)를
+        // parser.parse(body, EcosValuePolicy.POSITIVE)로 되돌려도 스위트 전체가 그린이다 —
+        // 이 파일의 query()는 늘 POSITIVE를 쓰고, 값도 늘 양수라 둘을 구분할 수 없기 때문이다.
+        // 0은 POSITIVE에서는 걸러지고 PERCENT에서는 통과하는 값이라, 정책이 실제로 넘어갔는지를 가른다.
+        val port = serve { ex ->
+            respond(ex, 200, """{"StatisticSearch":{"row":[{"TIME":"20260102","DATA_VALUE":"0"}]}}""")
+        }
+
+        val result = client(port).fetch(
+            query().copy(valuePolicy = EcosValuePolicy.PERCENT),
+            LocalDate.of(2026, 1, 2), LocalDate.of(2026, 3, 4),
+        )
+
+        assertThat(result.rates).hasSize(1)
+        assertThat(result.skipped).isEqualTo(0)
     }
 }
