@@ -6,7 +6,7 @@ import java.math.BigDecimal
 import java.time.Duration
 
 /**
- * Upbit KRW-USDT 시세 소스 (주 소스).
+ * Upbit KRW 시세 소스 (주 소스). USDT·BTC·ETH를 한 번에 가져온다.
  *
  * `GET /v1/ticker?markets=KRW-USDT` — 무인증, 무료.
  * 레이트리밋은 응답 헤더 `remaining-req: group=ticker; min=600; sec=8` 기준
@@ -33,11 +33,11 @@ class UpbitFxSource(
     }
 
     companion object {
-        private const val PATH = "/v1/ticker?markets=KRW-USDT"
+        private const val PATH = "/v1/ticker?markets=KRW-USDT,KRW-BTC,KRW-ETH"
         private val TIMEOUT = Duration.ofSeconds(5)
     }
 
-    override fun fetchUsdtKrw(): BigDecimal {
+    override fun fetchKrwRates(): Map<String, BigDecimal> {
         val body = try {
             webClient.get()
                 .uri(PATH)

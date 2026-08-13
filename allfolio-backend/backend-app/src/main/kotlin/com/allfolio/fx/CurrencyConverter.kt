@@ -61,6 +61,11 @@ class CurrencyConverter(
             // 거래소에 실제 USDT를 들고 있는 사용자에게 실현 가능한 값이다
             "USDT" -> FxSource("USDT", fxRateService.getUsdtToKrw(), "거래소 시세", null, null)
             // QA P3: BTC/ETH도 코인당 KRW 시세로 환산 — 1:1 폴백은 0.5 BTC를 0.5원으로 축소하던 버그
+            //
+            // **시세가 없으면 예외를 그대로 흘린다. null로 바꾸지 말 것.**
+            // toKrw가 이 함수 위에 서 있고 거기서 null은 "미지원 통화 → 원금 그대로"를 뜻한다.
+            // 여기서 예외를 삼켜 null을 주면 0.5 BTC가 0.5원이 되어, 위 주석이 말하는 그 버그가
+            // 그대로 되살아난다. 대시보드가 500이 나는 편이 6천만 배 저평가보다 낫다.
             "BTC", "ETH" -> FxSource(code, fxRateService.getCryptoToKrw(code), "코인 시세", null, null)
             else -> null
         }

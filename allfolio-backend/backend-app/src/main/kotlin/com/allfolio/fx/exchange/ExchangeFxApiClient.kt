@@ -5,12 +5,13 @@ import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 
 /**
- * 유일한 [FxApiClient] 빈. 거래소 소스를 순서대로 시도한다.
+ * 유일한 [FxApiClient] 빈. 거래소 소스를 순서대로 시도하되 **심볼 단위로 해소한다.**
  *
- * 전부 실패했을 때만 예외를 던진다 — [com.allfolio.fx.FxRateScheduler]가 그 예외를 잡아
- * 기존 Redis 값을 지키는 기존 계약을 그대로 유지한다.
+ * 앞선 소스가 채우지 못한 심볼만 다음 소스에서 받는다. 한 심볼이 실패했다고 전체를
+ * 버리면 그 하나 때문에 나머지 심볼의 Redis 값이 낡는다.
  *
- * 소스를 FxApiClient로 직접 만들지 않은 이유는 빈이 둘이 되면 스케줄러의 주입이 깨지기 때문이다.
+ * 하나도 못 채웠을 때만 예외를 던진다 — [com.allfolio.fx.FxRateScheduler]가 그 예외를 잡아
+ * 기존 Redis 값을 지키는 계약을 그대로 유지한다.
  */
 class ExchangeFxApiClient(
     private val sources: List<FxQuoteSource>,
@@ -20,48 +21,69 @@ class ExchangeFxApiClient(
 
     companion object {
         /**
-         * 타당한 USDT/KRW 범위.
+         * 심볼별 타당 범위.
          *
-         * 이 가드가 잡으려는 것은 "환율이 이상하다"가 아니라 **"파싱이 깨졌다"**이다.
-         * 0이나 타임스탬프가 환율 자리에 들어오면 실패보다 나쁘다 — 예외 없이
-         * 모든 자산 평가를 오염시키기 때문이다.
+         * 이 가드가 잡으려는 것은 "시세가 이상하다"가 아니라 **"파싱이 깨졌다"**이다.
+         * 0이나 타임스탬프가, 혹은 BTC 자리에 USDT 값이 들어오면 실패보다 나쁘다 —
+         * 예외 없이 모든 자산 평가를 오염시킨다.
          *
-         * 좁게 잡으면 실제 급변동 때 환율이 얼어붙으므로 일부러 넓게 둔다.
-         * (2026-08-12 실측 1408, 52주 범위 1362~1655)
+         * 좁게 잡으면 실제 급변동 때 시세가 얼어붙으므로 일부러 넓게 둔다.
+         * (2026-08-12 실측: USDT 1409 · BTC 89,825,000 · ETH 2,663,000)
          */
-        private val MIN_RATE = BigDecimal("500")
-        private val MAX_RATE = BigDecimal("5000")
+        private val RANGES: Map<String, ClosedRange<BigDecimal>> = mapOf(
+            FxSymbols.USDT to BigDecimal("500")..BigDecimal("5000"),
+            FxSymbols.BTC to BigDecimal("1000000")..BigDecimal("1000000000"),
+            FxSymbols.ETH to BigDecimal("100000")..BigDecimal("100000000"),
+        )
     }
 
-    override fun getUsdtKrw(): BigDecimal {
+    override fun fetchKrwRates(): Map<String, BigDecimal> {
+        val resolved = mutableMapOf<String, BigDecimal>()
         var lastFailure: FxQuoteException? = null
 
         for (source in sources) {
-            val rate = try {
-                source.fetchUsdtKrw()
+            if (resolved.keys.containsAll(FxSymbols.ALL)) break
+
+            val fetched = try {
+                source.fetchKrwRates()
             } catch (e: FxQuoteException) {
                 log.warn("[ExchangeFx] {} 실패: {}", source.sourceName, e.message)
                 lastFailure = e
                 continue
             }
 
-            if (rate < MIN_RATE || rate > MAX_RATE) {
-                // 예외를 안 던지고 값을 돌려준 소스가 범위를 벗어났다 = 파싱이 깨졌다는 뜻이다.
-                log.warn("[ExchangeFx] {} 값이 범위 밖이라 무시: {}", source.sourceName, rate)
-                lastFailure = FxQuoteException("${source.sourceName} 값이 범위 밖: $rate")
-                continue
+            for ((symbol, rate) in fetched) {
+                if (symbol in resolved) continue          // 앞선 소스가 이미 채웠다
+
+                val range = RANGES[symbol] ?: continue    // 우리가 안 쓰는 심볼
+                if (rate !in range) {
+                    // 예외를 안 던지고 값을 돌려준 소스가 범위를 벗어났다 = 파싱이 깨졌다는 뜻이다.
+                    log.warn("[ExchangeFx] {} {} 값이 범위 밖이라 무시: {}", source.sourceName, symbol, rate)
+                    lastFailure = FxQuoteException("${source.sourceName} $symbol 범위 밖: $rate")
+                    continue
+                }
+
+                resolved[symbol] = rate
             }
 
-            log.info("[ExchangeFx] source={} USDTKRW={}", source.sourceName, rate)
-            return rate
+            log.info("[ExchangeFx] source={} 해소={}", source.sourceName, resolved.keys)
         }
 
-        // cause를 붙이는 이유: 스케줄러는 e.message만 찍는다. 원인을 안 달면
-        // 전량 실패했을 때 로그 한 줄로는 왜 실패했는지 알 수 없고,
-        // 위쪽 WARN 줄과 눈으로 짝지어야 한다 — 로그 파이프라인에서는 그 줄이 없을 수도 있다.
-        throw FxQuoteException(
-            "모든 소스에서 USDT/KRW를 가져오지 못했습니다 (시도=${sources.size})",
-            lastFailure,
-        )
+        if (resolved.isEmpty()) {
+            // cause를 붙이는 이유: 스케줄러는 e.message만 찍는다. 원인을 안 달면
+            // 전량 실패했을 때 로그 한 줄로는 왜 실패했는지 알 수 없다.
+            throw FxQuoteException(
+                "모든 소스에서 KRW 시세를 가져오지 못했습니다 (시도=${sources.size})",
+                lastFailure,
+            )
+        }
+
+        val missing = FxSymbols.ALL - resolved.keys
+        if (missing.isNotEmpty()) {
+            // 부분 성공은 실패가 아니다. 다만 조용히 넘어가면 특정 심볼만 영영 낡는다.
+            log.warn("[ExchangeFx] 끝내 못 채운 심볼={} — 그 심볼은 기존 값이 유지된다", missing)
+        }
+
+        return resolved
     }
 }

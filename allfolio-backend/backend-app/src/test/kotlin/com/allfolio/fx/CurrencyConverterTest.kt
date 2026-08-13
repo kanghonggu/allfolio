@@ -170,6 +170,41 @@ class CurrencyConverterTest {
         assertThat(converter.sourceOf("ETH")!!.source).isEqualTo("코인 시세")
     }
 
+    /**
+     * 코인 시세가 없을 때 **null로 degrade하면 안 된다.**
+     *
+     * 코인에는 폴백 상수가 없어 getCryptoToKrw가 예외를 던진다(AF-99).
+     * 그 예외를 sourceOf에서 삼켜 null을 돌려주고 싶은 유혹이 있다 — 출처 표기는 화면 장식이고,
+     * GetDashboardUseCase가 mapNotNull로 부르니 대시보드 500을 피할 수 있어 보인다.
+     *
+     * **그러면 안 된다.** toKrw가 sourceOf 위에 서 있고 거기서 null은 "미지원 통화 → 원금 그대로"다.
+     * null을 주는 순간 0.5 BTC가 0.5원이 되어 QA P3에서 고쳤던 6천만 배 저평가가 되살아난다.
+     * 실제로 이 테스트가 그 회귀를 한 번 잡았다.
+     *
+     * 대시보드가 500이 나는 편이 조용한 6천만 배 저평가보다 낫다.
+     */
+    @Test
+    fun `코인 시세가 없으면 예외가 전파된다 - null로 떨어뜨리면 0_5 BTC가 0_5원이 된다`() {
+        val noCryptoRate = object : FxRateService {
+            override fun getUsdtToKrw(): BigDecimal = BigDecimal("1400")
+            override fun setUsdtToKrw(rate: BigDecimal) {}
+            override fun getCryptoToKrw(symbol: String): BigDecimal =
+                throw IllegalStateException("$symbol KRW 시세가 없습니다")
+            override fun setCryptoToKrw(symbol: String, rate: BigDecimal) {}
+        }
+        val target = CurrencyConverter(noCryptoRate)
+
+        // 표기 경로도 예외를 흘린다 — 여기서 null을 주면 아래 평가가 조용히 틀린다
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy { target.sourceOf("BTC") }
+            .isInstanceOf(IllegalStateException::class.java)
+
+        // 평가: 0.5원을 돌려주느니 죽는다
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy { target.toKrw(BigDecimal("0.5"), "BTC") }
+            .isInstanceOf(IllegalStateException::class.java)
+    }
+
     @Test
     fun `소문자로 물어도 통화 코드는 대문자로 돌려준다`() {
         listOf("usd", "usdt", "btc", "eth").forEach { code ->

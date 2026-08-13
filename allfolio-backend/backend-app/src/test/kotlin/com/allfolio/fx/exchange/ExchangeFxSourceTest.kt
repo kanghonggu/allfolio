@@ -44,23 +44,33 @@ class ExchangeFxSourceTest {
     private fun bithumb() = BithumbFxSource(baseUrl(), BithumbFxParser(ObjectMapper()))
 
     @Test
-    fun `Upbit은 KRW-USDT 마켓을 정확한 경로로 조회한다`() {
-        responseBody = """[{"market":"KRW-USDT","trade_price":1408.0}]"""
+    fun `Upbit은 세 마켓을 한 번에 정확한 경로로 조회한다`() {
+        responseBody = """
+            [{"market":"KRW-USDT","trade_price":1409.0},
+             {"market":"KRW-BTC","trade_price":89825000.0},
+             {"market":"KRW-ETH","trade_price":2663000.0}]
+        """.trimIndent()
 
-        val rate = upbit().fetchUsdtKrw()
+        val rates = upbit().fetchKrwRates()
 
-        assertThat(rate).isEqualByComparingTo("1408.0")
-        assertThat(requestUri.get()).isEqualTo("/v1/ticker?markets=KRW-USDT")
+        assertThat(rates).containsOnlyKeys("USDT", "BTC", "ETH")
+        assertThat(requestUri.get()).isEqualTo("/v1/ticker?markets=KRW-USDT,KRW-BTC,KRW-ETH")
     }
 
     @Test
-    fun `Bithumb은 USDT_KRW 심볼을 정확한 경로로 조회한다`() {
-        responseBody = """{"status":"0000","data":{"closing_price":"1409"}}"""
+    fun `Bithumb은 ALL_KRW를 정확한 경로로 조회한다`() {
+        responseBody = """
+            {"status":"0000","data":{
+              "BTC":{"closing_price":"89880000"},
+              "ETH":{"closing_price":"2664000"},
+              "USDT":{"closing_price":"1410"},
+              "date":"1786521700219"}}
+        """.trimIndent()
 
-        val rate = bithumb().fetchUsdtKrw()
+        val rates = bithumb().fetchKrwRates()
 
-        assertThat(rate).isEqualByComparingTo("1409")
-        assertThat(requestUri.get()).isEqualTo("/public/ticker/USDT_KRW")
+        assertThat(rates).containsOnlyKeys("USDT", "BTC", "ETH")
+        assertThat(requestUri.get()).isEqualTo("/public/ticker/ALL_KRW")
     }
 
     @Test
@@ -68,40 +78,50 @@ class ExchangeFxSourceTest {
         responseCode = 404
         responseBody = """{"error":{"name":404,"message":"Code not found"}}"""
 
-        assertThatThrownBy { upbit().fetchUsdtKrw() }
+        assertThatThrownBy { upbit().fetchKrwRates() }
             .isInstanceOf(FxQuoteException::class.java)
     }
 
     @Test
     fun `Bithumb은 HTTP 200이어도 status가 나쁘면 FxQuoteException`() {
-        // 이 조합이 Bithumb의 실제 실패 형태다. retrieve()가 안 던지므로
-        // 여기서 막지 못하면 조회 실패가 그대로 환율이 된다.
         responseCode = 200
         responseBody = """{"status":"5500","message":"상장 코인이 아닙니다."}"""
 
-        assertThatThrownBy { bithumb().fetchUsdtKrw() }
+        assertThatThrownBy { bithumb().fetchKrwRates() }
             .isInstanceOf(FxQuoteException::class.java)
     }
 
     @Test
-    fun `소스 이름은 로그에서 구분되도록 고정한다`() {
-        assertThat(upbit().sourceName).isEqualTo("UPBIT")
-        assertThat(bithumb().sourceName).isEqualTo("BITHUMB")
-    }
-
-    @Test
     fun `Upbit 본문이 비면 FxQuoteException - 파서까지 가지 않는다`() {
-        // responseBody 기본값이 빈 문자열이다. bodyToMono는 빈 Mono로 완료되므로
-        // block()이 null을 돌려주고 elvis 분기가 걸린다.
-        assertThatThrownBy { upbit().fetchUsdtKrw() }
+        assertThatThrownBy { upbit().fetchKrwRates() }
             .isInstanceOf(FxQuoteException::class.java)
             .hasMessageContaining("본문이 비어")
     }
 
     @Test
     fun `Bithumb 본문이 비면 FxQuoteException`() {
-        assertThatThrownBy { bithumb().fetchUsdtKrw() }
+        assertThatThrownBy { bithumb().fetchKrwRates() }
             .isInstanceOf(FxQuoteException::class.java)
             .hasMessageContaining("본문이 비어")
+    }
+
+    @Test
+    fun `Bithumb은 큰 ALL_KRW 응답도 받는다 - 코덱 한도 회귀 방지`() {
+        // 실측 169KB. 기존 256KB 한도로는 상장이 늘면 조용히 깨진다.
+        // 500KB짜리 응답을 만들어 1MB 상향이 실제로 먹는지 확인한다.
+        // (필러 1500개는 약 187KB밖에 안 돼 아래 256KB 체크 자체가 항상 실패했다 — 4000개로 상향)
+        val filler = (1..4000).joinToString(",") {
+            """"FILLER$it":{"opening_price":"1","closing_price":"1","min_price":"1","max_price":"1","units_traded":"1","acc_trade_value":"1"}"""
+        }
+        responseBody = """{"status":"0000","data":{$filler,"USDT":{"closing_price":"1410"},"date":"1"}}"""
+        check(responseBody.length > 256 * 1024) { "픽스처가 기존 한도보다 커야 의미가 있다: ${responseBody.length}" }
+
+        assertThat(bithumb().fetchKrwRates()).containsOnlyKeys("USDT")
+    }
+
+    @Test
+    fun `소스 이름은 로그에서 구분되도록 고정한다`() {
+        assertThat(upbit().sourceName).isEqualTo("UPBIT")
+        assertThat(bithumb().sourceName).isEqualTo("BITHUMB")
     }
 }
