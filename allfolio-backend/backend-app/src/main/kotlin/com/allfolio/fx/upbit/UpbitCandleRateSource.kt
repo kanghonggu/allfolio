@@ -5,6 +5,9 @@ import com.allfolio.fx.HistoricalRateSource
 import com.allfolio.fx.SourceFetch
 import org.slf4j.LoggerFactory
 import java.time.LocalDate
+import java.time.LocalTime
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
 
 /**
  * Upbit 일봉 기반 과거 크립토 시세 소스.
@@ -14,8 +17,15 @@ import java.time.LocalDate
  * 페이지를 안 넘기면 오래된 구간이 소리 없이 비고, 그 날짜의 현금흐름은 계속
  * 현재가 폴백으로 떨어진다 — 오류도 로그도 없이.
  *
- * `to`는 **배타적**이다: `to=2026-08-03T00:00:00+09:00`이 08-02까지 돌려준다(실측).
- * 그래서 날짜 D를 포함하려면 `(D+1)T00:00:00+09:00`을 싣는다.
+ * `to`는 **배타적**이다(실측): KST 08-03 자정을 넘기면 08-02까지 돌려준다.
+ * 그래서 날짜 D를 포함하려면 D+1일의 KST 자정을 싣는다. 실제 전송은 UTC(Z) 표기다 —
+ * 아래 [cursor] 참조.
+ *
+ * **레이트리밋**: `remaining-req: group=candles; min=600; sec=9` — 초당 10회 남짓이다.
+ * 페이지를 연달아 던지므로 아주 긴 구간(수십 페이지)을 한 번에 요청하면 429에 걸릴 수 있다.
+ * 실측: 26년 구간(약 48페이지)은 걸렸고, 5년(약 10페이지)은 왕복 지연만으로 자연히 분산돼
+ * 걸리지 않는다. 스로틀을 넣지 않은 이유가 이것이다 — 현실적 백필 구간에서는 불필요하고,
+ * 필요해지면 구간을 나눠 돌리면 된다(백필은 멱등하다).
  */
 class UpbitCandleRateSource(
     private val client: UpbitCandleClient,
@@ -31,12 +41,25 @@ class UpbitCandleRateSource(
         private const val PAGE = 200
         /** 안전장치. 200건 × 100페이지 = 약 54년이라 어떤 현실적 구간도 덮는다. */
         private const val MAX_PAGES = 100
+
+        /** Upbit 일봉의 하루 경계는 KST 09:00이다. 커서는 KST 자정 기준으로 만든다. */
+        private val KST = ZoneOffset.ofHours(9)
     }
 
     override fun supports(currency: String): Boolean = currency.trim().uppercase() in SUPPORTED
 
-    /** `to`는 배타적이므로 포함하려는 마지막 날짜 + 1일을 넘긴다. */
-    private fun cursor(exclusiveUpper: LocalDate) = "${exclusiveUpper}T00:00:00+09:00"
+    /**
+     * `to` 커서. 배타적이므로 포함하려는 마지막 날짜 + 1일을 넘긴다. KST 자정을 **UTC(Z) 표기로** 보낸다.
+     *
+     * `+09:00`을 그대로 실으면 Upbit이 400을 준다. WebClient는 쿼리 값의 `+`를 인코딩하지 않고
+     * (RFC 3986상 쿼리에서 합법), Upbit은 그 `+`를 공백으로 읽어 날짜 파싱에 실패한다.
+     * 실제 요청으로 확인했다 — `%2B09:00`은 200, 날 `+09:00`은 400.
+     *
+     * 스텁 서버 테스트로는 절대 못 잡는 종류다(스텁은 우리가 디코드하니까).
+     * UTC로 보내면 `+`가 아예 없어 인코딩 문제가 구조적으로 사라진다.
+     */
+    private fun cursor(exclusiveUpper: LocalDate): String =
+        OffsetDateTime.of(exclusiveUpper, LocalTime.MIDNIGHT, KST).toInstant().toString()
 
     override fun fetch(currency: String, from: LocalDate, to: LocalDate): SourceFetch {
         val code = currency.trim().uppercase()

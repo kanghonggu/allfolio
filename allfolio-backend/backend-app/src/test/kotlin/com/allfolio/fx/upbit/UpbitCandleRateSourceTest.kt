@@ -30,9 +30,7 @@ class UpbitCandleRateSourceTest {
         server.createContext("/") { exchange ->
             val query = exchange.requestURI.query ?: ""
             requests += query
-            val to = Regex("to=([^&]+)").find(query)?.groupValues?.get(1)?.let {
-                LocalDate.parse(java.net.URLDecoder.decode(it, "UTF-8").substring(0, 10))
-            } ?: LocalDate.of(2026, 8, 13)
+            val to = runCatching { kstDateOf(query) }.getOrDefault(LocalDate.of(2026, 8, 13))
 
             // to는 배타적이라 to-1일부터 200일치를 내림차순으로 만든다
             val body = (0 until 200).joinToString(",") { i ->
@@ -50,6 +48,16 @@ class UpbitCandleRateSourceTest {
     fun stop() = server.stop(0)
 
     /**
+     * 커서(UTC Z)를 그것이 뜻하는 **KST 날짜**로 되돌린다.
+     *
+     * 소스는 KST 자정을 UTC로 바꿔 보낸다(`+`를 그대로 보내면 Upbit이 400을 준다 — 실측).
+     * 스텁도 실제 Upbit처럼 UTC를 받아 KST 경계로 해석해야 한다.
+     */
+    private fun kstDateOf(query: String): java.time.LocalDate =
+        java.time.Instant.parse(Regex("to=([^&]+)").find(query)!!.groupValues[1])
+            .atZone(java.time.ZoneOffset.ofHours(9)).toLocalDate()
+
+    /**
      * 쿼리에서 `to` 값을 꺼내 **시각으로** 비교한다.
      *
      * 문자열 비교를 하지 않는 이유가 두 겹이다. WebClient가 `:`를 퍼센트 인코딩할지는 구현
@@ -58,14 +66,13 @@ class UpbitCandleRateSourceTest {
      * 단언만 깨진다 — 실제로 이 함정에 한 번 빠졌다.
      * 그래서 `+`를 먼저 보호한 뒤 디코드하고, OffsetDateTime으로 파싱해 값을 비교한다.
      */
-    private fun toParam(query: String): java.time.OffsetDateTime {
-        val raw = Regex("to=([^&]+)").find(query)!!.groupValues[1]
-        val decoded = java.net.URLDecoder.decode(raw.replace("+", "%2B"), "UTF-8")
-        return java.time.OffsetDateTime.parse(decoded)
-    }
+    private fun toParam(query: String): java.time.Instant =
+        java.time.Instant.parse(Regex("to=([^&]+)").find(query)!!.groupValues[1])
 
-    private fun cursorOf(date: java.time.LocalDate): java.time.OffsetDateTime =
-        java.time.OffsetDateTime.parse("${date}T00:00:00+09:00")
+    /** 기대 커서: 그 KST 날짜의 자정을 UTC로 옮긴 시각 */
+    private fun cursorOf(date: java.time.LocalDate): java.time.Instant =
+        java.time.OffsetDateTime.of(date, java.time.LocalTime.MIDNIGHT, java.time.ZoneOffset.ofHours(9))
+            .toInstant()
 
     private fun source() = UpbitCandleRateSource(
         UpbitCandleClient("http://localhost:${server.address.port}"),
@@ -164,11 +171,7 @@ class UpbitCandleRateSourceTest {
         server.createContext("/") { exchange ->
             val query = exchange.requestURI.query ?: ""
             requests += query
-            val cursor = Regex("to=([^&]+)").find(query)?.groupValues?.get(1)?.let {
-                LocalDate.parse(
-                    java.net.URLDecoder.decode(it.replace("+", "%2B"), "UTF-8").substring(0, 10)
-                )
-            } ?: LocalDate.of(2026, 8, 13)
+            val cursor = runCatching { kstDateOf(query) }.getOrDefault(LocalDate.of(2026, 8, 13))
 
             val body = history.filter { it < cursor }
                 .joinToString(",") { """{"candle_date_time_kst":"${it}T09:00:00","trade_price":9.0E7}""" }
@@ -195,9 +198,7 @@ class UpbitCandleRateSourceTest {
         server.createContext("/") { exchange ->
             val query = exchange.requestURI.query ?: ""
             requests += query
-            val to = Regex("to=([^&]+)").find(query)?.groupValues?.get(1)?.let {
-                LocalDate.parse(java.net.URLDecoder.decode(it.replace("+", "%2B"), "UTF-8").substring(0, 10))
-            } ?: LocalDate.of(2026, 8, 13)
+            val to = runCatching { kstDateOf(query) }.getOrDefault(LocalDate.of(2026, 8, 13))
             val d = to.minusDays(1)
             val bytes = """[{"candle_date_time_kst":"${d}T09:00:00","trade_price":9.0E7}]"""
                 .toByteArray(Charsets.UTF_8)
