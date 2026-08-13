@@ -44,6 +44,14 @@ class IndexGuardsTest {
             .anyMatch { it.contains("등락률") }
     }
 
+    // 위 테스트는 보고값이 계산값보다 "작은" 쪽만 본다. 비교에서 abs()가 빠져도
+    // 그 케이스는 여전히 잡히므로 한쪽 방향만으로는 abs()가 고정되지 않는다.
+    @Test
+    fun `등락률이 계산값보다 커도 걸린다`() {
+        assertThat(guards.check(realQuote(rate = "9.99")))
+            .anyMatch { it.contains("등락률") }
+    }
+
     // KIS는 소수점 둘째 자리로 반올림해 준다(3.6799 → 3.68). 그 폭은 허용해야 한다.
     @Test
     fun `반올림 오차는 통과시킨다`() {
