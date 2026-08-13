@@ -7,6 +7,10 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.springframework.http.client.reactive.ClientHttpConnector
+import org.springframework.http.client.reactive.ReactorClientHttpConnector
+import reactor.netty.http.client.HttpClient
+import reactor.netty.resources.ConnectionProvider
 import java.net.InetSocketAddress
 import java.time.LocalDate
 import java.util.Collections
@@ -74,8 +78,26 @@ class UpbitCandleRateSourceTest {
         java.time.OffsetDateTime.of(date, java.time.LocalTime.MIDNIGHT, java.time.ZoneOffset.ofHours(9))
             .toInstant()
 
+    /**
+     * **전역 커넥션 풀을 쓰지 않는다** — 이걸 빼면 이 클래스가 간헐적으로 깨진다.
+     *
+     * `WebClient.builder().build()`의 기본 커넥터는 reactor-netty의 JVM 전역 풀
+     * (`HttpResources`)이고, 테스트 태스크는 모듈 전체가 JVM 하나를 쓴다. 그 JVM에서
+     * 스텁 서버 수십 개가 임시 포트에 떴다 죽는데, 죽은 서버의 커넥션을 풀에서 지우는 일은
+     * 네티 이벤트 루프에서 **비동기로** 일어난다. 루프가 바쁘면 그 정리가 늦고, 그 사이
+     * 커널이 같은 임시 포트를 새 스텁 서버에 다시 내주면 풀은 **이미 닫힌 소켓**을 내준다.
+     * 요청은 죽은 소켓으로 나가고 `Connection prematurely closed BEFORE response`가 된다.
+     *
+     * 재현 실험(임시 포트를 강제로 재사용시키고 이벤트 루프에 부하를 준 채 [UpbitCandleClient]로
+     * 1000회): 공유 풀은 15회가 죽은 소켓으로 나가 실패했고 그중 1회가 정확히 저 메시지였다.
+     * 전용 커넥터로는 0회. 재시도나 sleep이 아니라 **원인을 없애는** 쪽이다 — 이 테스트가
+     * 검증하는 건 커넥션 재사용이 아니라 페이지네이션이라 잃는 것도 없다.
+     */
+    private fun dedicatedConnector(): ClientHttpConnector =
+        ReactorClientHttpConnector(HttpClient.create(ConnectionProvider.newConnection()))
+
     private fun source() = UpbitCandleRateSource(
-        UpbitCandleClient("http://localhost:${server.address.port}"),
+        UpbitCandleClient("http://localhost:${server.address.port}", dedicatedConnector()),
         UpbitCandleParser(ObjectMapper()),
     )
 
