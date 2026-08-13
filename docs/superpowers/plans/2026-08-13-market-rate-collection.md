@@ -905,6 +905,46 @@ class RateCollectServiceTest {
         assertThat(summary.skippedRows).isEqualTo(2)
     }
 
+    /**
+     * 소스가 구간 밖 날짜를 섞어 주면 걷어낸다. 안 걷어내면 그 행이 새 UUID로 INSERT되어
+     * 유니크 제약이 배치 전체를 죽인다 — 재실행해도 똑같이 죽는다.
+     */
+    @Test
+    fun `요청 구간 밖 날짜는 걷어내고 센다`() {
+        val repo = FakeRepo()
+        val client = FakeClient(
+            mapOf(
+                "S1" to listOf(
+                    obs("2026-08-11", "3.10"),
+                    obs("2026-08-20", "3.30"), // to(8/12) 이후
+                    obs("2026-08-01", "3.05"), // from(8/10) 이전
+                ),
+            ),
+        )
+
+        val summary = service(client, repo, series("KTB_3Y", "S1")).collect(from, to, now)
+
+        assertThat(summary.outOfRange).isEqualTo(2)
+        assertThat(summary.inserted).isEqualTo(1)
+        assertThat(repo.saved.single().quoteDate).isEqualTo(LocalDate.of(2026, 8, 11))
+    }
+
+    /**
+     * 0건은 실패가 아니다 — 기준금리처럼 변경 시에만 공표되는 계열은 2주 창이 빌 수 있다.
+     * 다만 코드가 죽어도 똑같이 0건이라, 이름을 남겨 사람이 보게 한다.
+     */
+    @Test
+    fun `0건으로 돌아온 종목은 실패가 아니라 이름으로 남는다`() {
+        val repo = FakeRepo()
+        val client = FakeClient(mapOf("S1" to emptyList(), "S2" to listOf(obs("2026-08-12", "3.40"))))
+
+        val summary = service(client, repo, series("BASE_RATE", "S1"), series("KTB_10Y", "S2")).collect(from, to, now)
+
+        assertThat(summary.emptySeries).containsExactly("BASE_RATE")
+        assertThat(summary.failed).isZero()
+        assertThat(summary.collected).isEqualTo(1)
+    }
+
     @Test
     fun `대상이 없으면 요청 0건으로 끝난다`() {
         val summary = service(FakeClient(emptyMap()), FakeRepo()).collect(from, to, now)
@@ -1014,6 +1054,10 @@ import java.util.UUID
  *
  * @param requested 설정에 있는 종목 수. **0이면 설정이 빈 것이지 ECOS 문제가 아니다**
  * @param skippedRows 값·날짜가 이상해 파서가 버린 행 수. 0이 아니면 형식이 바뀐 신호다
+ * @param outOfRange 요청 구간 밖 날짜라 걷어낸 행 수. 아래 필터 주석 참조
+ * @param emptySeries 0건으로 돌아온 종목. **실패가 아니다** — 기준금리처럼 변경 시에만
+ *                    공표되는 계열은 2주 창에 값이 없는 게 정상이다. 다만 코드가 죽어도
+ *                    똑같이 0건이라, 어느 쪽인지는 사람이 봐야 한다. 그래서 세지 말고 이름을 남긴다
  * @param failures "KTB_3Y: <사유>" 형태. 어느 종목이 왜 빠졌는지 한 번에 보여야 한다
  */
 data class RateCollectSummary(
@@ -1024,6 +1068,8 @@ data class RateCollectSummary(
     val inserted: Int,
     val updated: Int,
     val skippedRows: Int,
+    val outOfRange: Int,
+    val emptySeries: List<String>,
     val failed: Int,
     val failures: List<String>,
 )
@@ -1067,6 +1113,8 @@ class RateCollectService(
         var inserted = 0
         var updated = 0
         var skippedRows = 0
+        var outOfRange = 0
+        val emptySeries = mutableListOf<String>()
         val failures = mutableListOf<String>()
 
         for (series in properties.series) {
@@ -1084,10 +1132,24 @@ class RateCollectService(
                 )
                 skippedRows += result.skipped
 
+                // 요청 구간 밖 날짜를 먼저 걷어낸다. 파서는 날짜만 파싱되면 통과시키므로
+                // 소스가 구간 밖 날짜를 섞어 줄 수 있는데, 아래 existing 조회는 from..to로 한정된다 —
+                // 그 날짜 행이 이미 테이블에 있으면(2주 창이 매일 겹치므로 반드시 있다) existing에서
+                // 안 잡혀 새 UUID로 INSERT가 나가고 uk_market_rate가 배치 전체를 죽인다.
+                // 재실행해도 똑같이 실패하고 운영자에게는 불투명한 제약 위반만 남는다.
+                // AF-100의 FxRateBackfillService가 같은 방어를 한다 — 겪고 나서 생긴 것이다.
+                val inRange = result.rates.filter { it.baseDate in from..to }
+                outOfRange += result.rates.size - inRange.size
+
+                // **0건을 실패로 만들지 않는다.** 기준금리처럼 변경 시에만 공표되는 계열은
+                // 2주 창에 값이 없는 게 정상이다. 다만 통계표 코드가 죽어도 똑같이 0건이라
+                // 자동으로는 못 가른다 — 이름을 남겨 사람이 보게 한다.
+                if (inRange.isEmpty()) emptySeries += series.code
+
                 val existing = store.findRange(series.code, from, to).associateBy { it.quoteDate }
                 val toInsert = mutableListOf<MarketRateEntity>()
 
-                for (row in result.rates) {
+                for (row in inRange) {
                     val prior = existing[row.baseDate]
                     if (prior == null) {
                         toInsert += MarketRateEntity(
@@ -1099,8 +1161,12 @@ class RateCollectService(
                             collectedAt = now,
                         )
                     } else {
-                        // 값이 같아도 collectedAt은 갱신한다 — "언제 확인한 값인가"가 화면에 나간다
+                        // 값이 같아도 collectedAt은 갱신한다 — "언제 확인한 값인가"가 화면에 나간다.
+                        // source도 다시 쓴다: 같은 지표를 다른 소스에서 재수집하는 날
+                        // (FRED가 후속으로 붙는다) 첫 수집 소스가 그대로 굳으면,
+                        // 정정된 값을 설명하려고 들여다볼 바로 그 필드가 거짓말을 한다
                         prior.rateValue = row.value
+                        prior.source = SOURCE
                         prior.collectedAt = now
                         updated++
                     }
@@ -1125,6 +1191,8 @@ class RateCollectService(
             inserted = inserted,
             updated = updated,
             skippedRows = skippedRows,
+            outOfRange = outOfRange,
+            emptySeries = emptySeries,
             failed = failures.size,
             failures = failures,
         )
@@ -1159,7 +1227,7 @@ class JpaRateStore(private val repository: MarketRateJpaRepository) : RateCollec
 - [ ] **Step 4: 테스트가 통과하는지 확인한다**
 
 Run: `cd allfolio-backend && ./gradlew :backend-app:test --tests '*RateCollectService*' --no-daemon`
-Expected: BUILD SUCCESSFUL (6 tests)
+Expected: BUILD SUCCESSFUL (8 tests)
 
 수정한 행이 실제로 저장되는지는 `existing.values.filter { it.collectedAt == now }`가 책임진다.
 테스트 `같은 구간을 다시 수집하면 덮어쓴다`가 이걸 잡는다 — 실패하면 갱신분이 저장되지 않은 것이다.
@@ -1291,6 +1359,8 @@ class MarketRateAdminControllerTest {
         inserted = collected,
         updated = 0,
         skippedRows = 0,
+        outOfRange = 0,
+        emptySeries = emptyList(),
         failed = failed,
         failures = failures,
     )
@@ -1687,11 +1757,14 @@ jobs:
           failed = body.get("failed") or 0
           failures = body.get("failures") or []
           skipped = body.get("skippedRows") or 0
+          out_of_range = body.get("outOfRange") or 0
+          empty = body.get("emptySeries") or []
 
           print(
               f"수집 결과: requested={body.get('requested')} collected={body.get('collected')} "
               f"inserted={body.get('inserted')} updated={body.get('updated')} "
-              f"skippedRows={skipped} failed={failed} ({body.get('from')}~{body.get('to')})"
+              f"skippedRows={skipped} outOfRange={out_of_range} empty={len(empty)} "
+              f"failed={failed} ({body.get('from')}~{body.get('to')})"
           )
 
           if not body.get("requested"):
@@ -1700,6 +1773,17 @@ jobs:
           if skipped:
               # 파서가 버린 행이다. 꾸준히 늘면 ECOS 응답 형식이나 단위가 바뀐 신호다.
               print(f"::warning::값이 이상해 버린 행이 {skipped}건 있습니다.")
+
+          if out_of_range:
+              # 요청 구간 밖 날짜. 서비스가 걷어내 사고는 안 나지만, ECOS가 구간 해석을
+              # 바꿨다는 신호라 계속 나오면 봐야 한다.
+              print(f"::warning::요청 구간 밖 날짜 {out_of_range}건을 걷어냈습니다.")
+
+          if empty:
+              # **실패가 아니다.** 기준금리처럼 변경 시에만 공표되는 계열은 2주 창이 빌 수 있다.
+              # 다만 통계표 코드가 죽어도 똑같이 0건이라, 같은 종목이 며칠씩 계속 여기 뜨면
+              # 그건 정상이 아니다. 자동으로 못 가르는 구분이라 사람에게 넘긴다.
+              print(f"::warning::0건으로 돌아온 종목: {', '.join(empty)} (변경 시에만 공표되는 계열이면 정상)")
 
           if failed or failures:
               reasons = " | ".join(str(x) for x in failures) or "(사유 없음)"
@@ -1839,18 +1923,31 @@ git commit -m "feat(af-102): 확인한 ECOS 코드로 금리 수집 대상을 �
 PR 본문에 **확인한 코드와 그 근거(통계표 이름)를 적는다** — 나중에 0건이 나올 때
 "이 코드가 맞았던 적이 있는가"를 가르는 유일한 기록이다.
 
-- [ ] **Step 6: 초기 백필을 돌린다**
+- [ ] **Step 6: 초기 백필을 돌린다 — 반드시 해를 끊어서**
 
-배포 완료 후:
+**한 번에 2020~2026을 부르지 않는다.** `id`가 할당식이고 `@Version`이 없어서 Spring Data가
+모든 행을 `em.merge`로 보내고, merge는 행마다 SELECT를 한 번씩 낸다 —
+`batch_size`는 쓰기만 묶지 이 SELECT들은 안 묶는다. 6종목 x 7년이면 순차 왕복 9,000회 남짓이고,
+수집 서비스는 (의도적으로) 트랜잭션이 없어 그 시간 내내 HTTP 요청 하나가 열려 있다.
+AF-100이 한 통화 2,600행에서 이미 겪었고, `FxRateBackfillService`의 KDoc이 분할을
+"편의가 아니라 필수"라고 못 박아 뒀다. 그래서 해마다 끊는다:
 
 ```bash
-curl -sS -X POST -H "Authorization: Bearer <어드민 JWT>" \
-  "https://<서비스>.onrender.com/api/admin/rate/collect?from=2020-01-01&to=$(date +%F)" \
-  | python3 -m json.tool
+for y in 2020 2021 2022 2023 2024 2025 2026; do
+  echo "=== $y ==="
+  curl -sS -X POST -H "Authorization: Bearer <어드민 JWT>" \
+    "https://<서비스>.onrender.com/api/admin/rate/collect?from=$y-01-01&to=$y-12-31" \
+    | python3 -m json.tool
+done
 ```
 
-Expected: `requested`가 설정한 종목 수와 같고, `inserted`가 종목당 1,500행 안팎,
-`failed`가 0, `skippedRows`가 0.
+(마지막 해의 `to`가 미래여도 무해하다 — ECOS가 오늘까지만 준다.)
+
+Expected: 해마다 `requested`가 설정한 종목 수와 같고, `inserted`가 종목당 240행 안팎,
+`failed`가 0, `skippedRows`가 0, `outOfRange`가 0.
+
+`emptySeries`에 기준금리처럼 변경 시에만 공표되는 계열이 뜨는 건 정상이다.
+**다만 어떤 종목이 7년 내내 0건이면 그건 코드가 틀린 것이다** — 넘어가지 말고 Step 2로 돌아간다.
 
 **`skippedRows`가 0이 아니면 멈추고 확인한다** — 값이 ±100을 벗어났다는 뜻이고,
 그건 단위가 우리 가정과 다르다는 신호다(연 %가 아니라 bp로 오는 계열일 수 있다).
