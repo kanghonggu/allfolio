@@ -663,8 +663,10 @@ class SchedulerTriggerControllerTest {
         return service
     }
 
+    // 맨 any()를 쓴다. any(LocalDate::class.java)는 Mockito 2.1부터 null을 매칭하지 않아
+    // 트리거가 실제로 부르는 collect(null, null)을 놓친다 — never() 검증이 통째로 장식이 된다.
     private fun verifyNoRateCollect() {
-        verify(rateAdmin, never()).collect(any(LocalDate::class.java), any(LocalDate::class.java))
+        verify(rateAdmin, never()).collect(any(), any())
     }
 
     private fun verifyNoBackfill() {
