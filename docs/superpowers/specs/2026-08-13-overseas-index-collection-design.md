@@ -114,6 +114,11 @@ FID_PERIOD_DIV_CODE=D
 → **`역산 == 응답값`을 가드에 추가한다.** 국내에 없던 검증이고, 소수점 위치나 필드 오배치를
 등락률 검사와 독립적으로 잡는다.
 
+**그래서 `prev_close`에는 응답값이 아니라 역산값을 저장한다.** 응답값을 그대로 넣으면 비교할
+독립적인 출처가 하나도 남지 않아 이 가드가 자기 자신과의 비교가 된다 — 조용히 영원히 통과한다.
+응답값은 검증용으로만 따로 들고 다닌다(`OverseasIndexReading.reportedPrevClose`).
+아래 저장 매핑표도 이 규칙을 따른다.
+
 ### 3. `prev_close_date`를 채운다
 
 국내 경로는 응답에 없어 NULL로 뒀다. 해외는 `output2[1].stck_bsop_date`가 그것이다 —
@@ -163,7 +168,7 @@ FID_PERIOD_DIV_CODE=D
 | `trade_date` | **`output2[0].stck_bsop_date`** (응답에서) |
 | `slot` | **`CLOSE` 고정** — 일봉이라 하루 한 건 |
 | `price` | `output2[0].ovrs_nmix_prpr` |
-| `prev_close` | `ovrs_nmix_prdy_clpr` (응답 직접) |
+| `prev_close` | **`price − change`로 역산** — 응답의 `ovrs_nmix_prdy_clpr`를 그대로 넣지 **않는다** |
 | `change_value` · `change_rate` | 절댓값 × `prdy_vrss_sign` 방향 |
 | `prev_close_date` | **`output2[1].stck_bsop_date`** |
 | `market_status` | 최신 봉이 현지 오늘이면 `장중`, 아니면 `장마감` |
