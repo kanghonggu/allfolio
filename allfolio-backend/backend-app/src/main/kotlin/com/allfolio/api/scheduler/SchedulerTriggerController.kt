@@ -2,11 +2,13 @@ package com.allfolio.api.scheduler
 
 import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.api.admin.MarketIndexAdminController
+import com.allfolio.fx.BackfillSummary
 import com.allfolio.fx.hana.HanaCollectSummary
 import com.allfolio.market.index.DomesticIndexCollectSummary
 import com.allfolio.market.index.IndexSlot
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.time.LocalDate
 
 /**
  * 외부 스케줄러(GitHub Actions) 전용 트리거 (AF-103).
@@ -90,6 +93,41 @@ class SchedulerTriggerController(
     ): ResponseEntity<DomesticIndexCollectSummary> {
         authorize(token)
         return indexAdmin.collect(slot)
+    }
+
+    /**
+     * POST /api/internal/scheduler/fx/backfill?currency=USD&from=2020-01-01&to=2026-08-12
+     * — ECOS 과거 환율 백필 트리거 (AF-100)
+     *
+     * **이 토큰의 권한을 넓히는 게 왜 괜찮은가.** 백필이 하는 일은 ECOS가 준 값으로
+     * `fx_rate_daily`를 쓰는 것뿐이고 멱등하다 — 같은 구간을 몇 번 돌려도 같은 행이 남는다.
+     * 유출된 토큰으로 할 수 있는 최악이 "이미 있는 환율을 같은 값으로 다시 쓰는 것"이라,
+     * 이 토큰에 이미 걸려 있는 수집 트리거들과 폭발 반경이 같다. 그래서 어드민 JWT를
+     * CI에 넣는 것보다 이쪽이 낫다(어드민 토큰은 15분 만료라 CI가 들고 있을 수도 없다).
+     *
+     * **현금흐름 재계산의 `apply` 경로는 여기 붙이지 말 것.** 그건 저장된 금융 이력을
+     * 다시 쓴다 — 멱등한 재수집과 달리 되돌릴 수 없고, 잘못 돌면 사용자의 과거 수익률이
+     * 통째로 바뀐다. 손상의 종류가 다르므로 어드민 전용으로 남는다. 이 KDoc이 그 경계다.
+     *
+     * **세 파라미터 모두 기본값을 두지 않는다.** [FxRateAdminController.backfill]이
+     * `currency`에 기본값을 안 주는 이유(파라미터 이름 오타가 조용히 USD 전 구간을 돌린다)가
+     * 여기서도 그대로다. `from`/`to`도 같다 — 워크플로 입력이 빠진 채 기본 구간이 돌면
+     * 운영자가 요청했다고 믿는 구간과 실제로 채워진 구간이 갈라진다. 400으로 죽는 편이 낫다.
+     *
+     * 어드민 컨트롤러에 위임하는 이유는 위 두 트리거와 같다: 그쪽의 예외→상태 매핑
+     * (502 ECOS 응답 이상 / 409 경합 / 400 잘못된 요청)이 Actions 로그와
+     * `scripts/fx-backfill.sh`의 구간별 실패 정책에 그대로 필요하다.
+     * **이 위임을 "정리"하지 말 것** — [collectHanaFx]의 설명 참조.
+     */
+    @PostMapping("/fx/backfill")
+    fun backfillFx(
+        @RequestHeader(name = TOKEN_HEADER, required = false) token: String?,
+        @RequestParam currency: String,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate,
+    ): ResponseEntity<BackfillSummary> {
+        authorize(token)
+        return fxAdmin.backfill(currency, from, to)
     }
 
     /**

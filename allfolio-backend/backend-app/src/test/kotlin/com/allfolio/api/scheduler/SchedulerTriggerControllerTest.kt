@@ -3,6 +3,7 @@ package com.allfolio.api.scheduler
 import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.config.GlobalExceptionHandler
+import com.allfolio.fx.BackfillSummary
 import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
 import com.allfolio.fx.hana.HanaCollectSummary
@@ -334,5 +335,186 @@ class SchedulerTriggerControllerTest {
             .andExpect(status().isBadGateway)
             // 잡 요약에 남는 건 본문이다. 사유가 없으면 502만 보고 원인을 다시 찾아야 한다.
             .andExpect(jsonPath("$.error").exists())
+    }
+
+    // ── 백필 트리거 (AF-100) ───────────────────────────────────────────────────
+
+    private val backfillSummary = BackfillSummary(
+        currency = "USD",
+        from = LocalDate.of(2020, 1, 1),
+        to = LocalDate.of(2020, 12, 31),
+        saved = 261,
+        inserted = 261,
+        updated = 0,
+        unchanged = 0,
+        skipped = 0,
+        duplicates = 0,
+        outOfRange = 0,
+        firstDate = LocalDate.of(2020, 1, 2),
+        lastDate = LocalDate.of(2020, 12, 30),
+    )
+
+    // 세 파라미터가 그대로 넘어가는지가 이 엔드포인트의 전부다. 하나라도 바꿔치기되면
+    // 저장되는 행은 그럴듯한 채로 운영자가 요청한 구간과 다른 구간이 채워진다.
+    @Test
+    fun `백필은 통화와 구간을 그대로 넘긴다`() {
+        `when`(
+            admin.backfill("USD", LocalDate.of(2020, 1, 1), LocalDate.of(2020, 12, 31))
+        ).thenReturn(ResponseEntity.ok(backfillSummary))
+
+        mvc("secret").perform(
+            post("/api/internal/scheduler/fx/backfill")
+                .param("currency", "USD")
+                .param("from", "2020-01-01")
+                .param("to", "2020-12-31")
+                .header("X-Scheduler-Token", "secret")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.inserted").value(261))
+            .andExpect(jsonPath("$.currency").value("USD"))
+
+        verify(admin).backfill("USD", LocalDate.of(2020, 1, 1), LocalDate.of(2020, 12, 31))
+    }
+
+    // 기본값을 붙이면 이 세 테스트가 무너진다. 워크플로 입력이 빠진 실행에서 기본값은
+    // "조용히 엉뚱한 구간 백필"이고 400은 "빨간 잡"이다.
+    @Test
+    fun `백필에 통화가 없으면 400이고 백필을 부르지 않는다`() {
+        mvc("secret").perform(
+            post("/api/internal/scheduler/fx/backfill")
+                .param("from", "2020-01-01")
+                .param("to", "2020-12-31")
+                .header("X-Scheduler-Token", "secret")
+        ).andExpect(status().isBadRequest)
+
+        verifyNoBackfill()
+    }
+
+    @Test
+    fun `백필에 시작일이 없으면 400이고 백필을 부르지 않는다`() {
+        mvc("secret").perform(
+            post("/api/internal/scheduler/fx/backfill")
+                .param("currency", "USD")
+                .param("to", "2020-12-31")
+                .header("X-Scheduler-Token", "secret")
+        ).andExpect(status().isBadRequest)
+
+        verifyNoBackfill()
+    }
+
+    @Test
+    fun `백필에 종료일이 없으면 400이고 백필을 부르지 않는다`() {
+        mvc("secret").perform(
+            post("/api/internal/scheduler/fx/backfill")
+                .param("currency", "USD")
+                .param("from", "2020-01-01")
+                .header("X-Scheduler-Token", "secret")
+        ).andExpect(status().isBadRequest)
+
+        verifyNoBackfill()
+    }
+
+    @Test
+    fun `백필 트리거도 토큰이 틀리면 401이고 백필을 부르지 않는다`() {
+        mvc("secret").perform(
+            post("/api/internal/scheduler/fx/backfill")
+                .param("currency", "USD")
+                .param("from", "2020-01-01")
+                .param("to", "2020-12-31")
+                .header("X-Scheduler-Token", "wrong")
+        )
+            .andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.error").exists())
+
+        verifyNoBackfill()
+    }
+
+    // 기존 두 트리거와 같은 authorize를 **재사용**하는지 본다. 두 번째 토큰 검사를 따로 짜면
+    // 이 경로만 fail-closed가 아니어도 다른 테스트가 전부 통과해버린다.
+    // 백필은 어드민 전용이던 작업이라 이 경로가 공개로 새는 건 가장 비싼 실수다.
+    @Test
+    fun `설정 토큰이 비어 있으면 백필 트리거도 503으로 닫는다`() {
+        mvc("").perform(
+            post("/api/internal/scheduler/fx/backfill")
+                .param("currency", "USD")
+                .param("from", "2020-01-01")
+                .param("to", "2020-12-31")
+                .header("X-Scheduler-Token", "anything")
+        )
+            .andExpect(status().isServiceUnavailable)
+            .andExpect(jsonPath("$.error").exists())
+
+        verifyNoBackfill()
+    }
+
+    // 헤더가 아예 없는 요청. 빈 토큰 가드가 없으면 ByteArray(0) 대 ByteArray(0) 비교가
+    // 참이 되어 인증을 "통과"하고, 공개된 엔드포인트에서 백필이 실제로 돈다.
+    @Test
+    fun `설정 토큰이 비어 있고 헤더도 없으면 백필 트리거도 503으로 닫는다`() {
+        mvc("").perform(
+            post("/api/internal/scheduler/fx/backfill")
+                .param("currency", "USD")
+                .param("from", "2020-01-01")
+                .param("to", "2020-12-31")
+        ).andExpect(status().isServiceUnavailable)
+
+        verifyNoBackfill()
+    }
+
+    @Test
+    fun `백필 트리거는 GET으로는 열리지 않는다`() {
+        mvc("secret").perform(
+            get("/api/internal/scheduler/fx/backfill")
+                .param("currency", "USD")
+                .param("from", "2020-01-01")
+                .param("to", "2020-12-31")
+                .header("X-Scheduler-Token", "secret")
+        ).andExpect(status().isMethodNotAllowed)
+
+        verifyNoBackfill()
+    }
+
+    // FX 수집·지수와 같은 이유로 진짜 FxRateAdminController를 세운다 — 목이 이미 만들어진
+    // ResponseStatusException을 던지게 하면 위임이 물려받으려던 예외→상태 매핑이 실행되지 않아,
+    // catch (IllegalStateException) 블록을 통째로 지워도 통과한다.
+    // 스크립트의 구간별 실패 정책이 이 상태 코드를 읽고 계속할지 멈출지 정하므로,
+    // 502가 500으로 뭉개지면 재실행하면 되는 실패에서 백필이 통째로 중단된다.
+    @Test
+    fun `ECOS 응답이 이상하면 백필 트리거도 502로 옮겨진다`() {
+        val backfillService = mock(FxRateBackfillService::class.java)
+        `when`(
+            backfillService.backfill(
+                any(String::class.java) ?: "",
+                any(LocalDate::class.java) ?: LocalDate.EPOCH,
+                any(LocalDate::class.java) ?: LocalDate.EPOCH,
+            )
+        ).thenThrow(IllegalStateException("ECOS가 0건을 돌려줬습니다"))
+
+        val realAdmin = FxRateAdminController(
+            mock(FxRateService::class.java),
+            backfillService,
+            mock(HanaFxCollectService::class.java),
+        )
+
+        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, "secret"))
+            .setControllerAdvice(GlobalExceptionHandler())
+            .build()
+            .perform(
+                post("/api/internal/scheduler/fx/backfill")
+                    .param("currency", "USD")
+                    .param("from", "2020-01-01")
+                    .param("to", "2020-12-31")
+                    .header("X-Scheduler-Token", "secret")
+            )
+            .andExpect(status().isBadGateway)
+            .andExpect(jsonPath("$.error").value("ECOS가 0건을 돌려줬습니다"))
+    }
+
+    private fun verifyNoBackfill() {
+        verify(admin, never()).backfill(
+            any(String::class.java) ?: "",
+            any(LocalDate::class.java) ?: LocalDate.EPOCH,
+            any(LocalDate::class.java) ?: LocalDate.EPOCH,
+        )
     }
 }
