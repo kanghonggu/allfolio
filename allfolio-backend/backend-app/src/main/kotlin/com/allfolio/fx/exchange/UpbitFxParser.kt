@@ -16,8 +16,25 @@ import java.math.BigDecimal
  * **인덱스가 아니라 `market` 필드로 매칭한다.** Upbit이 markets= 순서를 지킨다는 보장이 없고,
  * 뒤바뀌면 BTC 가격이 USDT 자리에 들어가 자산이 6만 배가 된다.
  *
- * 숫자를 BigDecimal로 만들 때 asText()를 거치는 이유는 asDouble()이 2진 부동소수점을
- * 경유하면서 정밀도를 잃기 때문이다.
+ * **숫자 처리 — asText()가 double을 피해 주지는 않는다.**
+ * 이 주석은 원래 "asText()를 거치는 이유는 asDouble()이 부동소수점을 경유해 정밀도를 잃기
+ * 때문"이라고 적혀 있었는데 사실이 아니다. `readTree`는 소수점이 있는 JSON 숫자를 전부
+ * `DoubleNode`로 만들므로(실측 확인) **double 변환은 asText()를 부르기 전에 이미 끝나 있다.**
+ * 여기서 asText()와 decimalValue()는 결과가 같다.
+ *
+ * 그런데도 값은 정확하다. `Double.toString`은 그 double로 되돌아가는 최단 표기를 내놓고,
+ * 우리가 다루는 값(1,409 · 90,047,000 · 2,680,000)은 2^53보다 한참 작아 double에서 정확하다.
+ * `1408.55`도 `"1408.55"`로 되돌아온다.
+ *
+ * **진짜 피해야 하는 것은 `BigDecimal(node.asDouble())`이다.** BigDecimal(double) 생성자는
+ * 0.1을 0.1000000000000000055511151231257827로 펼친다. asText()·decimalValue()는 둘 다
+ * 그 생성자를 타지 않으므로 안전하다.
+ *
+ * 진짜로 double을 안 거치게 하려면 ObjectMapper에 USE_BIG_DECIMAL_FOR_FLOATS를 켜야 하는데,
+ * 이 값들에는 이득이 없어 켜지 않았다.
+ *
+ * 부작용 하나: BTC가 로그에 `9.0047E+7`로 찍힌다. Double.toString이 1e7 이상에서 지수 표기를
+ * 쓰기 때문이고 값 자체는 90,047,000이 맞다.
  */
 @Component
 class UpbitFxParser(private val objectMapper: ObjectMapper) {
