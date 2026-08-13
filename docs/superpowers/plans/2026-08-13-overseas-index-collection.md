@@ -571,7 +571,7 @@ URL: /api/internal/scheduler/index/overseas?schedule=${SCHEDULE}
 
 ```bash
 cd allfolio-backend && ./gradlew test --rerun-tasks --no-daemon
-python3 -c "import yaml; yaml.safe_load(open('.github/workflows/collect-index.yml')); print('YAML OK')"
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows/collect-index-overseas.yml')); print('YAML OK')"
 ```
 
 cron→KST 매핑을 눈이 아니라 계산으로 확인할 것.
