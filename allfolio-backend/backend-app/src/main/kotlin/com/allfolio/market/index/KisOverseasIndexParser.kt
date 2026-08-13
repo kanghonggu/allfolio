@@ -4,9 +4,15 @@ import org.springframework.stereotype.Component
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 
-/** 해외 지수 봉 하나. 저장 키·시장 상태는 수집 서비스가 정한다. */
-data class OverseasIndexBar(
+/**
+ * 해외 지수 한 번의 읽기. 저장 키·시장 상태는 수집 서비스가 정한다.
+ *
+ * "Bar"라 부르지 않는 이유: 봉에서 온 것([tradeDate]·[IndexQuote.price])과 요약에서 온 것
+ * ([IndexQuote.change]·[reportedPrevClose]·[nameFromKis])이 섞여 있고 OHLC는 없다.
+ */
+data class OverseasIndexReading(
     val quote: IndexQuote,
     /** `output2[0].stck_bsop_date` — 시계로 유추하지 않는다 */
     val tradeDate: LocalDate,
@@ -46,14 +52,19 @@ class KisOverseasIndexParser {
      *                  운영자가 9종 중 어느 지수가 깨졌는지 안다
      * @param body [KisIndexClient.fetchOverseasRaw]가 돌려준 응답 **전체**(`output1`+`output2`)
      */
-    fun parse(indexCode: String, body: Map<String, Any?>): OverseasIndexBar {
+    fun parse(indexCode: String, body: Map<String, Any?>): OverseasIndexReading {
         val summary = summary(indexCode, body)
         val bars = bars(indexCode, body)
 
         // 현재가는 output1.ovrs_nmix_prpr에도 같은 값으로 들어 있지만 **일부러 봉에서 읽는다.**
-        // 거래일과 값이 같은 행에서 와야 짝이 어긋날 수 없다. output1은 조회 시점의 요약이라
-        // 장중 조회나 KIS 쪽 갱신 시차에서 최신 봉과 갈라질 여지가 있고, 그러면 20260813 자로
-        // 다른 날 가격이 저장돼도 아무 데서도 티가 나지 않는다.
+        // output1은 조회 시점의 요약이라 장중 조회나 KIS 쪽 갱신 시차에서 최신 봉과 갈라질 여지가
+        // 있고, 그러면 20260813 자로 다른 날 가격이 저장돼도 아무 데서도 티가 나지 않는다.
+        //
+        // 다만 이렇게 해서 같은 행에서 오는 것은 **거래일과 현재가뿐이다.** change·sign·
+        // reportedPrevClose는 여전히 output1에서 온다 — 즉 아래 prevClose(= bars[0]의 가격 −
+        // output1의 변동)는 **두 출처를 섞는다.** 둘이 갈라지면 prevClose가 그만큼 틀어지고,
+        // 그 틀어짐은 Task 3의 "역산값 vs reportedPrevClose" 가드에 나타난다.
+        // 그 가드의 허용오차를 정할 때 이 사실이 필요하다.
         val price = number(indexCode, bars[0], "ovrs_nmix_prpr")
         val tradeDate = date(indexCode, bars[0], "stck_bsop_date")
         // 봉이 하나뿐이면(상장 직후·긴 연휴) 전일이 언제인지 우리는 모른다. 거래일에서 하루를
@@ -62,11 +73,11 @@ class KisOverseasIndexParser {
 
         val sign = text(indexCode, summary, "prdy_vrss_sign")
         val direction = IndexSignRule.direction(sign)
-        val rawChange = magnitude(indexCode, summary, "ovrs_nmix_prdy_vrss", sign, direction)
-        val rawRate = magnitude(indexCode, summary, "prdy_ctrt", sign, direction)
+        val rawChange = magnitude(indexCode, summary, "ovrs_nmix_prdy_vrss", sign)
+        val rawRate = magnitude(indexCode, summary, "prdy_ctrt", sign)
 
         val change = rawChange.multiply(BigDecimal(direction))
-        return OverseasIndexBar(
+        return OverseasIndexReading(
             quote = IndexQuote(
                 indexCode = indexCode,
                 price = price,
@@ -114,8 +125,7 @@ class KisOverseasIndexParser {
         output: Map<String, Any?>,
         key: String,
         sign: String,
-        direction: Int,
-    ): BigDecimal = IndexSignRule.magnitude(number(indexCode, output, key), key, sign, direction)
+    ): BigDecimal = IndexSignRule.magnitude(number(indexCode, output, key), key, sign)
 
     private fun text(indexCode: String, output: Map<String, Any?>, key: String): String =
         output[key]?.toString()?.trim()
@@ -130,7 +140,7 @@ class KisOverseasIndexParser {
         val raw = text(indexCode, output, key)
         return try {
             LocalDate.parse(raw, DateTimeFormatter.BASIC_ISO_DATE)
-        } catch (e: java.time.format.DateTimeParseException) {
+        } catch (e: DateTimeParseException) {
             throw KisIndexException("KIS 해외 지수 응답의 $key 가 날짜가 아닙니다 code=$indexCode: '$raw' (${e.message})")
         }
     }

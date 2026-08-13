@@ -15,8 +15,8 @@ import java.math.BigDecimal
  *
  * **실측으로 확정된 것과 아직 아닌 것을 섞지 말 것:**
  * - **해외** 응답은 값에 마이너스를 싣는다(부호 있는 관례). 2026-08-13 하락일 실측 2종
- *   (`HK#HS`·`.DJI`)에서 `ovrs_nmix_prdy_vrss: "-75.03"`이 `prdy_vrss_sign: "5"`(하락)와
- *   함께 왔다.
+ *   (`HK#HS`·`.DJI`)에서 확인했다 — 예를 들어 `HK#HS`는 `ovrs_nmix_prdy_vrss: "-75.03"`을
+ *   `prdy_vrss_sign: "5"`(하락)와 함께 보냈다. (`-75.03`은 `HK#HS`의 값이다. `.DJI`는 값이 다르다)
  * - **국내** 응답이 하락일에 부호를 싣는지는 **여전히 모른다** — 실측(2026-08-12)이 상승일뿐이었다.
  *   같은 응답의 `dryy_lwpr_vrss_prpr_rate`가 `"-56.02"`인 걸 보면 KIS는 어떤 필드엔 부호를 싣는다.
  *
@@ -59,13 +59,19 @@ internal object IndexSignRule {
      * 값을 [BigDecimal]로 **이미 파싱해서** 받는다. 국내·해외가 필드명 규약이 달라
      * (`bstp_` vs `ovrs_`) 이 함수가 응답 맵에서 직접 꺼낼 수 없기 때문이다.
      * [key]는 오류 메시지에만 쓴다 — 어느 필드가 모순인지 운영자가 알아야 한다.
+     *
+     * **방향은 인자로 받지 않고 [sign]에서 직접 구한다.** 호출자가 이미 구해 둔 값을
+     * 넘기게 하면 `sign`과 어긋난 방향을 넘기는 실수가 표현 가능해지고, 그러면 그 필드의
+     * 모순 검사가 통째로 꺼진다 — 실제로 해외 파서에서 `prdy_ctrt`의 방향만 `-1`로
+     * 고정해도 테스트가 전부 통과했다. `direction`은 `sign`의 순수 함수이므로
+     * 여기서 다시 부르는 비용은 `when` 분기 하나고, 대신 그 실수가 **불가능해진다.**
      */
     fun magnitude(
         raw: BigDecimal,
         key: String,
         sign: String,
-        direction: Int,
     ): BigDecimal {
+        val direction = direction(sign)
         if (raw.signum() < 0 && direction >= 0) {
             throw KisIndexException(
                 "KIS 지수 응답의 부호가 서로 모순됩니다: $key='${raw.toPlainString()}'(음수)인데 " +

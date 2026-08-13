@@ -34,8 +34,8 @@ class KisIndexParser {
         val price = number(output, "bstp_nmix_prpr")
         val sign = text(output, "prdy_vrss_sign")
         val direction = IndexSignRule.direction(sign)
-        val rawChange = magnitude(output, "bstp_nmix_prdy_vrss", sign, direction)
-        val rawRate = magnitude(output, "bstp_nmix_prdy_ctrt", sign, direction)
+        val rawChange = magnitude(output, "bstp_nmix_prdy_vrss", sign)
+        val rawRate = magnitude(output, "bstp_nmix_prdy_ctrt", sign)
 
         val change = rawChange.multiply(BigDecimal(direction))
         return IndexQuote(
@@ -58,8 +58,7 @@ class KisIndexParser {
         output: Map<String, Any?>,
         key: String,
         sign: String,
-        direction: Int,
-    ): BigDecimal = IndexSignRule.magnitude(number(output, key), key, sign, direction)
+    ): BigDecimal = IndexSignRule.magnitude(number(output, key), key, sign)
 
     private fun text(output: Map<String, Any?>, key: String): String =
         output[key]?.toString()?.trim()
