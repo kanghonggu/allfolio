@@ -175,6 +175,12 @@ class OverseasIndexCollectServiceTest {
 
         val row = repo.row("HANGSENG")
         assertThat(row.marketStatus).isEqualTo("장마감")
+        // **거래일은 시계가 아니라 봉에서 온다.** 해외 경로의 핵심 차이인데 다른 어느 테스트도
+        // 이걸 구분하지 못한다 — 나머지 픽스처는 봉 날짜와 시장 현지 날짜가 같아서 저장 키를
+        // 시계로 바꿔도 전부 통과한다. 국내의 `tradeDate는 주입된 now의 KST 날짜다`가
+        // isNotEqualTo로 하던 역할을 여기서 한다
+        assertThat(row.tradeDate).isEqualTo(tradeDate)
+        assertThat(row.tradeDate).isNotEqualTo(LocalDate.ofInstant(now, hongKong))
     }
 
     @Test
@@ -239,11 +245,17 @@ class OverseasIndexCollectServiceTest {
         // GitHub cron은 5~30분씩 밀리고 수동 재실행도 있다. 두 번째 실행이 새 행을 만들면
         // 유니크 제약에 걸리거나 같은 거래일이 두 건 남는다
         val repo = FakeRepo()
-        val client = FakeClient(responses)
+        // 첫 실행에서는 08-12 봉이 아직 KIS에 없어 직전 거래일이 08-11로 왔다고 두자.
+        // **전일 날짜가 두 실행에서 달라야** 갱신이 그 칸을 실제로 덮는지 확인할 수 있다 —
+        // 같은 값이면 덮어쓰기를 빼먹어도 테스트가 통과한다
+        val client = FakeClient(
+            responses + ("HK#HS" to response(bars = listOf("20260813" to "25365.14", "20260811" to "25440.17"))),
+        )
         service(repo, client).collect("ASIA", asiaRun)
         val idsAfterFirst = repo.rows.map { it.id }.toSet()
+        assertThat(repo.row("HANGSENG").prevCloseDate).isEqualTo(LocalDate.of(2026, 8, 11))
 
-        // 같은 08-13 봉을 조금 뒤에 다시 읽은 모습. 네 값이 서로 맞게 맞춰 뒀다:
+        // 같은 08-13 봉을 조금 뒤에 다시 읽은 모습(08-12 봉이 채워졌다). 네 값이 서로 맞게 맞춰 뒀다:
         // 25400.14 + 40.03 = 25440.17, −40.03/25440.17×100 = −0.157 ≈ −0.16
         client.responses = responses + (
             "HK#HS" to response(
@@ -261,6 +273,10 @@ class OverseasIndexCollectServiceTest {
         assertThat(repo.rows.map { it.id }).containsExactlyInAnyOrderElementsOf(idsAfterFirst)
         assertThat(repo.row("HANGSENG").price).isEqualByComparingTo("25400.14")
         assertThat(repo.row("HANGSENG").changeRate).isEqualByComparingTo("-0.16")
+        // 갱신 경로의 prev_close_date. `overwrite`는 국내에서 복사해 온 함수이고 **국내엔 이 칸이
+        // 아예 없었다** — 한 줄 빠뜨려도 삽입 경로만 보는 테스트는 전부 초록으로 남는다.
+        // 재실행·경합 복구가 전부 이 경로라 드문 길도 아니다
+        assertThat(repo.row("HANGSENG").prevCloseDate).isEqualTo(prevTradeDate)
     }
 
     @Test
@@ -284,7 +300,7 @@ class OverseasIndexCollectServiceTest {
         // prev_close_date가 빈다
         val hk = asiaClient.calls.single { it.iscd == "HK#HS" }
         assertThat(hk.to).isEqualTo(tradeDate)
-        assertThat(hk.from).isEqualTo(tradeDate.minusDays(7))
+        assertThat(hk.from).isEqualTo(tradeDate.minusDays(14))
     }
 
     @Test
@@ -296,9 +312,12 @@ class OverseasIndexCollectServiceTest {
 
         val summary = service(repo).collect("ASIA", asiaRun)
 
+        // **iscd를 같이 싣는다.** 확인해야 할 여섯 종에서 판단의 핵심은 "어느 iscd가 이 이름을
+        // 냈는가"다 — NASDAQ·NASDAQ100은 nameContains가 둘 다 "나스닥"이고 DOW는 .DJT/.DJU와
+        // 접두사를 공유한다. 이름만 실으면 요약을 읽는 사람이 yml을 열어 대조해야 한다
         assertThat(summary.names)
-            .containsEntry("HANGSENG", "항셍지수")
-            .containsEntry("NIKKEI225", "니케이225")
+            .containsEntry("HANGSENG", "항셍지수(HK#HS)")
+            .containsEntry("NIKKEI225", "니케이225(JP#NI225)")
     }
 
     @Test
@@ -311,10 +330,42 @@ class OverseasIndexCollectServiceTest {
 
         val summary = service(repo, client).collect("ASIA", asiaRun)
 
-        assertThat(summary.names).containsEntry("HANGSENG", "홍콩H지수")
+        assertThat(summary.names).containsEntry("HANGSENG", "홍콩H지수(HK#HS)")
         assertThat(repo.rows.map { it.indexCode }).doesNotContain("HANGSENG")
     }
 
+    @Test
+    fun `이름과 값이 동시에 어긋나면 이름 사유를 말한다`() {
+        // 이름 대조를 가드보다 **앞에** 두는 이유다. 저장을 막는다는 결과는 순서와 무관하지만
+        // 운영자가 보는 사유가 갈린다: iscd를 잘못 골라 엉뚱한 지수를 받으면 이름과 값이
+        // **같이** 어긋나는데, 가드가 먼저 걸리면 "안전장치(전일종가)"만 보이고 필드 밀림을
+        // 의심하게 된다 — 진짜 원인은 코드 오선택인데.
+        val repo = FakeRepo()
+        val client = FakeClient(responses + ("HK#HS" to response(name = "홍콩H지수", clpr = "25440.99")))
+
+        val summary = service(repo, client).collect("ASIA", asiaRun)
+
+        assertThat(summary.failures.single())
+            .startsWith("HANGSENG: ")
+            .contains("hts_kor_isnm")
+            .doesNotContain("안전장치")
+        assertThat(repo.saves.map { it.indexCode }).containsExactly("NIKKEI225")
+    }
+
+    @Test
+    fun `유니크 충돌이 아닌 무결성 위반은 삼키지 않는다`() {
+        // 재조회에서 승자 행이 없으면 그건 유니크 충돌이 **아니었다**는 뜻이다(NOT NULL·CHECK 위반 등).
+        // 그때 조용히 다시 삽입하면 DB가 거부한 값을 우리가 성공으로 세고, 실패는 어디에도 안 남는다.
+        // 구현 주석이 "삼키면 안 된다"고 강조하는 `?: throw e`가 정작 무테스트였다
+        val repo = FakeRepo().apply { throwWithoutWinner += "HANGSENG" }
+
+        val summary = service(repo).collect("ASIA", asiaRun)
+
+        assertThat(summary.failed).isEqualTo(1)
+        assertThat(summary.failures.single()).startsWith("HANGSENG: ")
+        assertThat(summary.collected).isEqualTo(1)
+        assertThat(repo.rows.map { it.indexCode }).containsExactly("NIKKEI225")
+    }
 
     @Test
     fun `삽입이 유니크 충돌을 내면 다시 읽어 갱신으로 끝낸다`() {
@@ -338,23 +389,29 @@ class OverseasIndexCollectServiceTest {
     }
 
     @Test
-    fun `연속 전체 실패는 세 번째부터 ERROR로 올리고 성공하면 리셋한다`() {
-        // 이것도 국내에서 가져온 동작이라 그 회귀 테스트를 같이 가져온다
+    fun `연속 전체 실패는 세 번째부터 ERROR로 올리고 같은 슬롯이 성공하면 리셋한다`() {
+        // 국내에서 가져온 동작이라 그 회귀 테스트를 같이 가져오되, **카운터를 슬롯별로 나눈다.**
+        // 두 cron이 매일 번갈아 도는데 카운터가 하나면 아시아가 전멸해도 사이에 낀 미국 성공이
+        // 리셋해 버려 3회에 영영 도달하지 못한다 — 아래 US 성공이 그 회귀를 고정한다.
+        // (국내는 슬롯이 셋이어도 같은 시장이라 단일 카운터로 충분했다)
         val repo = FakeRepo()
         val client = FakeClient(responses)
         val service = service(repo, client)
         val logs = attachAppender()
 
         try {
-            client.failing += setOf("HK#HS", "JP#NI225")   // 아시아 슬롯 전건 실패
-            repeat(2) { service.collect("ASIA", asiaRun) }
+            client.failing += setOf("HK#HS", "JP#NI225")   // 아시아 슬롯만 전건 실패
+            service.collect("ASIA", asiaRun)
+            service.collect("US", asiaRun)                 // SPX 성공 — 아시아 카운터를 건드리면 안 된다
+            service.collect("ASIA", asiaRun)
+            service.collect("US", asiaRun)
             assertThat(levels(logs)).containsExactly(Level.WARN, Level.WARN)
 
-            service.collect("ASIA", asiaRun)
+            service.collect("ASIA", asiaRun)               // 아시아 3회째
             assertThat(levels(logs)).containsExactly(Level.WARN, Level.WARN, Level.ERROR)
 
             client.failing.clear()
-            service.collect("ASIA", asiaRun)               // 성공 → 리셋
+            service.collect("ASIA", asiaRun)               // 같은 슬롯 성공 → 리셋
 
             client.failing += setOf("HK#HS", "JP#NI225")
             repeat(2) { service.collect("ASIA", asiaRun) }
@@ -456,6 +513,13 @@ class OverseasIndexCollectServiceTest {
         /** 여기 담긴 지수는 첫 삽입에서 유니크 충돌을 낸다(겹쳐 도는 요청의 재현) */
         val collideOnInsert = mutableSetOf<String>()
 
+        /**
+         * 여기 담긴 지수는 첫 삽입에서 **승자 행을 남기지 않고** 무결성 위반을 낸다 —
+         * 유니크 충돌이 아닌 위반(NOT NULL·CHECK)이다. `collideOnInsert`와 달리 재조회해도
+         * 아무것도 안 나오므로 서비스는 예외를 그대로 올려야 한다.
+         * 한 번만 던진다(remove) — 계속 던지면 조용히 재삽입하는 구현도 실패로 보여 구분이 안 된다
+         */
+        val throwWithoutWinner = mutableSetOf<String>()
 
         fun row(indexCode: String) = rows.single { it.indexCode == indexCode }
 
@@ -470,6 +534,9 @@ class OverseasIndexCollectServiceTest {
         override fun <S : MarketIndexQuoteEntity> save(entity: S): S {
             saves += entity
             if (rows.none { it === entity }) {
+                if (throwWithoutWinner.remove(entity.indexCode)) {
+                    throw DataIntegrityViolationException("market_index_quote NOT NULL 위반")
+                }
                 if (collideOnInsert.remove(entity.indexCode)) {
                     // 먼저 도착한 요청이 넣어 둔 행. 값은 일부러 다르게 둬서 갱신이 실제로 얹히는지 본다
                     rows += MarketIndexQuoteEntity(

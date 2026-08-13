@@ -13,6 +13,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeParseException
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -25,7 +26,11 @@ import java.util.concurrent.atomic.AtomicInteger
  * @param requested 이 슬롯에 속한 지수 수. 설정 전체가 아니다
  * @param collected 저장까지 끝난 수 (inserted + updated)
  * @param failures "HANGSENG: <사유>" 형태. 운영자가 어느 지수가 왜 빠졌는지 한 번에 봐야 한다
- * @param names **KIS가 돌려준 `hts_kor_isnm`을 code별로 실어 보낸다.**
+ * @param names **KIS가 돌려준 `hts_kor_isnm`을 code별로 실어 보낸다.** 값은 `"항셍지수(HK#HS)"`
+ *        처럼 **iscd를 괄호로 붙인다** — 확인해야 할 것이 "이 코드가 무엇을 내놓는가"라서
+ *        이름만으로는 판단이 안 된다. `NASDAQ`·`NASDAQ100`은 `nameContains`가 둘 다 "나스닥"이고
+ *        `DOW`는 `.DJT`·`.DJU`와 접두사를 공유해서, 요약을 읽는 사람이 iscd를 보려면 yml을 열어
+ *        대조해야 했다. 한 줄에 같이 실으면 요약 하나로 끝난다.
  *
  * 9종 중 실측으로 확인된 것은 `SPX`·`.DJI`·`HK#HS` 셋뿐이고 **나머지 여섯은 KIS 마스터
  * 파일에서 읽었을 뿐**이다. 틀린 코드는 [IndexGuards]를 그대로 통과한다 — 엉뚱한 지수의
@@ -85,11 +90,17 @@ class OverseasIndexCollectService(
     private val log = LoggerFactory.getLogger(javaClass)
 
     /**
-     * 연속 전체 실패 횟수. 국내와 같게 프로세스 메모리에만 둔다 —
+     * 연속 전체 실패 횟수를 **슬롯별로** 센다. 국내와 같게 프로세스 메모리에만 둔다 —
      * 하는 일이 "로그 레벨을 올린다"뿐이라 테이블을 늘릴 값어치가 없고,
      * 재시작으로 0이 되는 것도 손해가 아니다(재시작 자체가 이미 조사할 사건이다).
+     *
+     * **국내처럼 카운터를 하나만 두면 경보가 영영 안 울린다.** 국내는 슬롯이 셋이어도 같은
+     * 시장이라 한 카운터로 충분했지만, 해외는 US와 ASIA가 **서로 다른 시장이고 매일 번갈아 돈다.**
+     * 아시아가 전멸해도 그 사이에 낀 미국 성공이 `set(0)`으로 리셋해서 3회에 도달하지 못한다 —
+     * 실제로 ASIA실패 → US성공 → ASIA실패 → US성공 → ASIA실패가 WARN 셋으로만 끝났다.
+     * 즉 아시아 지수가 통째로 깨져도 ERROR가 뜨지 않는다. 그래서 슬롯을 키로 나눈다.
      */
-    private val consecutiveFailures = AtomicInteger(0)
+    private val consecutiveFailures = ConcurrentHashMap<String, AtomicInteger>()
 
     companion object {
         private const val SOURCE = "KIS_OVERSEAS"
@@ -105,12 +116,16 @@ class OverseasIndexCollectService(
          * 조회 구간 길이. KIS 해외 일별 시세는 `from`/`to`를 요구한다.
          *
          * 하루치만 달라고 하면 [OverseasIndexReading.prevCloseDate]를 채울 `output2[1]`이
-         * 아예 없고, 이틀치로 잡으면 주말·현지 공휴일이 끼는 순간(금·토·일, 미국 추수감사절 연휴,
-         * 아시아 춘절) 직전 거래일이 구간 밖으로 밀려난다. 7일이면 어떤 연휴에도 거래일이 둘은
-         * 들어온다. **파서가 최신 봉만 쓰므로 넉넉하게 잡는 비용은 응답 크기뿐이다** —
-         * 좁히면 조용히 prev_close_date만 비는 쪽으로 망가진다.
+         * 아예 없고, 이틀치로 잡으면 주말·현지 공휴일이 끼는 순간(금·토·일, 미국 추수감사절 연휴)
+         * 직전 거래일이 구간 밖으로 밀려난다. 2주면 주말과 대부분의 연휴를 덮는다.
+         * **파서가 최신 봉만 쓰므로 넉넉하게 잡는 비용은 응답 크기뿐이다** — 좁히면 조용히
+         * prev_close_date만 비는 쪽으로 망가진다.
+         *
+         * 그래도 만능은 아니다: **상해 춘절은 보통 8~9일 연속 휴장**이고 일본 골든위크·연말연시도
+         * 경계선이라, 그 구간에 걸리면 봉이 아예 안 와서 파서가 응답을 거부한다(그날 그 지수만
+         * 실패로 남고 나머지는 저장된다). 7일이었을 때는 춘절이 그대로 구멍이었다.
          */
-        private const val LOOKBACK_DAYS = 7L
+        private const val LOOKBACK_DAYS = 14L
 
         private const val FAILURE_ALERT_THRESHOLD = 3
     }
@@ -143,8 +158,9 @@ class OverseasIndexCollectService(
                 val reading = parser.parse(cfg.code, raw)
 
                 // 이름은 파싱만 되면 기록한다 — 아래 대조에서 걸려 저장하지 않더라도,
-                // 그때야말로 KIS가 무엇을 돌려줬는지 봐야 하는 순간이다
-                names[cfg.code] = reading.nameFromKis
+                // 그때야말로 KIS가 무엇을 돌려줬는지 봐야 하는 순간이다.
+                // iscd를 붙이는 이유는 [OverseasIndexCollectSummary.names] 참조
+                names[cfg.code] = "${reading.nameFromKis}(${cfg.kisIscd})"
 
                 // **가드보다 먼저다.** IndexGuards는 값끼리의 정합성만 보므로 엉뚱한 지수의 응답도
                 // 그대로 통과시킨다(그 응답은 그 지수 기준으로 일관되기 때문). 마스터에는 한 글자
@@ -221,7 +237,8 @@ class OverseasIndexCollectService(
                 log.warn("[해외지수] schedule={} 에 해당하는 지수가 없습니다 — market-index.overseas 확인", schedule)
             summary.collected == 0 -> recordFailure(summary)
             else -> {
-                consecutiveFailures.set(0)
+                // 이 슬롯만 리셋한다. 미국이 성공했다고 아시아의 연속 실패를 지우면 안 된다
+                counterFor(schedule).set(0)
                 if (failures.isEmpty()) log.info("[해외지수] 수집 완료 {}", summary)
                 else log.warn("[해외지수] 일부 실패 {}", summary)
             }
@@ -312,9 +329,12 @@ class OverseasIndexCollectService(
         collectedAt = collectedAt,
     )
 
+    private fun counterFor(schedule: String): AtomicInteger =
+        consecutiveFailures.computeIfAbsent(schedule) { AtomicInteger(0) }
+
     /** 한 건도 못 건진 실행만 센다. 부분 성공은 데이터가 남았으므로 카운터를 올리지 않는다 */
     private fun recordFailure(summary: OverseasIndexCollectSummary) {
-        val count = consecutiveFailures.incrementAndGet()
+        val count = counterFor(summary.schedule).incrementAndGet()
         val reason = summary.failures.joinToString("; ")
         if (count >= FAILURE_ALERT_THRESHOLD) {
             log.error("[해외지수] 연속 {}회 전체 실패 schedule={} reason={}", count, summary.schedule, reason)
