@@ -172,6 +172,23 @@ class SecurityConfigAdminTest {
     }
 
     /**
+     * AF-102: 금리 수집은 SecurityConfig의 "/api/admin 이하 전부" 와일드카드가 hasRole("ADMIN")로 덮는다.
+     *
+     * 지금 뚫린 구멍이 있어서 넣는 테스트가 아니라, 그 와일드카드를 가릴 수 있는 규칙이
+     * 나중에 끼어드는 걸 막으려고 못을 박는 것이다 — matcher는 먼저 걸리는 쪽이 이기므로
+     * 그 줄보다 위에 rate 경로를 permitAll 하는 한 줄이 들어오면 수집 엔드포인트가
+     * 인증 없이 열린다. 컨트롤러가 이미 이 컨텍스트에 있어 비용이 거의 없다.
+     *
+     * (경로 와일드카드를 이 주석에 그대로 쓰지 말 것 — 슬래시+별표가 Kotlin의 중첩 블록 주석을
+     * 열어 버려 파일 끝까지 주석이 안 닫힌다.)
+     */
+    @Test
+    fun `admin 금리 수집은 토큰 없이 403으로 차단된다`() {
+        mockMvc.post("/api/admin/rate/collect")
+            .andExpect { status { isForbidden() } }
+    }
+
+    /**
      * AF-103: 스케줄러 트리거는 Security를 통과해 컨트롤러까지 도달해야 한다.
      *
      * 이 컨텍스트에는 scheduler.trigger-token 프로퍼티가 없어 기본값 빈 문자열이 주입되고,
