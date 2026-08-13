@@ -85,7 +85,7 @@ bp 변동(전일 대비)과 스프레드(10년−3년)는 저장하지 않고 �
 
 ### 코드는 탐색 엔드포인트로 확인한다
 
-`GET /api/admin/rate/ecos/stat-list?q=국고채` — ECOS 통계표 목록·항목 목록 API를 그대로
+`GET /api/admin/rate/ecos/tables` · `GET /api/admin/rate/ecos/items?stat=<통계표>` — 두 목록 API를 그대로
 통과시켜 코드와 이름을 눈으로 확인한다. 어드민 전용.
 
 로컬에는 ECOS 키가 없고 Render·GitHub Secret에만 있어서, 배포된 서버를 통하는 것이

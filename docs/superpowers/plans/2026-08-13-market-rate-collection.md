@@ -1882,7 +1882,7 @@ curl -sS -H "Authorization: Bearer <어드민 JWT>" \
 
 **회사채 AA- 3년이 목록에 없으면 그 종목만 빼고 진행한다.** 다섯 종목으로도 화면은 성립한다.
 
-- [ ] **Step 3: 설정을 채운다**
+- [ ] **Step 3: 설정을 채운다 — 테스트도 함께 고친다**
 
 `application.yml`의 `market-rate.series`를 확인한 코드로 채운다. 형식:
 
@@ -1898,6 +1898,12 @@ market-rate:
       item-code: "<확인한 값>"
       cycle: D
 ```
+
+**그리고 `MarketRatePropertiesTest`의 실제 YAML 바인딩 테스트를 함께 고친다.**
+지금은 `series`가 비어 있다고 단언하고 있는데, 채우고 나면 그 단언이 거짓이 된다.
+AF-101의 `MarketIndexPropertiesTest`처럼 **넣은 코드를 그대로 단언한다**
+(`containsExactly("BASE_RATE", "KTB_3Y", ...)`). 이 테스트가 YAML 오타를 잡는 유일한 그물이다 —
+빼먹으면 종목 하나가 조용히 빠진 채로 배포된다.
 
 - [ ] **Step 4: cron을 켠다**
 
