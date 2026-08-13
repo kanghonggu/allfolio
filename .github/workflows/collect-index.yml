@@ -160,6 +160,26 @@ jobs:
           fi
 
           # 200이어도 부분 실패일 수 있다 — IndexCollectService는 지수 하나가 터져도 나머지를
-          # 살리려고 예외 대신 요약으로 돌려준다. 그 판별은 위 잡 요약의 failures 배열로 한다.
-          # 여기서 본문을 grep으로 재해석하지 않는다: 직렬화 형식이 조금만 바뀌어도
-          # (들여쓰기·필드 순서) 조용히 아무것도 안 잡는 가드가 되어, 없느니만 못하다.
+          # 살리려고 예외 대신 요약으로 돌려준다. 부분 실패를 빨갛게 만들지는 않는다(지수 하나가
+          # 흔들렸다고 매일 잡이 실패로 보이면 아무도 안 보게 된다). 대신 **애너테이션으로 남긴다** —
+          # 2026-08-13에 3건 중 2건이 403으로 죽었는데 두 실행 모두 초록이라 아무도 몰랐다.
+          #
+          # 본문을 grep으로 재해석하지 않는다: 직렬화 형식이 조금만 바뀌어도(들여쓰기·필드 순서)
+          # 조용히 아무것도 안 잡는 가드가 되어, 없느니만 못하다. 그래서 진짜 JSON 파서로 읽는다.
+          # 본문이 없거나 깨졌으면 그것도 말한다 — 조용히 넘어가면 위와 같은 실패가 된다.
+          python3 - response.json <<'PY'
+          import json, sys
+
+          try:
+              with open(sys.argv[1], encoding="utf-8") as f:
+                  body = json.load(f)
+          except (OSError, ValueError) as e:
+              print(f"::warning::HTTP 200인데 응답 본문을 읽지 못했습니다({e}). 부분 실패 여부를 확인할 수 없습니다.")
+              raise SystemExit(0)
+
+          failed = body.get("failed") or 0
+          failures = body.get("failures") or []
+          if failed or failures:
+              reasons = " | ".join(str(x) for x in failures) or "(사유 없음)"
+              print(f"::warning::지수 {failed}건 수집 실패 (수집 {body.get('collected')}/{body.get('requested')}): {reasons}")
+          PY
