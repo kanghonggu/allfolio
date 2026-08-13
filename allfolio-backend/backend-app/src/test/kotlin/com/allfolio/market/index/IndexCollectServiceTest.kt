@@ -195,6 +195,25 @@ class IndexCollectServiceTest {
     }
 
     @Test
+    fun `개장일 09시10분 OPEN 실행은 전년 종가를 장중이라고 우기지 않는다`() {
+        // 1월 첫 거래일은 10:00 개장이라 09:10 OPEN 실행이 **아직 전년 종가를** 읽는다.
+        // 무변동 강등이 이걸 우연히 막아 준다 — 값이 직전 저장 행과 전부 같아 `장마감`이 된다.
+        // 우연에 기대는 동작이라 여기 못 박는다. 강등 로직을 걷어내면 이 테스트가 먼저 깨진다.
+        val openingDay = LocalDate.of(2026, 1, 2)
+        val repo = FakeRepo(
+            entity("KOSPI", LocalDate.of(2025, 12, 30), "CLOSE", "6579.04", "6345.53", "233.51", "3.68"),
+        )
+
+        // UTC 2026-01-02 00:10 = KST 2026-01-02 09:10
+        val summary = service(repo).collect(IndexSlot.OPEN, LocalDateTime.of(2026, 1, 2, 0, 10))
+
+        assertThat(summary.tradeDate).isEqualTo(openingDay)
+        assertThat(repo.row("KOSPI", "OPEN").marketStatus).isEqualTo("장마감")
+        // OPEN은 슬롯 순위가 가장 낮다 — 이 행이 그날 CLOSE를 밀어낼 일은 없다
+        assertThat(repo.row("KOSPI", "OPEN").price).isEqualByComparingTo("6579.04")
+    }
+
+    @Test
     fun `한 지수가 실패해도 나머지는 저장된다`() {
         // 하나가 터졌다고 나머지를 버리면, 살아 있던 두 건까지 같이 잃는다
         val repo = FakeRepo()
