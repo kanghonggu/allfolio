@@ -64,15 +64,19 @@ class MarketRateAdminControllerTest {
      *
      * "정상적으로 전부 비었다"는 상태는 존재하지 않는다: 설정에는 매일 공표되는 계열(국고채·CD)이
      * 변경 시 공표 계열과 섞여 있고, 달력 14일에 국내 영업일이 하나도 없는 경우는 없다.
+     *
+     * **502가 아니라 500이다.** ECOS는 정상 응답을 줬고 틀린 건 우리가 넣은 코드다 —
+     * 위 `수집 대상이 없으면 500이다`와 같은 종류의 실패이고, 502로 부르면 운영자가
+     * 멀쩡한 한국은행을 확인하러 간다.
      */
     @Test
-    fun `실패가 없어도 전 종목이 0건이면 502다`() {
+    fun `실패가 없어도 전 종목이 0건이면 500이다`() {
         val allSix = listOf("BASE_RATE", "CD_91D", "KTB_3Y", "KTB_10Y", "CORP_AA", "COFIX")
         stub(summary(requested = 6, collected = 0, failed = 0).copy(emptySeries = allSix))
 
         val thrown = assertThrows(ResponseStatusException::class.java) { controller.collect(null, null) }
 
-        assertThat(thrown.statusCode).isEqualTo(HttpStatus.BAD_GATEWAY)
+        assertThat(thrown.statusCode).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR)
         // 상류를 확인하러 보내면 안 된다 — 할 일은 코드 확인이다
         assertThat(thrown.reason).contains("전 종목 0건").contains("코드를 확인")
         assertThat(thrown.reason).doesNotContain("전량 실패")

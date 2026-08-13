@@ -157,18 +157,26 @@ class MarketRateAdminController(
         //     이걸 빼면 통계표 코드를 전부 잘못 넣은 잡이 영원히 초록으로 끝난다 —
         //     ECOS가 틀린 코드에 0건을 주기 때문에 생긴, 이 기능이 존재하는 이유 그 자체인 실패다.
         // 일부만 빈 경우는 여전히 200이고, `emptySeries`가 설명하며 워크플로가 경고로 띄운다.
+        //
+        // **두 경우의 상태 코드가 다르다.** 둘 다 잡을 빨갛게 만들지만, 상태 코드는 운영자를
+        // 어디로 보낼지를 정한다 — 위 `requested == 0`을 502가 아니라 500으로 낸 것과 같은 판단이다.
+        //  · 전량 실패 → **502**. 우리 요청은 멀쩡했고 상류가 죽었다.
+        //  · 전 종목 0건 → **500**. ECOS는 정상 응답을 줬고, 틀린 건 우리가 넣은 통계표·항목 코드다.
+        //    이걸 502로 부르면 운영자가 한국은행 상태를 확인하러 가는데, 할 일은 application.yml을 고치는 것이다.
         if (summary.collected == 0 && (summary.failed > 0 || summary.emptySeries.size == summary.requested)) {
             // 두 경우는 운영자를 서로 다른 곳으로 보낸다 — 문구를 섞으면 그 안내가 사라진다
-            val reason =
+            val (status, reason) =
                 if (summary.failed > 0) {
-                    "금리를 한 건도 수집하지 못했습니다 — 전량 실패 (요청 ${summary.requested}건, $start~$end): " +
+                    HttpStatus.BAD_GATEWAY to
+                        "금리를 한 건도 수집하지 못했습니다 — 전량 실패 (요청 ${summary.requested}건, $start~$end): " +
                         summary.failures.joinToString("; ").ifBlank { "사유 없음" }
                 } else {
-                    "금리를 한 건도 수집하지 못했습니다 — 전 종목 0건 (요청 ${summary.requested}건, $start~$end): " +
+                    HttpStatus.INTERNAL_SERVER_ERROR to
+                        "금리를 한 건도 수집하지 못했습니다 — 전 종목 0건 (요청 ${summary.requested}건, $start~$end): " +
                         "통계표·항목 코드를 확인하세요 (GET /api/admin/rate/ecos/tables). " +
                         "대상: " + summary.emptySeries.joinToString(", ")
                 }
-            throw ResponseStatusException(HttpStatus.BAD_GATEWAY, reason)
+            throw ResponseStatusException(status, reason)
         }
         return ResponseEntity.ok(summary)
     }
