@@ -123,6 +123,31 @@ class CashFlowRecomputeServiceTest {
         assertThat(summary.totalDelta).isEqualByComparingTo("-110000")
     }
 
+    // 통화별 집계는 "어느 통화가 얼마나 틀려 있었나"를 답하는 보고서의 유일한 항목이다.
+    // **변이 테스트에서 이 집계를 통째로 지웠을 때 아무 테스트도 안 잡았다** — 그래서 넣는다.
+    // scanned는 값이 안 바뀐 행까지 세고, changed·totalDelta는 바뀐 행만 센다.
+    @Test
+    fun `통화별로 대상 수와 변동액을 따로 집계한다`() {
+        val repo = FakeRepo(
+            listOf(
+                flow(currency = "USD", amount = "100", amountKrw = "140000"), // −10,000
+                flow(currency = "USD", amount = "200", amountKrw = "260000"), // 무변화
+                flow(currency = "BTC", amount = "10", amountKrw = "20000"),   // −7,000
+            ),
+        )
+        val service = CashFlowRecomputeService(repo, converter("1300"))
+
+        val byCurrency = service.recompute(apply = false).byCurrency
+
+        assertThat(byCurrency.keys).containsExactlyInAnyOrder("USD", "BTC")
+        assertThat(byCurrency.getValue("USD").scanned).isEqualTo(2)
+        assertThat(byCurrency.getValue("USD").changed).isEqualTo(1)
+        assertThat(byCurrency.getValue("USD").totalDelta).isEqualByComparingTo("-10000")
+        assertThat(byCurrency.getValue("BTC").scanned).isEqualTo(1)
+        assertThat(byCurrency.getValue("BTC").changed).isEqualTo(1)
+        assertThat(byCurrency.getValue("BTC").totalDelta).isEqualByComparingTo("-7000")
+    }
+
     // ── helpers ──────────────────────────────────────────────
 
     private fun flow(
