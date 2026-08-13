@@ -556,27 +556,253 @@ git commit -m "feat(af-101): KIS 지수 클라이언트 + 원본 응답 덤프 �
 
 ---
 
-### Task 5 이후 — 실제 응답 확인 후 확정
+## 확정된 KIS 응답 형식 (2026-08-12 운영 실측, `iscd=0001`)
 
-Task 4의 원본 응답을 받은 뒤에 다음을 쓴다. **지금 코드를 적어두면 추측이 되고,
-그 추측 위에 테스트까지 쌓이면 AF-99에서 겪은 것과 같은 일이 반복된다.**
+```json
+{
+  "bstp_nmix_prpr":      "6579.04",   // 현재가
+  "bstp_nmix_prdy_vrss": "233.51",    // 전일대비 (아래 참조)
+  "prdy_vrss_sign":      "2",         // 부호 코드
+  "bstp_nmix_prdy_ctrt": "3.68",      // 등락률
+  "bstp_nmix_oprc":      "6438.50",
+  "bstp_nmix_hgpr":      "6668.43",
+  "bstp_nmix_lwpr":      "6413.50",
+  "dryy_lwpr_vrss_prpr_rate": "-56.02"   // ← 마이너스가 붙는 필드가 실재한다
+}
+```
 
-| Task | 내용 | 확정에 필요한 것 |
-|---|---|---|
-| 5 | `KisIndexParser` — 응답 → 도메인 | 필드 타입·등락률 단위·부호 표현 |
-| 6 | `IndexGuards` — 등락률 자기모순 · 부호 정합 · 0/음수 거부 | 등락률 단위 |
-| 7 | `IndexCollectService` — 슬롯 판정 · 장상태 판정 · 저장 | (5·6에 의존) |
-| 8 | 스케줄러 트리거 + `collect-index.yml` cron 3지점 | — |
-| 9 | 변이 테스트 | — |
-| 10 | 전 모듈 검증 + PR | — |
+확정된 것 셋:
 
-Task 8의 cron은 스펙에 확정돼 있다(국내만):
+1. **모든 값이 문자열이다.** `"6579.04"` — 숫자가 아니다. `.toBigDecimal()`로 파싱한다.
+2. **등락률은 퍼센트 단위다.** 실측 검산: `6579.04 − 233.51 = 6345.53`(전일종가),
+   `233.51 / 6345.53 × 100 = 3.6799` ≈ 응답의 `3.68`. 비율(0.0368)이면 100배 차이라 오인 불가.
+3. **기준시각도 장상태도 없다** — 스펙의 판단이 맞았다. `dryy_bstp_nmix_hgpr_date`는
+   연중 최고가 날짜지 기준일이 아니다.
+
+### 부호는 값에서 읽지 않는다
+
+실측일이 상승일(`prdy_vrss_sign: "2"`)이라 `bstp_nmix_prdy_vrss`가 양수로 왔다.
+**하락일에 `"-233.51"`로 올지 `"233.51"`로 올지는 이 응답으로 알 수 없다.**
+그런데 같은 응답의 `dryy_lwpr_vrss_prpr_rate`가 `"-56.02"`다 — **KIS는 어떤 필드엔
+마이너스를 실어 보낸다.** 필드마다 다를 수 있고, 추측하면 하락일에 틀린다.
+
+→ **값은 절댓값으로만 쓰고 방향은 `prdy_vrss_sign`에서만 가져온다.**
+
+```
+change = 부호 × |bstp_nmix_prdy_vrss|
+rate   = 부호 × |bstp_nmix_prdy_ctrt|
+```
+
+원본에 마이너스가 붙어 오든 말든 결과가 같다.
+
+**모르는 부호 코드는 거부한다.** 기본값을 "상승"으로 두면 알 수 없는 코드가 왔을 때
+하락을 상승으로 저장한다. KIS 관례는 `1`=상한 `2`=상승 `3`=보합 `4`=하한 `5`=하락으로
+알려져 있으나 **실측으로 확인된 것은 `2`뿐이다** — 나머지는 관례를 따르되 그 밖의 값은 거부한다.
+
+### `prev_close_date`는 채울 수 없다
+
+응답에 전일 종가의 날짜가 없다. KIS 경로에서는 **NULL로 둔다.**
+국내 지수는 전일이 곧 직전 영업일이라 해외만큼 모호하지 않아 지금은 감수한다.
+해외(Twelve Data)를 붙일 때 이 컬럼이 값어치를 한다.
+
+---
+
+### Task 5: `KisIndexParser`
+
+**Files:**
+- Create: `backend-app/.../market/index/KisIndexParser.kt`
+- Test: `backend-app/src/test/kotlin/com/allfolio/market/index/KisIndexParserTest.kt`
+
+- [ ] **Step 1: 실패 테스트를 먼저 쓴다 — 픽스처는 실측 응답 그대로**
+
+지어낸 숫자 대신 위의 실측 응답을 쓴다. 실제 값이 통과하지 못하는 파서는 의미가 없다.
+
+```kotlin
+package com.allfolio.market.index
+
+import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.Test
+import java.math.BigDecimal
+
+class KisIndexParserTest {
+
+    private val parser = KisIndexParser()
+
+    /** 2026-08-12 운영 실측 (iscd=0001) */
+    private fun realResponse(
+        prpr: String = "6579.04",
+        vrss: String = "233.51",
+        sign: String = "2",
+        ctrt: String = "3.68",
+    ) = mapOf<String, Any?>(
+        "bstp_nmix_prpr" to prpr,
+        "bstp_nmix_prdy_vrss" to vrss,
+        "prdy_vrss_sign" to sign,
+        "bstp_nmix_prdy_ctrt" to ctrt,
+    )
+
+    @Test
+    fun `실측 응답을 그대로 파싱한다`() {
+        val q = parser.parse("KOSPI", realResponse())
+
+        assertThat(q.price).isEqualByComparingTo("6579.04")
+        assertThat(q.change).isEqualByComparingTo("233.51")
+        assertThat(q.changeRate).isEqualByComparingTo("3.68")
+        assertThat(q.prevClose).isEqualByComparingTo("6345.53")   // price - change
+    }
+
+    // KIS는 어떤 필드엔 마이너스를 실어 보낸다(dryy_lwpr_vrss_prpr_rate: "-56.02").
+    // 값에 이미 부호가 있든 없든 결과가 같아야 한다 — 그래서 절댓값 + sign 조합을 쓴다.
+    @Test
+    fun `하락일은 원본에 부호가 있든 없든 같은 결과를 낸다`() {
+        val withoutSign = parser.parse("KOSPI", realResponse(vrss = "233.51", sign = "5", ctrt = "3.68"))
+        val withSign = parser.parse("KOSPI", realResponse(vrss = "-233.51", sign = "5", ctrt = "-3.68"))
+
+        assertThat(withoutSign.change).isEqualByComparingTo("-233.51")
+        assertThat(withoutSign.changeRate).isEqualByComparingTo("-3.68")
+        assertThat(withSign.change).isEqualByComparingTo(withoutSign.change)
+        assertThat(withSign.changeRate).isEqualByComparingTo(withoutSign.changeRate)
+    }
+
+    @Test
+    fun `보합은 전일과 같다`() {
+        val q = parser.parse("KOSPI", realResponse(vrss = "0", sign = "3", ctrt = "0"))
+
+        assertThat(q.change).isEqualByComparingTo(BigDecimal.ZERO)
+        assertThat(q.prevClose).isEqualByComparingTo(q.price)
+    }
+
+    // 기본값을 "상승"으로 두면 알 수 없는 코드가 왔을 때 하락을 상승으로 저장한다.
+    @Test
+    fun `모르는 부호 코드는 거부한다`() {
+        assertThatThrownBy { parser.parse("KOSPI", realResponse(sign = "9")) }
+            .isInstanceOf(KisIndexException::class.java)
+            .hasMessageContaining("부호")
+    }
+
+    @Test
+    fun `필드가 없으면 거부한다`() {
+        assertThatThrownBy { parser.parse("KOSPI", emptyMap()) }
+            .isInstanceOf(KisIndexException::class.java)
+    }
+
+    @Test
+    fun `숫자가 아닌 값은 거부한다`() {
+        assertThatThrownBy { parser.parse("KOSPI", realResponse(prpr = "-")) }
+            .isInstanceOf(KisIndexException::class.java)
+    }
+}
+```
+
+Run — 컴파일 실패(`Unresolved reference: KisIndexParser`)를 확인한다:
+```bash
+cd allfolio-backend && ./gradlew :backend-app:test --tests '*KisIndexParserTest*' --rerun-tasks --no-daemon
+```
+
+- [ ] **Step 2: 파서를 만든다**
+
+```kotlin
+package com.allfolio.market.index
+
+import org.springframework.stereotype.Component
+import java.math.BigDecimal
+
+/** 파싱된 지수 시세 한 건. 저장 키(거래일·슬롯)는 수집 서비스가 정한다. */
+data class IndexQuote(
+    val indexCode: String,
+    val price: BigDecimal,
+    val prevClose: BigDecimal,
+    val change: BigDecimal,
+    val changeRate: BigDecimal,
+)
+
+/**
+ * KIS 업종 지수 응답 → 도메인 (AF-101).
+ *
+ * **부호를 값에서 읽지 않는다.** 실측 응답(2026-08-12)은 상승일이라
+ * `bstp_nmix_prdy_vrss`가 양수로 왔는데, 하락일에 마이너스가 붙을지는 알 수 없다 —
+ * 같은 응답의 `dryy_lwpr_vrss_prpr_rate`가 `"-56.02"`인 걸 보면 KIS는 어떤 필드엔
+ * 부호를 싣는다. 값은 절댓값으로만 쓰고 방향은 [prdy_vrss_sign]에서만 가져오면
+ * 원본에 부호가 있든 없든 결과가 같다.
+ *
+ * 응답의 모든 값은 **문자열**이다.
+ */
+@Component
+class KisIndexParser {
+
+    fun parse(indexCode: String, output: Map<String, Any?>): IndexQuote {
+        val price = number(output, "bstp_nmix_prpr")
+        val rawChange = number(output, "bstp_nmix_prdy_vrss").abs()
+        val rawRate = number(output, "bstp_nmix_prdy_ctrt").abs()
+        val direction = direction(text(output, "prdy_vrss_sign"))
+
+        val change = rawChange.multiply(BigDecimal(direction))
+        return IndexQuote(
+            indexCode = indexCode,
+            price = price,
+            prevClose = price.subtract(change),
+            change = change,
+            changeRate = rawRate.multiply(BigDecimal(direction)),
+        )
+    }
+
+    /**
+     * KIS 관례: 1=상한 2=상승 3=보합 4=하한 5=하락.
+     * **실측으로 확인된 것은 2뿐이다.** 그 밖의 값은 거부한다 —
+     * 기본값을 상승으로 두면 모르는 코드가 왔을 때 하락을 상승으로 저장한다.
+     */
+    private fun direction(sign: String): Int = when (sign.trim()) {
+        "1", "2" -> 1
+        "3" -> 0
+        "4", "5" -> -1
+        else -> throw KisIndexException("알 수 없는 전일대비 부호 코드: '$sign'")
+    }
+
+    private fun text(output: Map<String, Any?>, key: String): String =
+        output[key]?.toString()?.trim()
+            ?: throw KisIndexException("KIS 지수 응답에 $key 가 없습니다")
+
+    private fun number(output: Map<String, Any?>, key: String): BigDecimal =
+        text(output, key).toBigDecimalOrNull()
+            ?: throw KisIndexException("KIS 지수 응답의 $key 가 숫자가 아닙니다: '${output[key]}'")
+}
+```
+
+- [ ] **Step 3: 통과 확인 후 커밋**
+
+```bash
+cd allfolio-backend && ./gradlew :backend-app:test --tests '*KisIndexParserTest*' --rerun-tasks --no-daemon
+```
+
+```bash
+git add allfolio-backend/backend-app/src/main/kotlin/com/allfolio/market/index/KisIndexParser.kt \
+        allfolio-backend/backend-app/src/test/kotlin/com/allfolio/market/index/KisIndexParserTest.kt
+git commit -m "feat(af-101): KIS 지수 파서 — 부호는 sign 필드에서만"
+```
+
+---
+
+### Task 6~10 — 남은 작업
+
+| Task | 내용 |
+|---|---|
+| 6 | `IndexGuards` — 등락률 자기모순(`\|change\|/prevClose×100` vs `\|rate\|`, 허용오차 0.05%p) · 0/음수 현재가 거부 · 연속 실패 카운트 |
+| 7 | `IndexCollectService` — 슬롯·장상태 판정, 직전 행과 전부 같으면 `장마감`으로 낮춤, upsert |
+| 8 | `SchedulerTriggerController`에 `/index/domestic` 추가 + `.github/workflows/collect-index.yml` |
+| 9 | 변이 테스트 |
+| 10 | 전 모듈 검증 + PR |
+
+Task 8의 cron (국내만, 스펙 확정):
 
 ```
 10 0 * * 1-5   → KST 09:10  OPEN
 10 3 * * 1-5   → KST 12:10  MID
 50 6 * * 1-5   → KST 15:50  CLOSE
 ```
+
+Task 6의 허용오차가 0.05%p인 근거: 실측에서 역산값 `3.6799` vs 응답 `3.68`으로 차이가
+`0.0001`이었다. KIS가 소수점 둘째 자리로 반올림해 주므로 그 반올림 폭만 허용하면 된다.
 
 ---
 

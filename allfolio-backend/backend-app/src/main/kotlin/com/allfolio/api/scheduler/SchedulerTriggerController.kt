@@ -1,7 +1,10 @@
 package com.allfolio.api.scheduler
 
 import com.allfolio.api.admin.FxRateAdminController
+import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.fx.hana.HanaCollectSummary
+import com.allfolio.market.index.DomesticIndexCollectSummary
+import com.allfolio.market.index.IndexSlot
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
@@ -9,6 +12,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
 import java.nio.charset.StandardCharsets
@@ -31,6 +35,7 @@ import java.security.MessageDigest
 @RequestMapping("/api/internal/scheduler")
 class SchedulerTriggerController(
     private val fxAdmin: FxRateAdminController,
+    private val indexAdmin: MarketIndexAdminController,
     @Value("\${scheduler.trigger-token:}") private val configuredToken: String,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -62,6 +67,29 @@ class SchedulerTriggerController(
     ): ResponseEntity<HanaCollectSummary> {
         authorize(token)
         return fxAdmin.collectHana(null, false)
+    }
+
+    /**
+     * POST /api/internal/scheduler/index/domestic?slot=CLOSE — 국내 지수 수집 트리거 (AF-101)
+     *
+     * **`slot`은 워크플로가 반드시 실어 보낸다 — 기본값을 두지 않는다.** 지수는 하루 세 지점을
+     * 같은 엔드포인트로 찍고, 어느 지점인지는 오직 이 값으로만 구분된다. 기본값을 두면 cron 한 줄이
+     * 슬롯을 빠뜨렸을 때 세 실행이 전부 한 슬롯을 덮어쓰는데, 저장된 값 자체는 그럴듯해서
+     * 나중에 차트가 이상해질 때까지 아무도 눈치채지 못한다. 400으로 즉시 터지는 편이 낫다.
+     *
+     * 시각을 노출하지 않는 이유는 하나은행 트리거와 같다 —
+     * [MarketIndexAdminController.collect]가 UTC 현재 시각을 넣어주고, 그 변환은 한 곳에만 있어야 한다.
+     *
+     * 어드민 컨트롤러에 위임하는 이유도 같다: [KisIndexException] → 502 매핑이 Actions 로그를
+     * 읽는 사람에게 그대로 필요하다. **이 위임을 "정리"하지 말 것** — 위 [collectHanaFx]의 설명 참조.
+     */
+    @PostMapping("/index/domestic")
+    fun collectDomesticIndex(
+        @RequestHeader(name = TOKEN_HEADER, required = false) token: String?,
+        @RequestParam slot: IndexSlot,
+    ): ResponseEntity<DomesticIndexCollectSummary> {
+        authorize(token)
+        return indexAdmin.collect(slot)
     }
 
     /**
