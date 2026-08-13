@@ -20,7 +20,7 @@
 |---|---|
 | `HistoricalRateSource.kt` | 포트 + `DailyRate` · `SourceFetch` |
 | `EcosHistoricalRateSource.kt` | ECOS 전용 가져오기 (기존 서비스에서 추출) |
-| `upbit/UpbitCandleParser.kt` | 일봉 JSON → `List<DailyRate>` (순수) |
+| `upbit/UpbitCandleParser.kt` | 일봉 JSON → `SourceFetch`(rates + skipped) (순수) |
 | `upbit/UpbitCandleClient.kt` | 일봉 HTTP 호출 |
 | `upbit/UpbitCandleRateSource.kt` | 페이지네이션 + `supports("BTC"\|"ETH")` |
 
@@ -771,16 +771,20 @@ class UpbitCandleRateSource(
 
         val market = "KRW-$code"
         val collected = mutableListOf<DailyRate>()
+        // 파서가 버린 행을 페이지마다 더한다. 0으로 박아 두면 BackfillSummary.skipped가
+        // 늘 0이 되어 "조용히 삼키지 않는다"는 이 서브시스템의 규약이 무너진다.
+        var skipped = 0
         var exclusiveUpper = to.plusDays(1)
 
         repeat(MAX_PAGES) {
             val page = parser.parse(client.fetchDays(market, cursor(exclusiveUpper), PAGE))
-            if (page.isEmpty()) return SourceFetch(collected, 0)
+            skipped += page.skipped
+            if (page.rates.isEmpty()) return SourceFetch(collected, skipped)
 
-            collected += page.filter { it.baseDate in from..to }
+            collected += page.rates.filter { it.baseDate in from..to }
 
-            val oldest = page.minOf { it.baseDate }
-            if (oldest <= from) return SourceFetch(collected, 0)
+            val oldest = page.rates.minOf { it.baseDate }
+            if (oldest <= from) return SourceFetch(collected, skipped)
 
             // 커서가 반드시 과거로 가야 한다. 안 가면 같은 페이지를 영원히 받는다.
             val next = oldest
@@ -793,7 +797,7 @@ class UpbitCandleRateSource(
         }
 
         log.warn("[UpbitCandle] 최대 페이지({})에 도달해 중단 market={} {}~{}", MAX_PAGES, market, from, to)
-        return SourceFetch(collected, 0)
+        return SourceFetch(collected, skipped)
     }
 }
 ```
