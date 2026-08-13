@@ -1300,6 +1300,20 @@ class MarketRateAdminControllerTest {
             .hasMessageContaining("한 건도")
     }
 
+    /**
+     * 저장이 0건이어도 **실패가 없으면 장애가 아니다.** 모든 종목이 정상적으로 빈 응답을 준
+     * 날에도 collected는 0이 된다 — 그걸 502로 부르면 멀쩡한 한국은행을 확인하러 가게 된다.
+     * 이 상태는 emptySeries가 설명하고 워크플로가 경고로 띄운다.
+     */
+    @Test
+    fun `실패 없이 0건이면 200이다`() {
+        stub(summary(requested = 6, collected = 0, failed = 0).copy(emptySeries = listOf("BASE_RATE")))
+
+        val response = controller.collect(null, null)
+
+        assertThat(response.statusCode.value()).isEqualTo(200)
+    }
+
     /** 부분 실패까지 빨갛게 칠하면 매일 빨간 잡을 보게 되고, 그러면 진짜 전멸도 안 보인다 */
     @Test
     fun `부분 실패는 200이다`() {
@@ -1358,6 +1372,7 @@ class MarketRateAdminControllerTest {
         collected = collected,
         inserted = collected,
         updated = 0,
+        unchanged = 0,
         skippedRows = 0,
         outOfRange = 0,
         emptySeries = emptyList(),
@@ -1545,7 +1560,12 @@ class MarketRateAdminController(
             )
         }
 
-        if (summary.collected == 0) {
+        // **`collected == 0`만으로 502를 내면 안 된다.** Task 5의 `collected`는 "실제로 저장한 행 수"라,
+        // 모든 종목이 정상적으로 빈 응답을 준 날에도 0이 된다(긴 연휴, 또는 변경 시에만 공표되는
+        // 계열만 남은 구성). 그걸 502로 부르면 운영자가 멀쩡한 한국은행을 확인하러 간다.
+        // 상류 장애는 **저장이 0인데 실패가 있는** 경우다. 실패가 하나도 없이 0건이면
+        // 그건 `emptySeries`가 설명하는 상태이고, 워크플로가 경고로 띄운다.
+        if (summary.collected == 0 && summary.failed > 0) {
             throw ResponseStatusException(
                 HttpStatus.BAD_GATEWAY,
                 "금리를 한 건도 수집하지 못했습니다 (요청 ${summary.requested}건, $start~$end): " +
@@ -1760,9 +1780,12 @@ jobs:
           out_of_range = body.get("outOfRange") or 0
           empty = body.get("emptySeries") or []
 
+          # updated와 unchanged를 따로 찍는다. 2주 창을 매일 다시 부르므로 대부분은 unchanged이고,
+          # updated가 0이 아닌 날이 곧 "ECOS가 값을 정정했다"는 뜻이다 — 합쳐 놓으면 그 사건이 묻힌다.
           print(
               f"수집 결과: requested={body.get('requested')} collected={body.get('collected')} "
               f"inserted={body.get('inserted')} updated={body.get('updated')} "
+              f"unchanged={body.get('unchanged')} "
               f"skippedRows={skipped} outOfRange={out_of_range} empty={len(empty)} "
               f"failed={failed} ({body.get('from')}~{body.get('to')})"
           )
@@ -1975,8 +1998,13 @@ ORDER BY rate_code, quote_date DESC;
 - [ ] **Step 8: 워크플로를 수동 실행해 본다**
 
 GitHub Actions에서 `Collect Rate`를 `Run workflow`로 한 번 돌린다.
-Expected: 초록, 요약에 `requested=<종목 수> collected=<종목 수> inserted=0 updated=<종목 수>`
-(백필이 이미 채웠으므로 삽입은 0이고 갱신만 나온다 — 이게 멱등성의 라이브 증거다).
+
+Expected: 초록, 그리고 **`inserted=0`** — 백필이 이미 채웠으니 새 행이 없다. 이게 멱등성의 라이브 증거다.
+
+`collected`는 종목 수가 아니라 **종목 수 × 창 안의 영업일 수**(2주면 대략 60)다. 그리고 그 대부분이
+`unchanged`로 잡혀야 한다 — `updated`가 크게 나오면 ECOS가 그만큼 값을 정정했다는 뜻이라 확인할 일이다.
+**`inserted`가 0이 아니면 멱등성이 깨진 것이다** — 같은 구간을 다시 부르는데 새 행이 생겼다는 뜻이니
+넘어가지 말 것.
 
 - [ ] **Step 9: 노션을 갱신한다**
 
