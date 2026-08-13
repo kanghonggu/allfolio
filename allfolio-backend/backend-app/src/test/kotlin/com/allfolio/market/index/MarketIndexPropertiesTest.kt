@@ -58,7 +58,17 @@ class MarketIndexPropertiesTest {
             assertThat(it.kisIscd).isNotBlank()
             assertThat(it.nameContains).isNotBlank()
             assertThat(it.zoneId).isNotBlank()
+            assertThat(it.schedule).isNotBlank()
         }
+    }
+
+    // schedule은 "US" | "ASIA" 둘 중 하나여야 한다. 오타("Us", "usa")는 컴파일도, 위의
+    // not-blank 검사도 통과한다 — 후속 태스크의 `overseas.filter { it.schedule == schedule }`가
+    // 조용히 0건이 되고서야 드러난다. 그 조용한 0건을 여기서 미리 잡는다.
+    @Test
+    fun `schedule은 US 또는 ASIA 둘 중 하나다`() {
+        assertThat(properties.overseas.map { it.schedule })
+            .allMatch { it == "US" || it == "ASIA" }
     }
 
     // 유로스톡스는 유럽 타임존이지만 미국 슬롯에 실린다 — 마감이 아시아 슬롯보다 7시간 늦어서다.

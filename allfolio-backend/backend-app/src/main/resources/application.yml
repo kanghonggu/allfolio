@@ -267,8 +267,10 @@ market-index:
     - { code: DOW,       kis-iscd: ".DJI",      zone-id: America/New_York, schedule: US,   name-contains: "다우존스" }
     - { code: NASDAQ100, kis-iscd: "NDX",       zone-id: America/New_York, schedule: US,   name-contains: "나스닥" }
     - { code: VIX,       kis-iscd: "VIX",       zone-id: America/New_York, schedule: US,   name-contains: "VIX" }
-    # STOXX50의 schedule이 US인 것은 오타가 아니다. 마감이 15:30 UTC라 아시아 슬롯(08:30 UTC)보다
-    # 7시간 늦다 — 거기 두면 늘 전일 종가를 받는다. 미국 슬롯(21:30 UTC)이 마감 6시간 후다.
+    # STOXX50의 schedule이 US인 것은 오타가 아니다. 마감은 현지 17:30(CEST 서머타임 기준)이며
+    # UTC로는 서머타임이면 15:30, 표준시(CET, 겨울)면 16:30이다 — 계절에 따라 15:30~16:30 UTC를
+    # 오간다. 어느 쪽이든 아시아 슬롯(08:30 UTC)보다 늦어 거기 두면 늘 전일 종가를 받는다.
+    # 미국 슬롯(21:30 UTC)은 두 계절 모두 마감 이후라 US 슬롯 결정 자체는 연중 유효하다.
     # zone-id는 여전히 유럽이다(진행 중인 봉 판별용, 수집 시각과는 별개).
     - { code: STOXX50,   kis-iscd: "SX5E",      zone-id: Europe/Berlin,    schedule: US,   name-contains: "STOXX" }
     - { code: NIKKEI225, kis-iscd: "JP#NI225",  zone-id: Asia/Tokyo,       schedule: ASIA, name-contains: "니케이" }
@@ -276,9 +278,14 @@ market-index:
     - { code: HANGSENG,  kis-iscd: "HK#HS",     zone-id: Asia/Hong_Kong,   schedule: ASIA, name-contains: "항셍" }
     # 상해(SHANG) 옆에 CH#SHA/CH#SHB(A·B주)가 붙어 있다.
     - { code: SHANGHAI,  kis-iscd: "SHANG",     zone-id: Asia/Shanghai,    schedule: ASIA, name-contains: "상해" }
-    # NASDAQ·NASDAQ100의 name-contains가 둘 다 "나스닥"인 것은 약한 검사다. 마스터의 한글명은
-    # 각각 "나스닥 종합"·"나스닥 100"이지만 KIS 응답의 hts_kor_isnm이 마스터와 같은 문자열인지는
-    # 실측으로 확인되지 않았다. 배포 후 대조해 좁힐 것.
+    # 아래 넷은 name-contains가 약한 검사다 — 실측 없이는 더 좁힐 수 없어 값은 그대로 두되,
+    # 배포 후 raw-overseas로 hts_kor_isnm을 대조할 때 특히 이 넷을 확인할 것:
+    #   - NASDAQ·NASDAQ100: 둘 다 "나스닥"을 포함한다. 마스터 한글명은 각각 "나스닥 종합"·
+    #     "나스닥 100"이지만 KIS 응답의 hts_kor_isnm이 마스터와 같은 문자열인지 미확인.
+    #   - DOW: "다우존스"는 옆의 .DJT(다우존스운송평균지수)·.DJU(다우존스유틸리티평균지수)와
+    #     접두사를 공유할 공산이 크다 — .DJI→.DJT 오타가 나면 이름 검사를 그대로 통과할 수 있다.
+    #   - SHANGHAI: "상해"는 CH#SHA/CH#SHB(A·B주)의 "상해A"·"상해B"에도 포함될 것이다.
+    #   - STOXX50: "STOXX"는 마스터에 STOXX Europe 600 등 다른 STOXX 계열이 있다면 겹친다.
 
 # 암호화폐 거래소 WebSocket (국내)
 upbit:
