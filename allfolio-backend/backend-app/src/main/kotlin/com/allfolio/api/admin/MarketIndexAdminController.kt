@@ -5,6 +5,7 @@ import com.allfolio.market.index.IndexCollectService
 import com.allfolio.market.index.IndexSlot
 import com.allfolio.market.index.KisIndexClient
 import com.allfolio.market.index.KisIndexException
+import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 
@@ -33,6 +35,31 @@ class MarketIndexAdminController(
     fun raw(@RequestParam iscd: String): ResponseEntity<Map<String, Any?>> =
         try {
             ResponseEntity.ok(kisIndexClient.fetchRaw(iscd))
+        } catch (e: KisIndexException) {
+            throw ResponseStatusException(HttpStatus.BAD_GATEWAY, e.message)
+        }
+
+    /**
+     * GET /api/admin/market-index/raw-overseas?iscd=SPX&from=2026-08-01&to=2026-08-13
+     * — KIS 해외 지수 원본 응답 그대로 (AF-110).
+     *
+     * `/raw`와 같은 이유로 존재한다. 해외 지수 응답은 `output1`·`output2` 두 갈래로 오는데
+     * 최신 봉이 어느 쪽에 실리는지가 확정되지 않았고, 이 엔드포인트는 **그걸 눈으로 보려고**
+     * 있는 것이다. 국내 지수(AF-101)에서 등락률 단위와 부호 규약을 맞힌 것도 파서를 쓰기 전에
+     * 이 단계를 밟았기 때문이다. 여기에 필드 매핑이나 DTO를 얹으면 존재 이유가 사라진다.
+     *
+     * **`from`/`to`에 기본값을 두지 않는다.** 파라미터 이름을 오타내면 기본 구간이 조용히
+     * 채워져 아무도 고르지 않은 창을 조회하게 되는데, 응답은 멀쩡해 보여서 그게 엉뚱한 구간의
+     * 데이터라는 걸 알아볼 수가 없다. `/collect`의 `slot`에 기본값을 두지 않은 것과 같은 이유다.
+     */
+    @GetMapping("/raw-overseas")
+    fun rawOverseas(
+        @RequestParam iscd: String,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate,
+    ): ResponseEntity<Map<String, Any?>> =
+        try {
+            ResponseEntity.ok(kisIndexClient.fetchOverseasRaw(iscd, from, to))
         } catch (e: KisIndexException) {
             throw ResponseStatusException(HttpStatus.BAD_GATEWAY, e.message)
         }
