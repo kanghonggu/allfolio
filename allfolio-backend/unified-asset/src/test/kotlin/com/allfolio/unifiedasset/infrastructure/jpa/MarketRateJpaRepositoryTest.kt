@@ -52,7 +52,8 @@ class MarketRateJpaRepositoryTest {
     fun `구간 조회는 경계를 포함한다`() {
         save(rate("KTB_3Y", LocalDate.of(2026, 8, 10), "3.10"))
         save(rate("KTB_3Y", LocalDate.of(2026, 8, 11), "3.12"))
-        save(rate("KTB_3Y", LocalDate.of(2026, 8, 12), "3.15"))
+        // 소수점 4자리를 끝까지 채운 값 — 컬럼 스케일이 좁으면 여기서 잘려 단언이 깨진다
+        save(rate("KTB_3Y", LocalDate.of(2026, 8, 12), "3.1234"))
         save(rate("KTB_10Y", LocalDate.of(2026, 8, 11), "3.40"))
 
         val found = repository.findByRateCodeAndQuoteDateBetween(
@@ -61,6 +62,8 @@ class MarketRateJpaRepositoryTest {
 
         assertThat(found).hasSize(3)
         assertThat(found.map { it.rateCode }).containsOnly("KTB_3Y")
+        assertThat(found.single { it.quoteDate == LocalDate.of(2026, 8, 12) }.rateValue)
+            .isEqualByComparingTo("3.1234")
     }
 
     @Test
@@ -68,6 +71,30 @@ class MarketRateJpaRepositoryTest {
         save(rate("CALL_ON", LocalDate.of(2026, 8, 12), "-0.25"))
 
         assertThat(repository.findAll().single().rateValue).isEqualByComparingTo("-0.25")
+    }
+
+    @Test
+    fun `조회해 온 행을 고쳐 다시 저장하면 행이 늘지 않고 값만 바뀐다`() {
+        // Task 5의 멱등성 전체가 이 한 가지 JPA 동작에 기대고 있다 — id가 할당식이라
+        // saveAll이 persist가 아니라 merge를 타고, 그래서 같은 id면 UPDATE가 된다.
+        // 수집 서비스에는 트랜잭션이 없어 조회와 저장이 각각 별도 트랜잭션이다. 즉 저장 시점의
+        // 엔티티는 분리(detached) 상태이고, 더티 체킹이 대신 저장해 주지 않는다 — 여기서도 그대로 재현한다.
+        save(rate("KTB_3Y", LocalDate.of(2026, 8, 12), "3.15"))
+
+        val detached = repository.findByRateCodeAndQuoteDateBetween(
+            "KTB_3Y", LocalDate.of(2026, 8, 12), LocalDate.of(2026, 8, 12),
+        ).single()
+        entityManager.clear()
+        detached.rateValue = BigDecimal("3.20")
+        detached.source = "ECOS"
+
+        repository.saveAll(listOf(detached))
+        entityManager.flush()
+        entityManager.clear()
+
+        // 행이 늘었다면 uk_market_rate가 먼저 터졌겠지만, count로 못 박아 둔다
+        assertThat(repository.count()).isEqualTo(1)
+        assertThat(repository.findAll().single().rateValue).isEqualByComparingTo("3.20")
     }
 
     private fun save(entity: MarketRateEntity) {

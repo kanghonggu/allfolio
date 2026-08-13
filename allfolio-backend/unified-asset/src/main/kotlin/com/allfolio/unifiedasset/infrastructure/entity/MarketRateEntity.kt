@@ -23,7 +23,8 @@ import java.util.UUID
  * 컬럼 이름이 `value`가 아니라 `rate_value`인 이유: `VALUE`는 SQL 예약어 계열이라
  * DB·드라이버마다 인용부호 요구가 갈린다. 값어치 없는 위험이다.
  *
- * `rateValue`·`collectedAt`이 var인 이유: 같은 날을 다시 수집하면 값만 덮기 때문.
+ * `rateValue`·`source`·`collectedAt`이 var인 이유: 같은 날을 다시 수집하면 값만 덮기 때문 —
+ * `source`도 포함되는 건 ECOS로 받은 행이 나중에 FRED 등 다른 출처로 재수집될 수 있어서다.
  */
 @Entity
 @Table(
@@ -38,6 +39,6 @@ class MarketRateEntity(
     @Column(name = "quote_date", nullable = false) val quoteDate: LocalDate,
     /** 연 %. 마이너스 금리가 실재하므로 부호를 제한하지 않는다 */
     @Column(name = "rate_value", nullable = false, precision = 9, scale = 4) var rateValue: BigDecimal,
-    @Column(name = "source", nullable = false, length = 20) val source: String,
+    @Column(name = "source", nullable = false, length = 20) var source: String,
     @Column(name = "collected_at", nullable = false) var collectedAt: LocalDateTime,
 )
