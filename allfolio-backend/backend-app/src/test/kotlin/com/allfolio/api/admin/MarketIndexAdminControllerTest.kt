@@ -5,12 +5,15 @@ import com.allfolio.market.index.IndexCollectService
 import com.allfolio.market.index.IndexSlot
 import com.allfolio.market.index.KisIndexClient
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import org.springframework.http.HttpStatus
+import org.springframework.web.server.ResponseStatusException
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -87,5 +90,90 @@ class MarketIndexAdminControllerTest {
             any(LocalDateTime::class.java) ?: LocalDateTime.MIN,
         )
         assertThat(slotCaptor.value).isEqualTo(IndexSlot.MID)
+    }
+
+    // ── 전체 실패 = 장애 (AF-101) ──────────────────────────────────────────────
+    //
+    // IndexCollectService는 지수 하나가 터져도 나머지를 살리려고 예외 대신 요약으로 돌려준다.
+    // 그래서 컨트롤러가 그대로 200을 내면 **세 지수가 전부 실패해도** 크론 잡이 초록으로 끝난다.
+    // 지수 데이터가 끊긴 걸 아무도 모르게 되는 자리라 상태 코드로 못 박는다.
+
+    private fun stubSummary(result: DomesticIndexCollectSummary) {
+        `when`(
+            collectService.collect(
+                any(IndexSlot::class.java) ?: IndexSlot.CLOSE,
+                any(LocalDateTime::class.java) ?: LocalDateTime.MIN,
+            )
+        ).thenReturn(result)
+    }
+
+    @Test
+    fun `전부 실패하면 502를 낸다`() {
+        stubSummary(
+            summary.copy(
+                requested = 3,
+                collected = 0,
+                inserted = 0,
+                updated = 0,
+                failed = 3,
+                failures = listOf("KOSPI: KIS 응답에 output이 없습니다", "KOSDAQ: timeout", "KOSPI200: timeout"),
+            )
+        )
+
+        val thrown = assertThrows(ResponseStatusException::class.java) {
+            controller.collect(IndexSlot.CLOSE)
+        }
+
+        assertThat(thrown.statusCode).isEqualTo(HttpStatus.BAD_GATEWAY)
+        // 잡 요약과 에러 애너테이션에 남는 문구다. 슬롯과 사유가 없으면 운영자가
+        // "지수 수집 실패"만 보고 어느 지점이 왜 비었는지 다시 로그를 뒤져야 한다.
+        assertThat(thrown.reason).contains("CLOSE").contains("KIS 응답에 output이 없습니다")
+    }
+
+    /**
+     * 부분 실패는 200이다. 하나가 간헐적으로 실패할 때마다 잡을 빨갛게 칠하면
+     * 매일 빨간 잡을 보게 되고, 그러면 진짜 전체 장애가 났을 때도 아무도 안 본다.
+     * 부분 실패는 요약의 failures로 이미 보인다.
+     */
+    @Test
+    fun `일부만 실패하면 200으로 요약을 돌려준다`() {
+        stubSummary(
+            summary.copy(
+                requested = 3,
+                collected = 2,
+                inserted = 2,
+                updated = 0,
+                failed = 1,
+                failures = listOf("KOSDAQ: timeout"),
+            )
+        )
+
+        val response = controller.collect(IndexSlot.CLOSE)
+
+        assertThat(response.statusCode).isEqualTo(HttpStatus.OK)
+        assertThat(response.body?.failures).containsExactly("KOSDAQ: timeout")
+    }
+
+    /**
+     * requested == 0은 "아무도 아무것도 요청하지 않았다"(설정이 빔)이지 상류 장애가 아니다.
+     * 이걸 502로 내보내면 운영자가 KIS를 확인하러 가는데 진짜 문제는 빠진 YAML 블록이다.
+     */
+    @Test
+    fun `수집 대상이 없으면 502가 아니다`() {
+        stubSummary(
+            summary.copy(
+                requested = 0,
+                collected = 0,
+                inserted = 0,
+                updated = 0,
+                failed = 0,
+                failures = emptyList(),
+            )
+        )
+
+        val response = controller.collect(IndexSlot.CLOSE)
+
+        assertThat(response.statusCode).isEqualTo(HttpStatus.OK)
+        assertThat(response.body?.requested).isEqualTo(0)
     }
 }

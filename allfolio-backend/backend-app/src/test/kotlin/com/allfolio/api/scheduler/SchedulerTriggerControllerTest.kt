@@ -292,4 +292,47 @@ class SchedulerTriggerControllerTest {
             .andExpect(status().isBadGateway)
             .andExpect(jsonPath("$.error").value("KIS 응답에 output이 없습니다"))
     }
+
+    // 크론이 실제로 때리는 건 이 트리거 경로다. IndexCollectService는 지수가 전부 터져도
+    // 예외 대신 요약을 돌려주므로, 어드민 컨트롤러가 502로 바꿔주지 않으면 전면 중단이
+    // HTTP 200으로 나가 잡이 초록으로 끝난다. 그 변환이 위임을 타고 여기까지 오는지 본다 —
+    // 어드민 테스트만으로는 트리거가 상태를 삼키거나 200으로 덮어써도 잡히지 않는다.
+    @Test
+    fun `지수를 한 건도 못 모으면 트리거도 502를 낸다`() {
+        val collectService = mock(IndexCollectService::class.java)
+        `when`(
+            collectService.collect(
+                any(IndexSlot::class.java) ?: IndexSlot.CLOSE,
+                any(LocalDateTime::class.java) ?: LocalDateTime.MIN,
+            )
+        ).thenReturn(
+            indexSummary.copy(
+                requested = 3,
+                collected = 0,
+                inserted = 0,
+                updated = 0,
+                failed = 3,
+                failures = listOf("KOSPI: timeout", "KOSDAQ: timeout", "KOSPI200: timeout"),
+            )
+        )
+
+        MockMvcBuilders
+            .standaloneSetup(
+                SchedulerTriggerController(
+                    admin,
+                    MarketIndexAdminController(mock(KisIndexClient::class.java), collectService),
+                    "secret",
+                )
+            )
+            .setControllerAdvice(GlobalExceptionHandler())
+            .build()
+            .perform(
+                post("/api/internal/scheduler/index/domestic")
+                    .param("slot", "CLOSE")
+                    .header("X-Scheduler-Token", "secret")
+            )
+            .andExpect(status().isBadGateway)
+            // 잡 요약에 남는 건 본문이다. 사유가 없으면 502만 보고 원인을 다시 찾아야 한다.
+            .andExpect(jsonPath("$.error").exists())
+    }
 }
