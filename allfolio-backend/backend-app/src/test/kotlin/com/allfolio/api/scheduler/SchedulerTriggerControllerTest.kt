@@ -1,11 +1,17 @@
 package com.allfolio.api.scheduler
 
 import com.allfolio.api.admin.FxRateAdminController
+import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.config.GlobalExceptionHandler
 import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
 import com.allfolio.fx.hana.HanaCollectSummary
 import com.allfolio.fx.hana.HanaFxCollectService
+import com.allfolio.market.index.DomesticIndexCollectSummary
+import com.allfolio.market.index.IndexCollectService
+import com.allfolio.market.index.IndexSlot
+import com.allfolio.market.index.KisIndexClient
+import com.allfolio.market.index.KisIndexException
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyBoolean
@@ -20,11 +26,13 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import java.time.LocalDate
+import java.time.LocalDateTime
 
 class SchedulerTriggerControllerTest {
 
     // JUnit5는 테스트마다 인스턴스를 새로 만들므로 목이 테스트 간에 새지 않는다.
     private val admin: FxRateAdminController = mock(FxRateAdminController::class.java)
+    private val indexAdmin: MarketIndexAdminController = mock(MarketIndexAdminController::class.java)
 
     private val summary = HanaCollectSummary(
         requestedDate = LocalDate.of(2026, 8, 12),
@@ -41,7 +49,7 @@ class SchedulerTriggerControllerTest {
     // 응답으로 풀려, 운영과 다른 경로를 테스트하게 된다. 워크플로가 --fail을 일부러 안 쓰는 이유가
     // 이 본문을 잡 요약에 남기기 위해서라, 본문까지 운영과 같아야 의미가 있다.
     private fun mvc(token: String) = MockMvcBuilders
-        .standaloneSetup(SchedulerTriggerController(admin, token))
+        .standaloneSetup(SchedulerTriggerController(admin, indexAdmin, token))
         .setControllerAdvice(GlobalExceptionHandler())
         .build()
 
@@ -148,7 +156,7 @@ class SchedulerTriggerControllerTest {
             collectService,
         )
 
-        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, "secret"))
+        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -170,5 +178,118 @@ class SchedulerTriggerControllerTest {
         ).andExpect(status().isOk)
 
         verify(admin).collectHana(null, false)
+    }
+
+    // ── 국내 지수 트리거 (AF-101) ───────────────────────────────────────────────
+
+    private val indexSummary = DomesticIndexCollectSummary(
+        tradeDate = LocalDate.of(2026, 8, 12),
+        slot = "CLOSE",
+        requested = 3,
+        collected = 3,
+        inserted = 3,
+        updated = 0,
+        failed = 0,
+        failures = emptyList(),
+    )
+
+    @Test
+    fun `토큰이 맞으면 요청한 슬롯 그대로 수집을 실행한다`() {
+        `when`(indexAdmin.collect(IndexSlot.CLOSE)).thenReturn(ResponseEntity.ok(indexSummary))
+
+        mvc("secret").perform(
+            post("/api/internal/scheduler/index/domestic")
+                .param("slot", "CLOSE")
+                .header("X-Scheduler-Token", "secret")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.slot").value("CLOSE"))
+            .andExpect(jsonPath("$.collected").value(3))
+
+        // 슬롯이 바꿔치기되면 값은 그럴듯한 채로 엉뚱한 지점에 저장된다 — 그대로 넘어가는지 못 박는다
+        verify(indexAdmin).collect(IndexSlot.CLOSE)
+    }
+
+    // slot에 기본값을 붙이면 이 테스트가 무너진다. 워크플로의 case 분기가 슬롯을 못 실어 보낸
+    // 상황에서, 기본값은 "조용히 엉뚱한 슬롯을 덮어쓰기"이고 400은 "빨간 잡"이다.
+    @Test
+    fun `슬롯이 없으면 400이고 수집을 부르지 않는다`() {
+        mvc("secret").perform(
+            post("/api/internal/scheduler/index/domestic").header("X-Scheduler-Token", "secret")
+        ).andExpect(status().isBadRequest)
+
+        verify(indexAdmin, never()).collect(any(IndexSlot::class.java) ?: IndexSlot.CLOSE)
+    }
+
+    @Test
+    fun `지수 트리거도 토큰이 틀리면 401이고 수집을 부르지 않는다`() {
+        mvc("secret").perform(
+            post("/api/internal/scheduler/index/domestic")
+                .param("slot", "OPEN")
+                .header("X-Scheduler-Token", "wrong")
+        )
+            .andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.error").exists())
+
+        verify(indexAdmin, never()).collect(any(IndexSlot::class.java) ?: IndexSlot.CLOSE)
+    }
+
+    // FX 트리거와 같은 가드를 **재사용**하는지 본다. 두 번째 토큰 검사를 따로 짜면
+    // 한쪽만 fail-closed가 되어도 이 파일이 통과해버리므로, 지수 경로에서도 독립으로 못 박는다.
+    @Test
+    fun `설정 토큰이 비어 있으면 지수 트리거도 503으로 닫는다`() {
+        mvc("").perform(
+            post("/api/internal/scheduler/index/domestic")
+                .param("slot", "OPEN")
+                .header("X-Scheduler-Token", "anything")
+        )
+            .andExpect(status().isServiceUnavailable)
+            .andExpect(jsonPath("$.error").exists())
+
+        verify(indexAdmin, never()).collect(any(IndexSlot::class.java) ?: IndexSlot.CLOSE)
+    }
+
+    @Test
+    fun `지수 트리거는 GET으로는 열리지 않는다`() {
+        mvc("secret").perform(
+            get("/api/internal/scheduler/index/domestic")
+                .param("slot", "CLOSE")
+                .header("X-Scheduler-Token", "secret")
+        ).andExpect(status().isMethodNotAllowed)
+
+        verify(indexAdmin, never()).collect(any(IndexSlot::class.java) ?: IndexSlot.CLOSE)
+    }
+
+    // FX 쪽과 같은 이유로 진짜 MarketIndexAdminController를 세운다 — 목이 이미 만들어진
+    // ResponseStatusException을 던지게 하면 위임이 물려받으려던 예외→상태 매핑이 한 번도
+    // 실행되지 않아, catch (KisIndexException) 블록을 통째로 지워도 통과한다.
+    @Test
+    fun `KIS 응답이 이상하면 502로 옮겨진다`() {
+        val collectService = mock(IndexCollectService::class.java)
+        // any(...)는 매처를 등록하고 null을 돌려주는데, IndexCollectService는 Kotlin 파이널
+        // 클래스라 원본 바이트코드의 non-null 파라미터 검사가 남아 NPE가 난다.
+        // 엘비스로 아무 값이나 채우면 매처는 그대로 등록된 채 검사만 통과한다.
+        `when`(
+            collectService.collect(
+                any(IndexSlot::class.java) ?: IndexSlot.CLOSE,
+                any(LocalDateTime::class.java) ?: LocalDateTime.MIN,
+            )
+        ).thenThrow(KisIndexException("KIS 응답에 output이 없습니다"))
+
+        val realIndexAdmin = MarketIndexAdminController(
+            mock(KisIndexClient::class.java),
+            collectService,
+        )
+
+        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin, "secret"))
+            .setControllerAdvice(GlobalExceptionHandler())
+            .build()
+            .perform(
+                post("/api/internal/scheduler/index/domestic")
+                    .param("slot", "CLOSE")
+                    .header("X-Scheduler-Token", "secret")
+            )
+            .andExpect(status().isBadGateway)
+            .andExpect(jsonPath("$.error").value("KIS 응답에 output이 없습니다"))
     }
 }

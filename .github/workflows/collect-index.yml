@@ -1,0 +1,154 @@
+name: Collect Index
+
+# Render 무료 플랜에는 크론 잡이 없고(유료 인스턴스 전용), 무료 웹 서비스는 15분 유휴 시 잠들어
+# 인스턴스 안의 @Scheduled만으로는 주기 실행이 성립하지 않는다. AF-103의 collect-fx.yml과 같은 구조다.
+#
+# 시각은 KST 09:10 / 12:10 / 15:50 (평일) = UTC 00:10 / 03:10 / 06:50.
+# 세 시각 모두 KST 09~18시 안이라 UTC 같은 날짜에 떨어져 요일 매핑(1-5)이 어긋나지 않는다.
+#
+# CLOSE만 :50인 이유 — 장 마감이 15:30이라 그 이후여야 종가가 잡힌다. 09:10·12:10과 달리
+# "정각 회피"보다 "마감 이후"가 먼저다. GitHub 예약 워크플로는 러너 혼잡 시 5~30분 밀리는데,
+# 밀리는 방향은 항상 뒤쪽이라 CLOSE가 앞당겨져 장중 값을 종가로 저장할 위험은 없다.
+on:
+  schedule:
+    - cron: "10 0 * * 1-5"   # KST 09:10 OPEN  (개장 직후)
+    - cron: "10 3 * * 1-5"   # KST 12:10 MID   (장중)
+    - cron: "50 6 * * 1-5"   # KST 15:50 CLOSE (마감 직후 = 종가)
+  workflow_dispatch:
+    inputs:
+      slot:
+        description: "수집할 슬롯"
+        type: choice
+        options: [OPEN, MID, CLOSE]
+        default: CLOSE
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  # 앞선 실행이 콜드 스타트로 밀려 다음 지점과 겹치면 같은 (지수, 거래일) 행을 두 요청이 동시에
+  # 밀어 넣는다. 슬롯이 달라 유니크 제약에는 안 걸리지만, IndexCollectService가 "직전 저장값과
+  # 같으면 장마감"을 판정하려고 findLatest를 읽으므로 순서가 뒤엉키면 시장상태가 틀어진다.
+  group: collect-index
+  cancel-in-progress: false
+
+jobs:
+  domestic-index:
+    name: 국내 지수 수집
+    runs-on: ubuntu-latest
+    # 아래 curl 재시도 예산(최악 9분)보다 커야 한다. 잡이 먼저 잘리면 요약도 애너테이션도
+    # 남지 않고 "cancelled"만 떠서 백엔드 문제가 러너 문제처럼 보인다.
+    timeout-minutes: 12
+    steps:
+      - name: Trigger collection
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          SCHEDULER_TOKEN: ${{ secrets.SCHEDULER_TOKEN }}
+          # ${{ }}를 셸 본문에 직접 박지 않는다 — 표현식은 셸이 파싱하기 **전에** 문자열로
+          # 치환되므로 값에 따옴표나 `$(...)`가 섞이면 그대로 명령이 된다. env로 넘기면
+          # 셸이 값을 데이터로만 본다. 위 시크릿 두 개가 이미 같은 이유로 이렇게 들어온다.
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
+          INPUT_SLOT: ${{ github.event.inputs.slot }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${BACKEND_URL}" ] || [ -z "${SCHEDULER_TOKEN}" ]; then
+            echo "::error::BACKEND_URL 또는 SCHEDULER_TOKEN 시크릿이 없습니다."
+            exit 1
+          fi
+
+          # 끝의 슬래시를 지운다. 남겨두면 경로가 "//api/internal/..."이 되어 404가 난다.
+          while [ "${BACKEND_URL}" != "${BACKEND_URL%/}" ]; do
+            BACKEND_URL="${BACKEND_URL%/}"
+          done
+
+          # https만 허용한다. http로 두면 Render가 301로 넘기는데 -L이 없어 POST가 아예
+          # 전달되지 않고 HTTP 301만 남는다(-L을 붙여도 --post301 없이는 POST가 GET으로
+          # 바뀌어 소용없다). 아래 에러 범례에도 없는 코드라 원인 파악이 오래 걸린다.
+          case "${BACKEND_URL}" in
+            https://*) ;;
+            *)
+              # 값 자체는 찍지 않는다(시크릿). 형식만 알린다.
+              echo "::error::BACKEND_URL 시크릿은 https://로 시작하고 끝에 슬래시가 없어야 합니다. 예: https://<서비스>.onrender.com"
+              exit 1
+              ;;
+          esac
+
+          # 어느 cron이 울렸는지는 github.event.schedule에만 있다(수동 실행이면 빈 문자열).
+          # **모르는 값에 기본값을 주지 않는다.** cron 한 줄을 늘리고 여기 분기를 빠뜨리면
+          # 기본 슬롯으로 매 실행이 조용히 엉뚱한 행을 덮어쓰는데, 저장된 숫자는 그럴듯해서
+          # 차트가 이상해질 때까지 아무도 눈치채지 못한다. 여기서 죽으면 Actions가 빨개진다.
+          if [ -z "${EVENT_SCHEDULE}" ]; then
+            SLOT="${INPUT_SLOT}"
+            if [ -z "${SLOT}" ]; then
+              echo "::error::수동 실행인데 slot 입력이 비었습니다."
+              exit 1
+            fi
+          else
+            case "${EVENT_SCHEDULE}" in
+              "10 0 * * 1-5") SLOT="OPEN" ;;
+              "10 3 * * 1-5") SLOT="MID" ;;
+              "50 6 * * 1-5") SLOT="CLOSE" ;;
+              *)
+                echo "::error::처음 보는 cron 스케줄입니다: '${EVENT_SCHEDULE}'. on.schedule에 줄을 추가했다면 이 case에도 슬롯을 넣어주세요."
+                exit 1
+                ;;
+            esac
+          fi
+
+          echo "slot=${SLOT}"
+
+          # 무료 인스턴스가 잠들어 있으면 첫 요청이 30~90초 걸리거나 502가 난다.
+          # 재시도가 안전한 이유는 수집이 멱등하기 때문이다 — 같은 (지수, 거래일, 슬롯)이면
+          # IndexCollectService가 기존 행을 덮어쓴다.
+          #
+          # -o/-w로 본문과 상태를 분리해 받는다. --fail을 쓰면 4xx/5xx에서 본문이 버려져
+          # 왜 실패했는지(502 KIS 응답 이상인지 400 슬롯 오타인지) 알 수 없게 된다.
+          # 지수 수집은 부분 실패(3건 중 1건 실패)가 HTTP 200으로 나오므로, 본문의
+          # failures 배열이 유일한 단서다.
+          #
+          # --max-time은 전체가 아니라 "시도 1회당" 상한이다. 그래서 최악 소요는
+          # 120초 x 4회 시도 + 20초 x 3회 대기 = 540초(9분)이고, 이 값은 위
+          # timeout-minutes(12)보다 작아야 한다 — 두 숫자는 따로 노는 값이 아니다.
+          #
+          # set -e 아래에서 명령 치환 대입은 그 종료 코드를 그대로 물려받는다. curl은 HTTP
+          # 응답만 오면 4xx/5xx라도 0으로 끝나지만 전송 계층 실패(7 연결거부 / 28 타임아웃 /
+          # 6 DNS / 35 TLS)에서는 0이 아니다. 그대로 두면 이 워크플로가 견디려고 만들어진
+          # 바로 그 상황 — 콜드 인스턴스가 매 시도 --max-time을 넘기는 경우 — 에서 여기서
+          # 죽어 요약도 에러 범례도 남지 않는다. 그래서 실패를 삼키고 센티널을 세운다.
+          # curl 자신도 전송 실패 시 %{http_code}로 000을 찍으므로 000 = "HTTP 응답 없음".
+          HTTP_CODE=$(curl -sS -X POST \
+            "${BACKEND_URL}/api/internal/scheduler/index/domestic?slot=${SLOT}" \
+            -H "X-Scheduler-Token: ${SCHEDULER_TOKEN}" \
+            --max-time 120 \
+            --retry 3 \
+            --retry-delay 20 \
+            --retry-all-errors \
+            -o response.json \
+            -w '%{http_code}') || HTTP_CODE="000"
+
+          echo "HTTP ${HTTP_CODE}"
+
+          # 이 저장소는 공개다. 토큰은 어디에도 찍지 않는다 — 요약은 영구 보존되고
+          # 로그와 달리 GitHub의 시크릿 마스킹에 기대는 것도 위험하다.
+          {
+            echo "### 국내 지수 수집 (${SLOT})"
+            echo ""
+            echo "HTTP \`${HTTP_CODE}\`"
+            echo ""
+            echo '```json'
+            cat response.json 2>/dev/null || echo '(본문 없음)'
+            echo ""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${HTTP_CODE}" != "200" ]; then
+            echo "::error::지수 수집 실패 (HTTP ${HTTP_CODE}). 502=KIS 응답 이상 / 503=SCHEDULER_TOKEN 미설정 / 000=백엔드 응답 없음(콜드 스타트·네트워크)"
+            exit 1
+          fi
+
+          # 200이어도 부분 실패일 수 있다 — IndexCollectService는 지수 하나가 터져도 나머지를
+          # 살리려고 예외 대신 요약으로 돌려준다. 그 판별은 위 잡 요약의 failures 배열로 한다.
+          # 여기서 본문을 grep으로 재해석하지 않는다: 직렬화 형식이 조금만 바뀌어도
+          # (들여쓰기·필드 순서) 조용히 아무것도 안 잡는 가드가 되어, 없느니만 못하다.
