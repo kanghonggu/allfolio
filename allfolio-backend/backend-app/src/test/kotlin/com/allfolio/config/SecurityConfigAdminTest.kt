@@ -5,6 +5,7 @@ import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.api.scheduler.SchedulerTriggerController
 import com.allfolio.market.index.IndexCollectService
 import com.allfolio.market.index.KisIndexClient
+import com.allfolio.market.index.OverseasIndexCollectService
 import com.allfolio.auth.JwtTokenService
 import com.allfolio.auth.UserEntity
 import com.allfolio.auth.UserRole
@@ -68,6 +69,12 @@ class SecurityConfigAdminTest {
 
     @MockBean
     private lateinit var indexCollectService: IndexCollectService
+
+    // AF-110. **이 자리를 빠뜨리면 테스트가 실패하는 게 아니라 컨텍스트가 아예 안 뜬다** —
+    // 실패 메시지가 DefaultCacheAwareContextLoaderDelegate라 이 파일과 무관해 보인다.
+    // MarketIndexAdminController에 생성자 인자를 늘릴 때마다 여기도 늘려야 한다.
+    @MockBean
+    private lateinit var overseasIndexCollectService: OverseasIndexCollectService
 
     @Autowired
     private lateinit var mockMvc: MockMvc
@@ -174,5 +181,32 @@ class SecurityConfigAdminTest {
     fun `스케줄러 트리거는 Security를 통과해 컨트롤러까지 도달한다`() {
         mockMvc.post("/api/internal/scheduler/fx/hana-collect")
             .andExpect { status { isServiceUnavailable() } }
+    }
+
+    /**
+     * AF-110: 해외 지수 트리거도 같은 규칙 아래 있는지. 위 트리거와 같은 이유로 503이 곧
+     * "컨트롤러까지 닿았다"는 증거다(`schedule`을 실어 보내야 한다 — 빠지면 파라미터 해석
+     * 단계에서 400이 나 인가 경로를 안 지난다).
+     *
+     * 경로 규칙이 `api/internal/scheduler` 하위 전체를 덮는 와일드카드라 지금은 자동으로
+     * 걸리지만, 그 규칙이 경로 열거로 바뀌는 날 새 경로만 401로 막히는 걸 여기서 잡는다.
+     * (와일드카드 표기를 이 주석에 그대로 쓰면 안 된다 — Kotlin 블록 주석은 중첩돼서
+     * 슬래시-별-별이 주석 안에서 새 주석을 열고 파일 끝까지 삼킨다. 실제로 겪었다.)
+     */
+    @Test
+    fun `해외 지수 트리거도 Security를 통과해 컨트롤러까지 도달한다`() {
+        mockMvc.post("/api/internal/scheduler/index/overseas?schedule=US")
+            .andExpect { status { isServiceUnavailable() } }
+    }
+
+    /**
+     * 반대로 어드민 수집 엔드포인트는 **닫혀 있어야** 한다. 스케줄러 경로가 permitAll이라
+     * 위임 대상인 이 엔드포인트까지 열린 것처럼 착각하기 쉬운데, 이쪽은 토큰 검사가 아니라
+     * `hasRole("ADMIN")`이 지킨다. 열리면 아무나 KIS 호출을 돌릴 수 있다.
+     */
+    @Test
+    fun `해외 지수 수집 어드민 엔드포인트는 토큰 없이 403으로 차단된다`() {
+        mockMvc.post("/api/admin/market-index/collect-overseas?schedule=US")
+            .andExpect { status { isForbidden() } }
     }
 }
