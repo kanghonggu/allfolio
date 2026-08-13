@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.springframework.http.HttpStatus
@@ -52,15 +53,38 @@ class MarketRateAdminControllerTest {
         assertThat(thrown.statusCode).isEqualTo(HttpStatus.BAD_GATEWAY)
         // 사유가 없으면 "금리 수집 실패"만 보고 다시 로그를 뒤져야 한다
         assertThat(thrown.reason).contains("한 건도").contains("KTB_3Y: HTTP 500")
+        // 전량 실패와 전 종목 0건은 운영자를 다른 곳으로 보낸다 — 문구가 갈려야 한다
+        assertThat(thrown.reason).contains("전량 실패")
     }
 
     /**
-     * 저장이 0건이어도 **실패가 없으면 장애가 아니다.** 모든 종목이 정상적으로 빈 응답을 준
-     * 날에도 collected는 0이 된다 — 그걸 502로 부르면 멀쩡한 한국은행을 확인하러 가게 된다.
+     * **실패가 하나도 없이 전 종목이 0건인 실행이 정확히 "통계표 코드가 전부 틀렸다"의 모양이다.**
+     * ECOS는 없는 코드에 오류가 아니라 0건을 주므로, 이걸 200으로 내보내면 잡이 영원히 초록으로
+     * 끝난다 — 이 기능이 막으려던 실패 그 자체가 감시망을 그대로 통과한다.
+     *
+     * "정상적으로 전부 비었다"는 상태는 존재하지 않는다: 설정에는 매일 공표되는 계열(국고채·CD)이
+     * 변경 시 공표 계열과 섞여 있고, 달력 14일에 국내 영업일이 하나도 없는 경우는 없다.
+     */
+    @Test
+    fun `실패가 없어도 전 종목이 0건이면 502다`() {
+        val allSix = listOf("BASE_RATE", "CD_91D", "KTB_3Y", "KTB_10Y", "CORP_AA", "COFIX")
+        stub(summary(requested = 6, collected = 0, failed = 0).copy(emptySeries = allSix))
+
+        val thrown = assertThrows(ResponseStatusException::class.java) { controller.collect(null, null) }
+
+        assertThat(thrown.statusCode).isEqualTo(HttpStatus.BAD_GATEWAY)
+        // 상류를 확인하러 보내면 안 된다 — 할 일은 코드 확인이다
+        assertThat(thrown.reason).contains("전 종목 0건").contains("코드를 확인")
+        assertThat(thrown.reason).doesNotContain("전량 실패")
+    }
+
+    /**
+     * 저장이 0건이어도 **일부만 비었으면 장애가 아니다.** 기준금리처럼 변경 시에만 공표되는 계열은
+     * 2주 창에 값이 없는 게 정상이다 — 그걸 502로 부르면 멀쩡한 한국은행을 확인하러 가게 된다.
      * 이 상태는 emptySeries가 설명하고 워크플로가 경고로 띄운다.
      */
     @Test
-    fun `실패 없이 0건이면 200이다`() {
+    fun `일부만 비었으면 0건이어도 200이다`() {
         stub(summary(requested = 6, collected = 0, failed = 0).copy(emptySeries = listOf("BASE_RATE")))
 
         val response = controller.collect(null, null)
@@ -130,26 +154,99 @@ class MarketRateAdminControllerTest {
     }
 
     /**
-     * 상류가 이상한 것이지 우리 요청이 틀린 게 아니다. 전역 폴백의 500 + "서버 오류"로 뭉개지면
-     * 코드를 확인하러 온 사람이 우리 버그를 찾으러 간다.
+     * **여기서 잡지 않는 것이 맞다.** `GlobalExceptionHandler`가 [EcosApiException]을 이미 다루고
+     * 502(상류 실패)와 500(`NO_KEY` 등 우리 설정 누락)을 code로 가른다 — 컨트롤러에서 전부 502로
+     * 갈아끼우면 키를 아직 안 넣은 상태가 "한국은행 장애"로 보고된다. 이 엔드포인트를 부르는 시점이
+     * 대개 키를 넣기 **전**이라 하필 가장 흔한 경로고, 덤으로 핸들러가 싣는 `code` 필드도 사라진다.
+     * (`MarketIndexAdminController`의 catch는 `KisIndexException` 핸들러가 advice에 없어서 필요한
+     *  것이다 — 그 모양만 베끼면 여기서는 손해가 된다.)
      */
     @Test
-    fun `통계표 목록의 ECOS 오류는 502로 나간다`() {
-        `when`(statList.tables(any())).thenThrow(EcosApiException("HTTP-500", "ECOS가 HTTP 500 을 반환했습니다"))
+    fun `통계표 목록의 ECOS 오류는 그대로 전파된다`() {
+        `when`(statList.tables(any())).thenThrow(EcosApiException("NO_KEY", "ECOS 인증키가 설정되지 않았습니다"))
 
-        val thrown = assertThrows(ResponseStatusException::class.java) { controller.tables("721Y001") }
+        val thrown = assertThrows(EcosApiException::class.java) { controller.tables("721Y001") }
 
-        assertThat(thrown.statusCode).isEqualTo(HttpStatus.BAD_GATEWAY)
+        // code가 살아 있어야 핸들러가 500(설정 누락)과 502(상류)를 가른다
+        assertThat(thrown.code).isEqualTo("NO_KEY")
     }
 
-    /** 항목 목록도 같은 대우를 받아야 한다 — catch를 하나만 달면 이쪽이 500으로 샌다 */
+    /** 항목 목록도 같은 대우다 — 한쪽만 잡으면 두 엔드포인트의 상태 코드가 갈린다 */
     @Test
-    fun `항목 목록의 ECOS 오류는 502로 나간다`() {
+    fun `항목 목록의 ECOS 오류는 그대로 전파된다`() {
         `when`(statList.items(any() ?: "")).thenThrow(EcosApiException("HTTP-404", "ECOS가 HTTP 404 를 반환했습니다"))
 
-        val thrown = assertThrows(ResponseStatusException::class.java) { controller.items("721Y001") }
+        val thrown = assertThrows(EcosApiException::class.java) { controller.items("721Y001") }
 
-        assertThat(thrown.statusCode).isEqualTo(HttpStatus.BAD_GATEWAY)
+        assertThat(thrown.code).isEqualTo("HTTP-404")
+    }
+
+    /**
+     * **`stat`은 인증키가 첫 세그먼트로 들어간 경로에 그대로 이어 붙는다.**
+     * `/`나 `%2F`를 넣으면 요청이 ecos.bok.or.kr의 다른 경로·쿼리로 새면서 우리 인증키를 달고 간다 —
+     * 되울리는 오류 본문을 일부러 끌어내는 방법이 그것이다. 형제 클라이언트는 같은 문자열을
+     * `application.yml`에서 받지만 이쪽은 살아 있는 요청 파라미터라, 모양은 같아도 신뢰 경계가 다르다.
+     */
+    @Test
+    fun `경로 문자가 섞인 통계표 코드는 400으로 막고 호출하지 않는다`() {
+        val thrown =
+            assertThrows(ResponseStatusException::class.java) { controller.tables("721Y001/../StatisticSearch") }
+
+        assertThat(thrown.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
+        verify(statList, never()).tables(any())
+    }
+
+    /**
+     * 항목 목록도 같은 검사를 받아야 한다. `{`를 막는 것도 여기 포함이다 —
+     * Spring의 URI 템플릿 확장에서 터져 나가면 오타가 "IO"(연결 실패)로 보고되는데,
+     * 그 둘을 갈라 주려고 만든 도구가 그러면 곤란하다.
+     */
+    @Test
+    fun `템플릿 문자가 섞인 항목 코드는 400으로 막고 호출하지 않는다`() {
+        val thrown = assertThrows(ResponseStatusException::class.java) { controller.items("901Y009{x}") }
+
+        assertThat(thrown.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
+        verify(statList, never()).items(any() ?: "")
+    }
+
+    /** 검사가 실제 코드까지 막으면 도구가 죽는다. 실측한 형태(영숫자)는 그대로 통과해야 한다 */
+    @Test
+    fun `정상 코드는 그대로 클라이언트로 넘어간다`() {
+        `when`(statList.items(any() ?: "")).thenReturn("{}")
+
+        controller.items("721Y001")
+
+        verify(statList).items("721Y001")
+    }
+
+    /**
+     * 긴 구간을 한 번에 받으면 안 된다 — [RateCollectService]의 KDoc이 말하는 대로 기존 행마다
+     * `em.merge`가 SELECT를 하나씩 내므로 6.5년치는 순차 왕복 만 회다. 주석으로만 적어 두면
+     * 안 지켜진다(이 KDoc 안에서 이미 두 번 어긋났다). 서비스에 닿기 전에 거절한다.
+     */
+    @Test
+    fun `2년을 넘는 구간은 400으로 막고 수집하지 않는다`() {
+        val thrown = assertThrows(ResponseStatusException::class.java) {
+            controller.collect(LocalDate.of(2020, 1, 1), LocalDate.of(2026, 8, 13))
+        }
+
+        assertThat(thrown.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
+        assertThat(thrown.reason).contains("끊어 호출")
+        verify(service, never()).collect(
+            any(LocalDate::class.java) ?: LocalDate.EPOCH,
+            any(LocalDate::class.java) ?: LocalDate.EPOCH,
+            any(LocalDateTime::class.java) ?: LocalDateTime.MIN,
+        )
+    }
+
+    /** 안내한 2년 단위(`?from=2020-01-01&to=2021-12-31`)는 통과해야 한다 — 막으면 백필 자체가 불가능해진다 */
+    @Test
+    fun `2년 구간은 통과한다`() {
+        stub(summary(requested = 6, collected = 6))
+
+        val response = controller.collect(LocalDate.of(2020, 1, 1), LocalDate.of(2021, 12, 31))
+
+        assertThat(response.statusCode).isEqualTo(HttpStatus.OK)
     }
 
     /** 탐색 엔드포인트는 응답을 파싱하지 않는다 — 오류 응답(RESULT)도 그대로 보여야 한다 */

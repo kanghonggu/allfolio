@@ -96,19 +96,18 @@ class EcosStatisticSearchClient(
      * 자르기 전에 지운다: 먼저 자르면 경계에 걸친 키 조각이 남는다.
      *
      * 두 단계를 거친다:
-     *   1. 설정된 키 문자열 마스킹 — 키가 경로 밖에 단독으로 실려 올 때를 잡는다
-     *      ("등록되지 않은 인증키입니다: XXX" 같은 오류 메시지)
+     *   1. 설정된 키 문자열 마스킹([maskEcosApiKey]) — 키가 경로 밖에 단독으로 실려 올 때를 잡는다
+     *      ("등록되지 않은 인증키입니다: XXX" 같은 오류 메시지). [EcosStatListClient]와 공유한다
      *   2. 되울려 온 요청 URI 통째 제거 — 1번은 **정확히 일치**할 때만 들어서
      *      퍼센트 인코딩된 키(KEY%2DZZTOP)를 놓치기 때문이다. 경로를 통으로 지우면 인코딩 형태와 무관하게 사라진다.
+     *      이 단계가 여기에만 있는 이유는 **자르기** 때문이다 — 절단은 경계에 키 조각을 남기므로
+     *      인코딩까지 막아야 하지만, 본문을 원형 그대로 돌려주는 쪽에는 필요도 없고 해롭다.
      *
      * 남는 잔여 위험: 경로 밖에서 인코딩된 채로 실려 오는 키. 그래서 예외 메시지에는 본문을 아예 싣지 않고
      * (로그에만 남긴다) 이 함수는 마지막 방벽이 아니라 심층 방어로 둔다. 로그는 Render 대시보드로 나간다.
      */
-    private fun preview(raw: String): String {
-        // 빈 문자열로 replace하면 문자 사이마다 마스크가 끼어든다. 키가 없으면 가릴 것도 없다.
-        val masked = if (properties.apiKey.isBlank()) raw else raw.replace(properties.apiKey, "***")
-        return masked.replace(REQUEST_PATH, "[요청 URI 생략]").take(BODY_PREVIEW_LENGTH)
-    }
+    private fun preview(raw: String): String =
+        maskEcosApiKey(raw, properties.apiKey).replace(REQUEST_PATH, "[요청 URI 생략]").take(BODY_PREVIEW_LENGTH)
 
     override fun fetch(query: EcosQuery, from: LocalDate, to: LocalDate): EcosParseResult {
         // 설정 누락은 서버 문제다. IllegalArgumentException으로 던지면 GlobalExceptionHandler가
