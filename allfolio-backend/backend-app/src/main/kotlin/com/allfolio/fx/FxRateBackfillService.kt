@@ -4,7 +4,6 @@ import com.allfolio.unifiedasset.infrastructure.entity.HistoricalFxRateEntity
 import com.allfolio.unifiedasset.infrastructure.jpa.HistoricalFxRateJpaRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import java.math.RoundingMode
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.UUID
@@ -44,7 +43,11 @@ data class BackfillSummary(
 )
 
 /**
- * ECOS 과거 환율 백필 (AF-100).
+ * 과거 환율 백필 (AF-100).
+ *
+ * **가져오기는 소스별이고 저장하기는 공용이다.** 어떤 [HistoricalRateSource]가 통화를 맡을지는
+ * `supports`로 고르고, 그 뒤(0건 중단·범위 밖 제거·dedupe·계수·캐시 무효화)는 소스와 무관하게
+ * 이 서비스가 한 벌만 갖는다 — ECOS를 겪으며 생긴 방어지만 어느 소스에나 옳기 때문이다.
  *
  * 재실행이 안전해야 긴 기간을 나눠 돌릴 수 있으므로, 기존 행을 한 번에 읽어
  * 같은 (통화, 기준일)이면 값만 덮는다. 네이티브 UPSERT를 쓰지 않는 이유는
@@ -70,64 +73,47 @@ data class BackfillSummary(
  */
 @Service
 class FxRateBackfillService(
-    private val client: EcosApiClient,
+    private val sources: List<HistoricalRateSource>,
     private val repository: HistoricalFxRateJpaRepository,
-    private val properties: EcosProperties,
     private val fxConverter: UnifiedAssetFxConverterAdapter,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    companion object {
-        private const val SOURCE = "ECOS"
-        private const val SCALE = 6
-    }
-
     fun backfill(currency: String, from: LocalDate, to: LocalDate): BackfillSummary {
         val code = currency.trim().uppercase()
-        val series = seriesOf(code)
-            ?: throw IllegalArgumentException("ECOS 시계열 설정이 없는 통화입니다: $code")
         require(!from.isAfter(to)) { "from은 to보다 이후일 수 없습니다: $from > $to" }
 
-        // 예외는 그대로 올려보낸다 — 호출자(어드민 엔드포인트)가 상태 코드로 옮긴다.
-        // 스택을 통째로 찍지 않는 이유: EcosStatisticSearchClient가 인증키(URL 경로에 있다)를
-        // 흘리지 않도록 예외를 정제해 두는데, 여기서 원본 스택을 찍으면 그 방어가 무의미해질 수 있다.
-        val result = try {
-            client.fetchDailyRates(series.statCode, series.itemCode, from, to)
-        } catch (e: Exception) {
-            // INFO-200("해당 기간 데이터 없음")도 여기로 온다. 별도로 가르지 않는 이유는
-            // 결과가 같기 때문이다 — 어느 쪽이든 한 행도 쓰지 않고 중단한다.
-            // 장애와의 구분은 EcosApiException.code에 이미 실려 있고, 그걸 상태 코드로 옮기는 건
-            // 호출자 몫이다. 여기서 갈아끼우면 그 code가 사라진다.
-            log.warn(
-                "[ECOS] 백필 실패 currency={} {}~{} reason={} code={}",
-                code, from, to, e.javaClass.simpleName, (e as? EcosApiException)?.code,
-            )
-            throw e
-        }
+        val rateSource = sources.firstOrNull { it.supports(code) }
+            ?: throw IllegalArgumentException("과거 환율 소스가 없는 통화입니다: $code")
+
+        val result = rateSource.fetch(code, from, to)
 
         // 빈 응답으로 기존 값을 덮지 않는다 — 통계표 코드가 틀려도 0건이 온다
         check(result.rates.isNotEmpty()) {
-            "ECOS 응답 0건 — 기존 값을 덮지 않고 중단합니다 (currency=$code $from~$to)"
+            "${rateSource.sourceName} 응답 0건 — 기존 값을 덮지 않고 중단합니다 (currency=$code $from~$to)"
         }
 
-        // 요청 범위 밖 날짜를 먼저 걷어낸다. 파서는 yyyyMMdd로 파싱만 되면 통과시키므로
-        // ECOS가 범위 밖 날짜를 섞어 줄 수 있는데, 아래 existing 조회는 from..to로 한정된다 —
+        // 요청 범위 밖 날짜를 먼저 걷어낸다. 파서는 날짜만 파싱되면 통과시키므로
+        // 소스가 범위 밖 날짜를 섞어 줄 수 있는데, 아래 existing 조회는 from..to로 한정된다 —
         // 그 날짜 행이 이미 테이블에 있으면(중첩 백필 뒤라면 충분히 있다) existing에서 안 잡혀
         // 새 UUID로 INSERT가 나가고 uk_fx_rate_daily가 배치 전체를 죽인다. 재실행해도 똑같이 실패하고
         // 운영자에게는 불투명한 제약 위반만 남는다. 파서와 같은 규율로 버리되 센다.
         val inRange = result.rates.filter { it.baseDate in from..to }
         val outOfRange = result.rates.size - inRange.size
         if (outOfRange > 0) {
-            log.warn("[ECOS] 요청 범위 밖 {}건 제거 currency={} {}~{}", outOfRange, code, from, to)
+            log.warn(
+                "[Backfill] 요청 범위 밖 {}건 제거 source={} currency={} {}~{}",
+                outOfRange, rateSource.sourceName, code, from, to,
+            )
         }
 
-        val rates = dedupe(inRange, code, from, to)
+        val rates = dedupe(inRange, rateSource.sourceName, code, from, to)
         val duplicates = inRange.size - rates.size
 
         // 위 0건 방어와 같은 이유다. 범위 밖 행만 온 경우가 여기 걸린다 —
         // 막지 않으면 아래 min()/max()가 빈 집합에서 터져 원인이 안 보이는 예외가 된다.
         check(rates.isNotEmpty()) {
-            "ECOS 응답에 요청 범위 안의 행이 없습니다 — 기존 값을 덮지 않고 중단합니다 " +
+            "${rateSource.sourceName} 응답에 요청 범위 안의 행이 없습니다 — 기존 값을 덮지 않고 중단합니다 " +
                 "(currency=$code $from~$to, 범위 밖 ${outOfRange}건)"
         }
 
@@ -139,24 +125,22 @@ class FxRateBackfillService(
         var unchanged = 0
 
         val rows = rates.values.map { rate ->
-            // 고시 단위를 1단위로 되돌린다 — JPY 100엔 고시가 그대로 들어가면 100배가 된다
-            val normalized = rate.rateKrw.divide(series.unitDivisor, SCALE, RoundingMode.HALF_UP)
             val prior = existing[rate.baseDate]
                 ?: return@map HistoricalFxRateEntity(
                     id = UUID.randomUUID(),
                     baseDate = rate.baseDate,
                     currency = code,
-                    rateKrw = normalized,
-                    source = SOURCE,
+                    rateKrw = rate.rateKrw,
+                    source = rateSource.sourceName,
                     createdAt = LocalDateTime.now(),
                 ).also { inserted++ }
 
             // 반드시 덮기 전에 센다. compareTo로 비교하는 이유는 스케일이 달라도 같은 값이기 때문이다
             // (1385.5와 1385.500000은 equals로는 다르다).
-            if (prior.rateKrw.compareTo(normalized) == 0) unchanged++ else updated++
+            if (prior.rateKrw.compareTo(rate.rateKrw) == 0) unchanged++ else updated++
             prior.apply {
-                rateKrw = normalized
-                source = SOURCE
+                rateKrw = rate.rateKrw
+                source = rateSource.sourceName
             }
         }
         repository.saveAll(rows)
@@ -177,16 +161,16 @@ class FxRateBackfillService(
             firstDate = rates.keys.min(),
             lastDate = rates.keys.max(),
         )
-        log.info("[ECOS] 백필 완료 {}", summary)
+        log.info("[Backfill] 완료 source={} {}", rateSource.sourceName, summary)
         return summary
     }
 
     /**
-     * 같은 날짜를 하나로 접는다. 파서는 중복을 걸러내지 않으므로(그 동작은
-     * `EcosResponseParserTest`가 고정해 뒀다) 그대로 저장하면 `(base_date, currency)` UNIQUE 제약에
-     * 걸려 배치 전체가 깨진다.
+     * 같은 날짜를 하나로 접는다. 소스는 중복을 걸러내지 않을 수 있으므로(ECOS 파서는
+     * `EcosResponseParserTest`가 그 동작을 고정해 뒀다) 그대로 저장하면 `(base_date, currency)`
+     * UNIQUE 제약에 걸려 배치 전체가 깨진다.
      *
-     * **마지막 값을 택하는 데 근거는 없다.** ECOS는 중복 `TIME`의 순서 의미론을 문서화한 적이 없어
+     * **마지막 값을 택하는 데 근거는 없다.** 소스가 중복 순서의 의미론을 문서화한 적이 없어
      * "뒤에 온 것이 정정치"라는 건 추측이다. 그래도 임의로 하나를 고르는 쪽이 맞다 —
      * 중복 하나 때문에 2,600행을 통째로 걷어차는 건 과하다.
      *
@@ -194,12 +178,13 @@ class FxRateBackfillService(
      * 값이 다른 중복이야말로 "어느 쪽이 맞나"를 사람이 봐야 하는 이상 신호다.
      */
     private fun dedupe(
-        rates: List<EcosRate>,
+        rates: List<DailyRate>,
+        sourceName: String,
         code: String,
         from: LocalDate,
         to: LocalDate,
-    ): Map<LocalDate, EcosRate> {
-        val deduped = LinkedHashMap<LocalDate, EcosRate>(rates.size)
+    ): Map<LocalDate, DailyRate> {
+        val deduped = LinkedHashMap<LocalDate, DailyRate>(rates.size)
         var conflicting = 0
 
         rates.forEach { rate ->
@@ -210,21 +195,14 @@ class FxRateBackfillService(
         val removed = rates.size - deduped.size
         when {
             conflicting > 0 -> log.warn(
-                "[ECOS] 값이 다른 중복 날짜 {}건 — 마지막 값을 취한다 (전체 중복 {}건) currency={} {}~{}",
-                conflicting, removed, code, from, to,
+                "[Backfill] 값이 다른 중복 날짜 {}건 — 마지막 값을 취한다 (전체 중복 {}건) source={} currency={} {}~{}",
+                conflicting, removed, sourceName, code, from, to,
             )
-            removed > 0 -> log.info("[ECOS] 같은 값 중복 {}건 제거 currency={} {}~{}", removed, code, from, to)
+            removed > 0 -> log.info(
+                "[Backfill] 같은 값 중복 {}건 제거 source={} currency={} {}~{}",
+                removed, sourceName, code, from, to,
+            )
         }
         return deduped
     }
-
-    /**
-     * 통화 설정을 대소문자 무관하게 찾는다.
-     *
-     * 맵 키는 YAML에 쓴 그대로 들어오는데, 환경변수로 주입하면(ECOS_SERIES_JPY_STAT_CODE)
-     * relaxed binding이 `ecos.series.jpy.*`로 소문자화한다. 대문자만 보면 그때 "설정이 없는 통화"로
-     * 오진하고, 그건 설정 문제로 위장한 코드 문제라 운영에서 가장 찾기 어려운 종류다.
-     */
-    private fun seriesOf(code: String): EcosProperties.Series? =
-        properties.series.entries.firstOrNull { it.key.equals(code, ignoreCase = true) }?.value
 }

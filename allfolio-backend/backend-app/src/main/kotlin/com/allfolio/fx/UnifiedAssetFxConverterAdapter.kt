@@ -47,7 +47,10 @@ class UnifiedAssetFxConverterAdapter(
         private val KST = ZoneId.of("Asia/Seoul")
 
         /**
-         * 과거 시계열을 가진 통화. ECOS로 채울 수 있는 것만 여기 들어간다.
+         * 과거 시계열을 가진 통화. 백필로 채울 수 있는 것만 여기 들어간다.
+         *
+         * USD는 ECOS([EcosHistoricalRateSource]), BTC·ETH는 Upbit 일봉
+         * ([com.allfolio.fx.upbit.UpbitCandleRateSource])이 채운다.
          *
          * **`ecos.series`(application.yml) 설정 맵과 손으로 맞춰야 하는 두 번째 진실 공급원이다.**
          * 백필은 `ecos.series`에 있는 통화를 채우지만 조회는 이 집합만 본다. JPY 시계열을 설정에
@@ -55,14 +58,14 @@ class UnifiedAssetFxConverterAdapter(
          * 아래 `log.error("지원하지 않는 통화")`로 빠져 현재 환율 폴백이 된다 —
          * 설정을 바꿨는데 아무 일도 안 일어나는, 원인이 가장 안 보이는 형태다.
          * 통화를 늘릴 때는 반드시 양쪽을 함께 고칠 것.
-         * (지금은 `Currencies.SUPPORTED`에 USD 외 법정통화가 없어 무해하다.
-         *  코드로 결합하지 않는 이유는 조회 가능 통화와 백필 가능 통화가 개념상 별개이기 때문이다 —
+         * (코드로 결합하지 않는 이유는 조회 가능 통화와 백필 가능 통화가 개념상 별개이기 때문이다 —
          *  설정에 넣기 전에 미리 코드를 넣어 두는 것도, 그 반대도 정당하다.)
+         *
+         * **크립토는 행이 없어도 안전하다.** 백필을 안 돌린 구간은 [lookup]이 null을 주고
+         * 아래에서 현재가 폴백으로 떨어진다 — 예전과 같은 동작이되, 이제 WARN이 남는다.
+         * 그 우회가 조용했던 것이 `cash_flow.amount_krw`에 오늘 시세를 굳혀 온 원인이다.
          */
-        private val HISTORICAL = setOf("USD")
-
-        /** 과거 시세 소스가 없어 현재가로만 환산되는 통화 */
-        private val CRYPTO = setOf("BTC", "ETH")
+        private val HISTORICAL = setOf("USD", "BTC", "ETH")
     }
 
     /**
@@ -83,9 +86,6 @@ class UnifiedAssetFxConverterAdapter(
         val code = canonical(currency)
 
         if (code == "KRW") return KrwConversion(amount, rateDate = null, estimated = false)
-
-        // BTC/ETH는 과거 시세를 가진 소스가 없다 — 현행 현재가 환산을 유지한다
-        if (code in CRYPTO) return estimatedNow(amount, code)
 
         if (code !in HISTORICAL) {
             log.error("[Fx] 지원하지 않는 통화 — 환산 없이 그대로 둔다 currency={} date={}", currency, date)
