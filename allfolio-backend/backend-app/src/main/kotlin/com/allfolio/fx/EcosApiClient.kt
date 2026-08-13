@@ -11,14 +11,32 @@ import java.time.Duration
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
+/**
+ * ECOS 한 번 조회에 필요한 것 — 어느 시계열을 볼지(statCode·itemCode·cycle)와
+ * 그 결과를 어떻게 받아들일지(valuePolicy). 둘 다 같은 설정 한 행에서 나오므로 묶는다.
+ *
+ * @param cycle ECOS 주기 코드. 현재 지원은 `D`뿐이다 — 다른 주기는 요청 날짜 형식과
+ *              응답 `TIME` 형식이 함께 바뀌므로, 확인되지 않은 채 넓히면 조용히 0건이 된다.
+ * @param valuePolicy 어떤 값을 받아들일지. 환율과 금리가 다르다 — [EcosValuePolicy] 참조
+ */
+data class EcosQuery(
+    val statCode: String,
+    val itemCode: String,
+    val cycle: String,
+    val valuePolicy: EcosValuePolicy,
+) {
+    companion object {
+        /**
+         * 현재 유일하게 지원하는 주기. [EcosHistoricalRateSource]·클라이언트(이 파일)·
+         * `MarketRateProperties`(`market-rate` 모듈)가 같이 참조한다 — 리터럴 중복 방지.
+         */
+        internal const val DAILY_CYCLE = "D"
+    }
+}
+
 interface EcosApiClient {
-    /** 지정 기간의 일별 통계를 가져온다. 실패하면 예외를 던진다 — 호출자가 기존 값을 지키도록. */
-    fun fetchDailyRates(
-        statCode: String,
-        itemCode: String,
-        from: LocalDate,
-        to: LocalDate,
-    ): EcosParseResult
+    /** 지정 기간의 통계를 가져온다. 실패하면 예외를 던진다 — 호출자가 기존 값을 지키도록. */
+    fun fetch(query: EcosQuery, from: LocalDate, to: LocalDate): EcosParseResult
 }
 
 /**
@@ -91,39 +109,38 @@ class EcosStatisticSearchClient(
      * 자르기 전에 지운다: 먼저 자르면 경계에 걸친 키 조각이 남는다.
      *
      * 두 단계를 거친다:
-     *   1. 설정된 키 문자열 마스킹 — 키가 경로 밖에 단독으로 실려 올 때를 잡는다
-     *      ("등록되지 않은 인증키입니다: XXX" 같은 오류 메시지)
+     *   1. 설정된 키 문자열 마스킹([maskEcosApiKey]) — 키가 경로 밖에 단독으로 실려 올 때를 잡는다
+     *      ("등록되지 않은 인증키입니다: XXX" 같은 오류 메시지). [EcosStatListClient]와 공유한다
      *   2. 되울려 온 요청 URI 통째 제거 — 1번은 **정확히 일치**할 때만 들어서
      *      퍼센트 인코딩된 키(KEY%2DZZTOP)를 놓치기 때문이다. 경로를 통으로 지우면 인코딩 형태와 무관하게 사라진다.
+     *      이 단계가 여기에만 있는 이유는 **자르기** 때문이다 — 절단은 경계에 키 조각을 남기므로
+     *      인코딩까지 막아야 하지만, 본문을 원형 그대로 돌려주는 쪽에는 필요도 없고 해롭다.
      *
      * 남는 잔여 위험: 경로 밖에서 인코딩된 채로 실려 오는 키. 그래서 예외 메시지에는 본문을 아예 싣지 않고
      * (로그에만 남긴다) 이 함수는 마지막 방벽이 아니라 심층 방어로 둔다. 로그는 Render 대시보드로 나간다.
      */
-    private fun preview(raw: String): String {
-        // 빈 문자열로 replace하면 문자 사이마다 마스크가 끼어든다. 키가 없으면 가릴 것도 없다.
-        val masked = if (properties.apiKey.isBlank()) raw else raw.replace(properties.apiKey, "***")
-        return masked.replace(REQUEST_PATH, "[요청 URI 생략]").take(BODY_PREVIEW_LENGTH)
-    }
+    private fun preview(raw: String): String =
+        maskEcosApiKey(raw, properties.apiKey).replace(REQUEST_PATH, "[요청 URI 생략]").take(BODY_PREVIEW_LENGTH)
 
-    override fun fetchDailyRates(
-        statCode: String,
-        itemCode: String,
-        from: LocalDate,
-        to: LocalDate,
-    ): EcosParseResult {
+    override fun fetch(query: EcosQuery, from: LocalDate, to: LocalDate): EcosParseResult {
         // 설정 누락은 서버 문제다. IllegalArgumentException으로 던지면 GlobalExceptionHandler가
         // 400 Bad Request로 내보내 클라이언트 잘못처럼 보인다.
         if (properties.apiKey.isBlank()) {
             throw EcosApiException("NO_KEY", "ECOS 인증키가 설정되지 않았습니다 (ECOS_API_KEY)")
         }
-        if (statCode.isBlank() || itemCode.isBlank()) {
+        if (query.statCode.isBlank() || query.itemCode.isBlank()) {
             throw EcosApiException("NO_SERIES", "ECOS 통계표·항목 코드가 설정되지 않았습니다")
+        }
+        // 아래 DATE_FORMAT(yyyyMMdd)과 파서의 TIME 해석이 둘 다 일별 전제다.
+        // 다른 주기를 통과시키면 ECOS가 0건을 돌려주고, 그건 "코드가 틀렸다"와 구분되지 않는다.
+        if (query.cycle != EcosQuery.DAILY_CYCLE) {
+            throw EcosApiException("CYCLE", "지원하지 않는 주기입니다: ${query.cycle} (현재 D만 지원)")
         }
 
         val path = "/api/StatisticSearch/${properties.apiKey}/json/kr/1/$MAX_ROWS/" +
-            "$statCode/D/${from.format(DATE_FORMAT)}/${to.format(DATE_FORMAT)}/$itemCode"
+            "${query.statCode}/${query.cycle}/${from.format(DATE_FORMAT)}/${to.format(DATE_FORMAT)}/${query.itemCode}"
 
-        log.info("[ECOS] 조회 statCode={} itemCode={} {}~{}", statCode, itemCode, from, to)
+        log.info("[ECOS] 조회 statCode={} itemCode={} {}~{}", query.statCode, query.itemCode, from, to)
 
         val body = try {
             webClient.get()
@@ -140,16 +157,16 @@ class EcosStatisticSearchClient(
                 // 2xx인데 이 예외가 나왔다는 건 본문을 못 읽었다는 뜻이다(코덱 8MB 초과, 중간 절단 등).
                 // "HTTP 200 실패"로 보고하면 운영자가 한국은행 쪽을 보게 되므로 코드를 따로 준다 —
                 // Task 11은 code만 받으므로 여기서 구분하지 않으면 구분할 방법이 없다.
-                log.warn("[ECOS] 응답 본문 디코드 실패 status={} statCode={} reason={}", status, statCode, e.javaClass.simpleName)
+                log.warn("[ECOS] 응답 본문 디코드 실패 status={} statCode={} reason={}", status, query.statCode, e.javaClass.simpleName)
                 throw EcosApiException("DECODE", "응답 본문을 읽지 못했습니다 (status=$status)")
             }
-            log.warn("[ECOS] HTTP {} statCode={} preview={}", status, statCode, preview(e.responseBodyAsString))
+            log.warn("[ECOS] HTTP {} statCode={} preview={}", status, query.statCode, preview(e.responseBodyAsString))
             throw EcosApiException("HTTP-$status", "ECOS가 HTTP $status 를 반환했습니다")
         } catch (e: WebClientRequestException) {
             // 전송 계층 실패(connection refused·DNS·TLS·reset). 외부 정부 API라 4xx보다 오히려 흔하다.
             // Reactor가 붙이는 *__checkpoint suppressed 예외에 요청 URI가 통째로 들어 있어 여기도 인증키가 샌다.
             // 응답 경로와 같은 이유로 cause를 붙이지 않고, 원인은 클래스 이름만 남긴다.
-            log.warn("[ECOS] 연결 실패 statCode={} reason={}", statCode, e.cause?.javaClass?.simpleName)
+            log.warn("[ECOS] 연결 실패 statCode={} reason={}", query.statCode, e.cause?.javaClass?.simpleName)
             throw EcosApiException("CONN", "ECOS 연결에 실패했습니다")
         } catch (e: EcosApiException) {
             throw e // 위 EMPTY. 우리가 만든 예외라 이미 깨끗하다.
@@ -171,19 +188,19 @@ class EcosStatisticSearchClient(
                 // 플래그가 지워지면 종료 중 끊긴 백필이 ECOS 장애로 읽히고 Task 10 루프가 다음 통화로 넘어간다.
                 Thread.currentThread().interrupt()
             }
-            log.warn("[ECOS] 호출 실패 statCode={} reason={}", statCode, e.javaClass.simpleName)
+            log.warn("[ECOS] 호출 실패 statCode={} reason={}", query.statCode, e.javaClass.simpleName)
             throw EcosApiException("IO", "ECOS 호출에 실패했습니다")
         }
 
         // 파서는 JSON 모양이 어긋난 경우만 EcosApiException으로 보고한다.
         // 본문이 아예 JSON이 아니면(HTML 오류 페이지 등) Jackson 예외가 그대로 새므로 여기서 감싼다.
         return try {
-            parser.parse(body)
+            parser.parse(body, query.valuePolicy)
         } catch (e: EcosApiException) {
             // 파서는 RESULT.MESSAGE를 그대로 detail에 넣는다. 그건 서버가 준 문자열이라
             // 우리 요청 URI가 되울려 올 수 있고 길이 제한도 없다 — 본문 미리보기와 똑같은 경로다.
             // code는 우리가 분기에 쓰므로 보존하고 detail만 마스킹·절단한다.
-            // (위 NO_KEY·NO_SERIES는 우리가 만든 문자열이고 try 밖에 있어 여기 오지 않는다.)
+            // (위 NO_KEY·NO_SERIES·CYCLE은 우리가 만든 문자열이고 try 밖에 있어 여기 오지 않는다.)
             throw EcosApiException(e.code, preview(e.detail))
         } catch (e: JsonProcessingException) {
             // 본문 미리보기는 우리 로그에만 남기고 예외에는 싣지 않는다. 예외 메시지는 어드민 응답까지
@@ -193,7 +210,7 @@ class EcosStatisticSearchClient(
             // cause도 붙이지 않는다: JsonParseException 메시지가 원본 본문을 [Source: (String)"..."]로 물고 있다.
             log.warn(
                 "[ECOS] 응답이 JSON이 아닙니다 statCode={} reason={} preview={}",
-                statCode, e.javaClass.simpleName, preview(body),
+                query.statCode, e.javaClass.simpleName, preview(body),
             )
             throw EcosApiException("MALFORMED", "응답 본문이 올바른 JSON이 아닙니다")
         }

@@ -38,7 +38,17 @@ class EcosHistoricalRateSource(
         // 스택을 통째로 찍지 않는 이유: EcosStatisticSearchClient가 인증키(URL 경로에 있다)를
         // 흘리지 않도록 예외를 정제해 두는데, 여기서 원본 스택을 찍으면 그 방어가 무의미해질 수 있다.
         val result = try {
-            client.fetchDailyRates(series.statCode, series.itemCode, from, to)
+            client.fetch(
+                EcosQuery(
+                    statCode = series.statCode,
+                    itemCode = series.itemCode,
+                    cycle = EcosQuery.DAILY_CYCLE,
+                    // 0원짜리 환율은 없다. 금리와 달리 부호로 거르는 게 맞다
+                    valuePolicy = EcosValuePolicy.POSITIVE,
+                ),
+                from,
+                to,
+            )
         } catch (e: Exception) {
             // INFO-200("해당 기간 데이터 없음")도 여기로 온다. 별도로 가르지 않는 이유는
             // 결과가 같기 때문이다 — 어느 쪽이든 한 행도 쓰지 않고 중단한다.
@@ -53,7 +63,7 @@ class EcosHistoricalRateSource(
 
         // 고시 단위를 1단위로 되돌린다 — JPY 100엔 고시가 그대로 들어가면 100배가 된다
         val rates = result.rates.map {
-            DailyRate(it.baseDate, it.rateKrw.divide(series.unitDivisor, SCALE, RoundingMode.HALF_UP))
+            DailyRate(it.baseDate, it.value.divide(series.unitDivisor, SCALE, RoundingMode.HALF_UP))
         }
         return SourceFetch(rates, result.skipped)
     }

@@ -182,6 +182,22 @@ class FxRateAdminBackfillControllerTest {
         }
     }
 
+    /**
+     * AF-102 Task 2에서 도입한 코드. 지금 이 컨트롤러의 유일한 호출부는 주기를 "D"로 고정해
+     * 실제로는 던져지지 않지만, 원인이 우리 쪽 설정(잘못된 주기값)이라는 점은 NO_KEY/NO_SERIES와
+     * 같다 — 502로 새면 같은 오진(한국은행 상태 확인)을 반복한다.
+     */
+    @Test
+    fun `주기 설정 오류도 500이다`() {
+        `when`(backfillService.backfill("USD", from, to))
+            .thenThrow(EcosApiException("CYCLE", "지원하지 않는 주기입니다: M (현재 D만 지원)"))
+
+        callBackfill().andExpect {
+            status { isInternalServerError() }
+            jsonPath("$.code") { value("CYCLE") }
+        }
+    }
+
     @Test
     fun `제약 위반은 409로 재실행을 유도한다 - 422가 아니다`() {
         `when`(backfillService.backfill("USD", from, to))

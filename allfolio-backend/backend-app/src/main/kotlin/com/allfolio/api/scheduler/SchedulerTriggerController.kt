@@ -2,12 +2,14 @@ package com.allfolio.api.scheduler
 
 import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.api.admin.MarketIndexAdminController
+import com.allfolio.api.admin.MarketRateAdminController
 import com.allfolio.fx.BackfillSummary
 import com.allfolio.fx.hana.HanaCollectSummary
 import com.allfolio.market.index.DomesticIndexCollectSummary
 import com.allfolio.market.index.IndexSlot
 import com.allfolio.market.index.OverseasIndexCollectSummary
 import com.allfolio.market.index.OverseasSchedule
+import com.allfolio.market.rate.RateCollectSummary
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.format.annotation.DateTimeFormat
@@ -41,6 +43,7 @@ import java.time.LocalDate
 class SchedulerTriggerController(
     private val fxAdmin: FxRateAdminController,
     private val indexAdmin: MarketIndexAdminController,
+    private val rateAdmin: MarketRateAdminController,
     @Value("\${scheduler.trigger-token:}") private val configuredToken: String,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -153,6 +156,31 @@ class SchedulerTriggerController(
     ): ResponseEntity<BackfillSummary> {
         authorize(token)
         return fxAdmin.backfill(currency, from, to)
+    }
+
+    /**
+     * POST /api/internal/scheduler/rate — 금리 수집 트리거 (AF-102)
+     *
+     * **날짜를 노출하지 않는다.** [MarketRateAdminController.collect]가 null을 KST 오늘 기준
+     * 최근 2주로 해석한다. 워크플로가 날짜를 계산해 실어 보내면 러너의 UTC 시계가 그대로
+     * 데이터에 새겨지고, GitHub cron이 밀린 날 구간이 어긋난다.
+     *
+     * 백필 구간을 여기 노출하지 않는 이유: 초기 백필은 사람이 한 번 부르는 일회성 작업이고,
+     * 스케줄러가 할 수 있어야 하는 일이 아니다. 어드민 엔드포인트에 있다.
+     *
+     * 어드민 컨트롤러에 위임하는 이유는 위 트리거들과 같다 — 502(전량 실패)와 500(전 종목 0건 =
+     * 통계표·항목 코드가 틀렸다)의 구분이 Actions 로그를 읽는 사람에게 그대로 필요하다.
+     * 500에는 원인이 하나 더 있다: `market-rate.series`가 비면 요청 대상이 0건이라 역시 500이다.
+     * 이게 지금 이 PR의 상태이고, `collect-rate.yml`의 cron이 아직 주석인 이유다 — 켜 두면
+     * 설정이 채워질 때까지 매 평일 잡이 빨갛게 끝난다.
+     * **이 위임을 "정리"하지 말 것.**
+     */
+    @PostMapping("/rate")
+    fun collectRate(
+        @RequestHeader(name = TOKEN_HEADER, required = false) token: String?,
+    ): ResponseEntity<RateCollectSummary> {
+        authorize(token)
+        return rateAdmin.collect(null, null)
     }
 
     /**

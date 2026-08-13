@@ -69,9 +69,15 @@ class EcosStatisticSearchClientTest {
         EcosResponseParser(ObjectMapper()),
     ).apply { connector = dedicatedConnector() }
 
-    private fun call(port: Int) = client(port).fetchDailyRates(
-        "TEST-STAT-CODE", "TEST-ITEM-CODE", LocalDate.of(2026, 1, 2), LocalDate.of(2026, 3, 4),
+    private fun query(cycle: String = "D") = EcosQuery(
+        statCode = "TEST-STAT-CODE",
+        itemCode = "TEST-ITEM-CODE",
+        cycle = cycle,
+        valuePolicy = EcosValuePolicy.POSITIVE,
     )
+
+    private fun call(port: Int) =
+        client(port).fetch(query(), LocalDate.of(2026, 1, 2), LocalDate.of(2026, 3, 4))
 
     /** 예외 전체(메시지 + cause 체인 + suppressed + 모든 스택프레임)에 비밀이 없는지 본다. */
     private fun assertNoSecretAnywhere(t: Throwable) {
@@ -95,7 +101,7 @@ class EcosStatisticSearchClientTest {
             "/api/StatisticSearch/$apiKey/json/kr/1/100000/TEST-STAT-CODE/D/20260102/20260304/TEST-ITEM-CODE",
         )
         assertThat(result.rates).hasSize(1)
-        assertThat(result.rates[0].rateKrw).isEqualByComparingTo("1390.2")
+        assertThat(result.rates[0].value).isEqualByComparingTo("1390.2")
     }
 
     @Test
@@ -195,7 +201,7 @@ class EcosStatisticSearchClientTest {
         val client = client(port).apply { timeout = Duration.ofMillis(300) }
 
         val raw = catchThrowable {
-            client.fetchDailyRates("TEST-STAT-CODE", "TEST-ITEM-CODE", LocalDate.now(), LocalDate.now())
+            client.fetch(query(), LocalDate.now(), LocalDate.now())
         }
 
         assertThat(raw).isInstanceOf(EcosApiException::class.java)
@@ -216,7 +222,7 @@ class EcosStatisticSearchClientTest {
         val worker = Thread {
             started.countDown()
             try {
-                client.fetchDailyRates("TEST-STAT-CODE", "TEST-ITEM-CODE", LocalDate.now(), LocalDate.now())
+                client.fetch(query(), LocalDate.now(), LocalDate.now())
             } catch (e: Throwable) {
                 thrown.set(e)
             }
@@ -283,15 +289,52 @@ class EcosStatisticSearchClientTest {
         // IllegalArgumentException이면 GlobalExceptionHandler가 400을 내보낸다 — 서버 설정 누락은 클라이언트 잘못이 아니다.
         val noKey = EcosStatisticSearchClient(EcosProperties(), EcosResponseParser(ObjectMapper()))
 
-        assertThatThrownBy { noKey.fetchDailyRates("S", "I", LocalDate.now(), LocalDate.now()) }
+        assertThatThrownBy { noKey.fetch(query(), LocalDate.now(), LocalDate.now()) }
             .isInstanceOf(EcosApiException::class.java)
             .hasMessageContaining("NO_KEY")
 
         val noSeries = EcosStatisticSearchClient(
             EcosProperties(apiKey = apiKey), EcosResponseParser(ObjectMapper()),
         )
-        assertThatThrownBy { noSeries.fetchDailyRates("", "", LocalDate.now(), LocalDate.now()) }
+        assertThatThrownBy {
+            noSeries.fetch(query().copy(statCode = "", itemCode = ""), LocalDate.now(), LocalDate.now())
+        }
             .isInstanceOf(EcosApiException::class.java)
             .hasMessageContaining("NO_SERIES")
+    }
+
+    @Test
+    fun `D가 아닌 주기는 호출 전에 거부한다`() {
+        // 살아있는 포트를 쓴다 — 죽은 포트나 하드코딩된 번호로는 "거부돼서 요청이 안 갔다"와
+        // "요청이 갔는데 실패했다"를 구분 못 한다. hit로 실제 도달 여부를 본다.
+        val hit = AtomicBoolean(false)
+        val port = serve { ex -> hit.set(true); respond(ex, 200, "{}") }
+
+        val raw = catchThrowable { client(port).fetch(query("M"), LocalDate.now(), LocalDate.now()) }
+
+        assertThat(raw).isInstanceOf(EcosApiException::class.java)
+        val thrown = raw as EcosApiException
+        assertThat(thrown.code).isEqualTo("CYCLE") // GlobalExceptionHandler가 분기하는 키다
+        assertThat(thrown.detail).contains("주기")
+        assertThat(hit).isFalse() // 이게 "호출 전에"를 실제로 본다
+    }
+
+    @Test
+    fun `valuePolicy가 파서까지 실제로 전달된다`() {
+        // 이 테스트가 없으면 parser.parse(body, query.valuePolicy)를
+        // parser.parse(body, EcosValuePolicy.POSITIVE)로 되돌려도 스위트 전체가 그린이다 —
+        // 이 파일의 query()는 늘 POSITIVE를 쓰고, 값도 늘 양수라 둘을 구분할 수 없기 때문이다.
+        // 0은 POSITIVE에서는 걸러지고 PERCENT에서는 통과하는 값이라, 정책이 실제로 넘어갔는지를 가른다.
+        val port = serve { ex ->
+            respond(ex, 200, """{"StatisticSearch":{"row":[{"TIME":"20260102","DATA_VALUE":"0"}]}}""")
+        }
+
+        val result = client(port).fetch(
+            query().copy(valuePolicy = EcosValuePolicy.PERCENT),
+            LocalDate.of(2026, 1, 2), LocalDate.of(2026, 3, 4),
+        )
+
+        assertThat(result.rates).hasSize(1)
+        assertThat(result.skipped).isEqualTo(0)
     }
 }

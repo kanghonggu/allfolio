@@ -295,6 +295,17 @@ market-index:
     #   - SHANGHAI: "상해"는 CH#SHA/CH#SHB(A·B주)의 "상해A"·"상해B"에도 포함될 것이다.
     #   - STOXX50: "STOXX"는 마스터에 STOXX Europe 600 등 다른 STOXX 계열이 있다면 겹친다.
 
+# 금리 수집 대상 (AF-102)
+#
+# **비어 있는 것은 미완이지 실수가 아니다.** ECOS 통계표·항목 코드는 사이트에서 확인한 값만
+# 넣는다 — 추정한 코드는 오류가 아니라 0건을 돌려주고, 그러면 "코드가 틀렸는지 기간이 빈 건지"
+# 구분할 방법이 없다. 확인은 GET /api/admin/rate/ecos/tables 로 한다.
+#
+# 대상이 0건이면 수집 엔드포인트가 500을 낸다. 그래서 이 목록을 채우기 전에는
+# collect-rate.yml에 cron을 넣지 않는다.
+market-rate:
+  series: []
+
 # 암호화폐 거래소 WebSocket (국내)
 upbit:
   ws-enabled: ${UPBIT_WS_ENABLED:false}
