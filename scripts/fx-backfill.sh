@@ -34,6 +34,19 @@ CURRENCY="${3:-USD}"
 
 : "${ALLFOLIO_API:?ALLFOLIO_API 를 설정하세요 (예: https://allfolio-api.onrender.com)}"
 
+# 끝의 슬래시를 지운다. 남겨두면 아래 URL 조립이 "//api/..."가 되고,
+# Spring Security의 StrictHttpFirewall이 이중 슬래시를 거부해 **400**이 난다.
+# 본문에는 `{"status":400,"error":"Bad Request","path":"//api/admin/fx/backfill"}`만 남는데,
+# 아래 에러 범례는 400을 "요청이 잘못됨(통화·기간)"이라고 안내하므로 통화·기간·인증·ECOS 설정을
+# 뒤지게 된다. `path`의 슬래시 두 개를 알아채야만 원인에 닿는다(2026-08-13에 실제로 그랬다).
+#
+# **호스트를 받는 자리마다 따로 필요하다.** collect-fx.yml · collect-index.yml · fx-backfill.yml
+# 셋 다 같은 이유로 이미 이 처리를 하고 있다. 워크플로에서 부를 때는 그쪽이 미리 지워 주지만,
+# 사람이 손으로 export 해서 돌리는 (1) 경로는 여기가 유일한 방어선이다.
+while [ "${ALLFOLIO_API}" != "${ALLFOLIO_API%/}" ]; do
+  ALLFOLIO_API="${ALLFOLIO_API%/}"
+done
+
 # 경로와 인증 헤더를 여기서 한 번만 정한다. 아래 루프는 어느 모드인지 몰라도 된다.
 # `set -u` 아래라 미설정 변수를 그냥 참조하면 죽으므로 :- 로 받는다.
 if [[ -n "${ALLFOLIO_SCHEDULER_TOKEN:-}" ]]; then
