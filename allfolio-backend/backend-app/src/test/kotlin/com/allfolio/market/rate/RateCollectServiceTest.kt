@@ -82,6 +82,133 @@ class RateCollectServiceTest {
     }
 
     /**
+     * 저장이 통째로 터지면 갱신분도 수집 건수에 들어가면 안 된다.
+     *
+     * 세고 나서 저장하면 이 실행이 "collected=1, failed=1"로 보고된다 — 어드민은 collected가
+     * 0일 때만 502를 내므로 아무것도 안 들어간 잡이 초록으로 지나간다. 커넥션이 끊겨 전 종목이
+     * 같은 자리에서 터지는 날이 정확히 그 형태다.
+     */
+    @Test
+    fun `저장이 터지면 갱신분도 수집 건수에 넣지 않는다`() {
+        val repo = FakeRepo(saveFailure = IllegalStateException("커넥션이 끊겼습니다"))
+        repo.saved += entity("KTB_3Y", LocalDate.of(2026, 8, 12), "3.10")
+        val client = FakeClient(mapOf("S1" to listOf(obs("2026-08-12", "3.15"))))
+
+        val summary = service(client, repo, series("KTB_3Y", "S1")).collect(from, to, now)
+
+        assertThat(summary.collected).isZero()
+        assertThat(summary.updated).isZero()
+        assertThat(summary.unchanged).isZero()
+        assertThat(summary.inserted).isZero()
+        assertThat(summary.failed).isEqualTo(1)
+        assertThat(summary.failures.single()).contains("KTB_3Y")
+    }
+
+    /**
+     * 이미 있는 날짜가 한 응답에 두 번 오면 갱신 건수는 1이다. 마지막 값이 남는 동작은 옳지만
+     * 세는 쪽이 루프를 두 번 돌면 한 행을 두 건으로 보고한다 — 요약이 DB와 어긋난다.
+     */
+    @Test
+    fun `기존 행에 같은 날짜가 두 번 와도 갱신은 한 건이다`() {
+        val repo = FakeRepo()
+        repo.saved += entity("KTB_3Y", LocalDate.of(2026, 8, 12), "3.10")
+        val client = FakeClient(
+            mapOf("S1" to listOf(obs("2026-08-12", "3.15"), obs("2026-08-12", "3.20"))),
+        )
+
+        val summary = service(client, repo, series("KTB_3Y", "S1")).collect(from, to, now)
+
+        assertThat(summary.updated).isEqualTo(1)
+        assertThat(summary.unchanged).isZero()
+        assertThat(summary.collected).isEqualTo(1)
+        assertThat(repo.submitted).hasSize(1)
+        assertThat(repo.saved.single().rateValue).isEqualByComparingTo("3.20")
+    }
+
+    /**
+     * 다른 출처로 들어와 있던 행도 ECOS로 되돌린다. FRED가 후속으로 붙으면 같은 지표를
+     * 두 소스가 번갈아 채우게 되는데, 출처를 안 덮으면 정정된 값을 설명하려고 들여다볼
+     * 바로 그 필드가 거짓말을 한다.
+     */
+    @Test
+    fun `다른 출처로 들어와 있던 행의 출처를 ECOS로 덮는다`() {
+        val repo = FakeRepo()
+        repo.saved += entity("KTB_3Y", LocalDate.of(2026, 8, 12), "3.10", source = "FRED")
+        val client = FakeClient(mapOf("S1" to listOf(obs("2026-08-12", "3.15"))))
+
+        service(client, repo, series("KTB_3Y", "S1")).collect(from, to, now)
+
+        assertThat(repo.submitted.single().source).isEqualTo("ECOS")
+    }
+
+    /**
+     * 값이 그대로면 갱신이 아니라 무변동이다. 2주 창을 매일 재조회하므로 뭉쳐 세면 매 실행이
+     * updated≈60이 되고, 그중 하나뿐인 ECOS 정정이 동일값 재기록에 묻힌다 — 창을 둔 이유가 사라진다.
+     *
+     * 무변동 쪽 값의 스케일을 일부러 어긋나게 둔다. equals로 비교하면 3.10과 3.1000이 갈려서
+     * 매 실행 전건이 정정으로 보고된다.
+     */
+    @Test
+    fun `값이 그대로면 갱신이 아니라 무변동으로 센다`() {
+        val repo = FakeRepo()
+        repo.saved += entity("KTB_3Y", LocalDate.of(2026, 8, 11), "3.10")
+        repo.saved += entity("KTB_3Y", LocalDate.of(2026, 8, 12), "3.15")
+        val client = FakeClient(
+            mapOf("S1" to listOf(obs("2026-08-11", "3.1000"), obs("2026-08-12", "3.20"))),
+        )
+
+        val summary = service(client, repo, series("KTB_3Y", "S1")).collect(from, to, now)
+
+        assertThat(summary.unchanged).isEqualTo(1)
+        assertThat(summary.updated).isEqualTo(1)
+        assertThat(summary.collected).isEqualTo(2)
+        // 값이 같아도 저장은 한다 — collectedAt("언제 확인한 값인가")이 화면에 나간다
+        assertThat(repo.submitted).hasSize(2)
+        assertThat(repo.submitted.map { it.collectedAt }).allMatch { it == now }
+    }
+
+    /**
+     * 실패 사유는 잘라서 싣는다. 제약 위반 메시지는 SQL과 파라미터가 통째로 실린 여러 줄 덤프이고,
+     * 이 문자열이 어드민 JSON 응답과 GitHub Actions 주석에 그대로 나간다.
+     */
+    @Test
+    fun `실패 사유가 길면 잘라서 싣는다`() {
+        val client = FakeClient(
+            emptyMap(),
+            failing = mapOf("S1" to IllegalStateException("가".repeat(500))),
+        )
+
+        val summary = service(client, FakeRepo(), series("KTB_3Y", "S1")).collect(from, to, now)
+
+        assertThat(summary.failures.single()).hasSize("KTB_3Y: ".length + 200 + 1) // 200자 + 말줄임표
+    }
+
+    /**
+     * 인터럽트가 걸리면 남은 종목을 돌지 않는다. 종료 신호는 예외로 위장해 온다 —
+     * EcosApiClient가 플래그를 되살리고 EcosApiException으로 바꿔 던지므로 실패 catch가 삼킨다.
+     * 플래그를 안 보면 셧다운 중에 남은 종목을 끝까지 호출하며 가짜 실패만 쌓는다.
+     */
+    @Test
+    fun `인터럽트가 걸리면 남은 종목을 돌지 않는다`() {
+        val client = FakeClient(
+            mapOf("S2" to listOf(obs("2026-08-12", "3.40"))),
+            failing = mapOf("S1" to EcosApiException("IO", "ECOS 호출에 실패했습니다")),
+            interrupting = setOf("S1"),
+        )
+
+        try {
+            val summary = service(client, FakeRepo(), series("KTB_3Y", "S1"), series("KTB_10Y", "S2"))
+                .collect(from, to, now)
+
+            assertThat(client.queries).hasSize(1)
+            assertThat(summary.failed).isEqualTo(1)
+            assertThat(summary.collected).isZero()
+        } finally {
+            Thread.interrupted() // 플래그를 지워 다른 테스트로 새지 않게 한다
+        }
+    }
+
+    /**
      * 손대지 않은 기존 행까지 다시 저장하지 않는다. merge는 행마다 SELECT를 하나씩 내므로
      * 2주 창 x 6종목이면 헛도는 왕복이 그대로 Neon 커넥션 점유가 된다.
      */
@@ -165,6 +292,8 @@ class RateCollectServiceTest {
         assertThat(summary.emptySeries).containsExactly("BASE_RATE")
         assertThat(summary.failed).isZero()
         assertThat(summary.collected).isEqualTo(1)
+        // 빈 종목에는 saveAll을 걸지 않는다 — 빈 배치도 리포지토리 레벨 트랜잭션을 연다
+        assertThat(repo.saveCalls).isEqualTo(1)
     }
 
     @Test
@@ -204,25 +333,32 @@ class RateCollectServiceTest {
 
     private fun obs(date: String, value: String) = EcosObservation(LocalDate.parse(date), BigDecimal(value))
 
-    private fun entity(code: String, date: LocalDate, value: String) = MarketRateEntity(
+    private fun entity(code: String, date: LocalDate, value: String, source: String = "ECOS") = MarketRateEntity(
         id = java.util.UUID.randomUUID(),
         rateCode = code,
         quoteDate = date,
         rateValue = BigDecimal(value),
-        source = "ECOS",
+        source = source,
         collectedAt = LocalDateTime.of(2026, 8, 11, 18, 10),
     )
 
-    /** statCode로 응답을 가른다 — 종목마다 다른 결과를 주려면 그 축이 필요하다 */
+    /**
+     * statCode로 응답을 가른다 — 종목마다 다른 결과를 주려면 그 축이 필요하다.
+     *
+     * [interrupting]은 실 클라이언트가 종료 시 하는 짓을 흉내 낸다: 인터럽트 플래그를 되살린 채
+     * EcosApiException으로 바꿔 던진다.
+     */
     private class FakeClient(
         private val rows: Map<String, List<EcosObservation>>,
         private val failing: Map<String, RuntimeException> = emptyMap(),
         private val skipped: Map<String, Int> = emptyMap(),
+        private val interrupting: Set<String> = emptySet(),
     ) : EcosApiClient {
         val queries = mutableListOf<EcosQuery>()
 
         override fun fetch(query: EcosQuery, from: LocalDate, to: LocalDate): EcosParseResult {
             queries += query
+            if (query.statCode in interrupting) Thread.currentThread().interrupt()
             failing[query.statCode]?.let { throw it }
             return EcosParseResult(rows[query.statCode] ?: emptyList(), skipped[query.statCode] ?: 0)
         }
@@ -234,15 +370,22 @@ class RateCollectServiceTest {
      *
      * [submitted]는 `saveAll`에 실제로 건네진 것만 모은다. [saved]는 갱신을 제자리에서 받으므로
      * 저장을 안 걸어도 값이 맞아 보이기 때문이다 — 운영에선 detached 엔티티라 그러면 유실된다.
+     *
+     * [saveCalls]는 호출 횟수를 센다 — 빈 배치는 [submitted]에 아무 흔적도 안 남기므로
+     * "빈 종목에 saveAll을 걸지 않는다"는 이 축으로만 볼 수 있다.
+     * [saveFailure]는 Neon 커넥션이 끊긴 상황을 흉내 낸다.
      */
-    private class FakeRepo : RateCollectService.Store {
+    private class FakeRepo(private val saveFailure: RuntimeException? = null) : RateCollectService.Store {
         val saved = mutableListOf<MarketRateEntity>()
         val submitted = mutableListOf<MarketRateEntity>()
+        var saveCalls = 0
 
         override fun findRange(rateCode: String, from: LocalDate, to: LocalDate): List<MarketRateEntity> =
             saved.filter { it.rateCode == rateCode && it.quoteDate >= from && it.quoteDate <= to }
 
         override fun saveAll(entities: List<MarketRateEntity>) {
+            saveCalls++
+            saveFailure?.let { throw it }
             submitted += entities
             entities.forEach { entity ->
                 if (saved.none { it.rateCode == entity.rateCode && it.quoteDate == entity.quoteDate }) {
