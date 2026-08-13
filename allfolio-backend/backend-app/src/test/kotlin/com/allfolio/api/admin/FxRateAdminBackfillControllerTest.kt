@@ -9,6 +9,7 @@ import com.allfolio.config.SecurityConfig
 import com.allfolio.config.SseTokenFilter
 import com.allfolio.fx.BackfillSummary
 import com.allfolio.fx.EcosApiException
+import com.allfolio.fx.CashFlowRecomputeService
 import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
 import com.allfolio.fx.hana.HanaFxCollectService
@@ -65,6 +66,9 @@ class FxRateAdminBackfillControllerTest {
 
     // 백필만 보는 테스트라 호출되지 않는다. FxRateAdminController가 요구하므로 자리만 채운다.
     @MockBean private lateinit var hanaCollectService: HanaFxCollectService
+
+    // 재계산 엔드포인트가 생기며 컨트롤러가 요구하게 됐다. 이 테스트에서는 불리지 않는다.
+    @MockBean private lateinit var recomputeService: CashFlowRecomputeService
 
     private val from: LocalDate = LocalDate.of(2020, 1, 1)
     private val to: LocalDate = LocalDate.of(2020, 1, 31)

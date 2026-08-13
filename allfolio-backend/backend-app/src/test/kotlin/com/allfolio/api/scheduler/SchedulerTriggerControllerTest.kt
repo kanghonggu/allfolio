@@ -4,6 +4,7 @@ import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.config.GlobalExceptionHandler
 import com.allfolio.fx.BackfillSummary
+import com.allfolio.fx.CashFlowRecomputeService
 import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
 import com.allfolio.fx.hana.HanaCollectSummary
@@ -155,6 +156,7 @@ class SchedulerTriggerControllerTest {
             mock(FxRateService::class.java),
             mock(FxRateBackfillService::class.java),
             collectService,
+            mock(CashFlowRecomputeService::class.java),
         )
 
         MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, "secret"))
@@ -494,6 +496,7 @@ class SchedulerTriggerControllerTest {
             mock(FxRateService::class.java),
             backfillService,
             mock(HanaFxCollectService::class.java),
+            mock(CashFlowRecomputeService::class.java),
         )
 
         MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, "secret"))

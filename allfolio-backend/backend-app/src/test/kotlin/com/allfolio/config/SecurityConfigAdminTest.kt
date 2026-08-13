@@ -10,6 +10,7 @@ import com.allfolio.auth.UserEntity
 import com.allfolio.auth.UserRole
 import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
+import com.allfolio.fx.CashFlowRecomputeService
 import com.allfolio.fx.hana.HanaFxCollectService
 import org.springframework.boot.test.mock.mockito.MockBean
 import org.junit.jupiter.api.Test
@@ -56,6 +57,9 @@ class SecurityConfigAdminTest {
 
     @MockBean
     private lateinit var hanaFxCollectService: HanaFxCollectService
+
+    @MockBean
+    private lateinit var cashFlowRecomputeService: CashFlowRecomputeService
 
     // 같은 이유로 자리만 채운다 — SchedulerTriggerController가 MarketIndexAdminController를,
     // 그쪽이 이 둘을 요구한다 (AF-101).

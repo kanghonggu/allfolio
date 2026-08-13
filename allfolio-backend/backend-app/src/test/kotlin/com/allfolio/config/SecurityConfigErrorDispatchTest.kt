@@ -5,6 +5,7 @@ import com.allfolio.auth.JwtTokenService
 import com.allfolio.auth.UserEntity
 import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
+import com.allfolio.fx.CashFlowRecomputeService
 import com.allfolio.fx.hana.HanaFxCollectService
 import org.springframework.boot.test.mock.mockito.MockBean
 import org.assertj.core.api.Assertions.assertThat
@@ -54,6 +55,9 @@ class SecurityConfigErrorDispatchTest {
 
     @MockBean
     private lateinit var hanaFxCollectService: HanaFxCollectService
+
+    @MockBean
+    private lateinit var cashFlowRecomputeService: CashFlowRecomputeService
 
     @Autowired
     private lateinit var restTemplate: TestRestTemplate
