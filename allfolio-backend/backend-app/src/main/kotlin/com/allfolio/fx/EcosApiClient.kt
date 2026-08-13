@@ -25,7 +25,10 @@ data class EcosQuery(
     val valuePolicy: EcosValuePolicy,
 ) {
     companion object {
-        /** 현재 유일하게 지원하는 주기. [EcosHistoricalRateSource]와 클라이언트가 같이 참조한다 — 리터럴 중복 방지. */
+        /**
+         * 현재 유일하게 지원하는 주기. [EcosHistoricalRateSource]·클라이언트(이 파일)·
+         * `MarketRateProperties`(`market-rate` 모듈)가 같이 참조한다 — 리터럴 중복 방지.
+         */
         internal const val DAILY_CYCLE = "D"
     }
 }
