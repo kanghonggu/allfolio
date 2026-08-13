@@ -255,6 +255,31 @@ market-index:
     - code: KRX300
       kis-iscd: "4300"
 
+  # 해외 지수 — AF-110. 코드는 KIS 마스터(frgn_code.mst)에서 1차 확인했다.
+  # nameContains는 장식이 아니다 — 틀린 코드는 가드를 통과해 그럴듯한 숫자로 저장되므로
+  # KIS가 돌려준 hts_kor_isnm과 대조하는 것이 유일한 방어다.
+  # ✅ 실측 확인: SPX · .DJI · HK#HS. 나머지 여섯은 마스터에서 읽었을 뿐이므로
+  #    배포 후 raw-overseas로 hts_kor_isnm을 대조할 것.
+  overseas:
+    - { code: SPX,       kis-iscd: "SPX",       zone-id: America/New_York, schedule: US,   name-contains: "S&P500" }
+    - { code: NASDAQ,    kis-iscd: "COMP",      zone-id: America/New_York, schedule: US,   name-contains: "나스닥" }
+    # 다우존스(.DJI)는 옆에 .DJT(운송)·.DJU(유틸리티)가 붙어 있다 — 한 글자 차이.
+    - { code: DOW,       kis-iscd: ".DJI",      zone-id: America/New_York, schedule: US,   name-contains: "다우존스" }
+    - { code: NASDAQ100, kis-iscd: "NDX",       zone-id: America/New_York, schedule: US,   name-contains: "나스닥" }
+    - { code: VIX,       kis-iscd: "VIX",       zone-id: America/New_York, schedule: US,   name-contains: "VIX" }
+    # STOXX50의 schedule이 US인 것은 오타가 아니다. 마감이 15:30 UTC라 아시아 슬롯(08:30 UTC)보다
+    # 7시간 늦다 — 거기 두면 늘 전일 종가를 받는다. 미국 슬롯(21:30 UTC)이 마감 6시간 후다.
+    # zone-id는 여전히 유럽이다(진행 중인 봉 판별용, 수집 시각과는 별개).
+    - { code: STOXX50,   kis-iscd: "SX5E",      zone-id: Europe/Berlin,    schedule: US,   name-contains: "STOXX" }
+    - { code: NIKKEI225, kis-iscd: "JP#NI225",  zone-id: Asia/Tokyo,       schedule: ASIA, name-contains: "니케이" }
+    # 항셍 옆에 HSCE(홍콩H)·HK#HSSI(소형주)가 붙어 있다 — 코드가 아니라 이름으로 잡는다.
+    - { code: HANGSENG,  kis-iscd: "HK#HS",     zone-id: Asia/Hong_Kong,   schedule: ASIA, name-contains: "항셍" }
+    # 상해(SHANG) 옆에 CH#SHA/CH#SHB(A·B주)가 붙어 있다.
+    - { code: SHANGHAI,  kis-iscd: "SHANG",     zone-id: Asia/Shanghai,    schedule: ASIA, name-contains: "상해" }
+    # NASDAQ·NASDAQ100의 name-contains가 둘 다 "나스닥"인 것은 약한 검사다. 마스터의 한글명은
+    # 각각 "나스닥 종합"·"나스닥 100"이지만 KIS 응답의 hts_kor_isnm이 마스터와 같은 문자열인지는
+    # 실측으로 확인되지 않았다. 배포 후 대조해 좁힐 것.
+
 # 암호화폐 거래소 WebSocket (국내)
 upbit:
   ws-enabled: ${UPBIT_WS_ENABLED:false}
