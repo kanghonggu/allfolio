@@ -94,6 +94,27 @@ class MarketIndexPropertiesTest {
             .allMatch { it == "US" || it == "ASIA" }
     }
 
+    /**
+     * yml의 `schedule` 문자열과 [OverseasSchedule] 상수가 **양방향으로** 맞물리는지 (AF-110).
+     *
+     * 컨트롤러는 이 enum으로 요청을 받고 `schedule.name`을 서비스에 넘기므로, 둘이 어긋나면
+     * 어느 쪽으로든 조용히 망가진다:
+     * - yml에만 있는 값(`EU` 같은 슬롯 신설)은 그 지수들을 **부를 방법이 없다** — enum에 없어
+     *   URL로 요청하면 400이고, 아무 cron도 그 묶음에 닿지 않는다. 실패가 아니라 침묵이다.
+     * - enum에만 있는 상수는 그 슬롯 cron이 매번 `requested == 0` → 500으로 잡을 빨갛게 만든다.
+     *
+     * 위 테스트가 문자열 리터럴로 한쪽만 보므로, 대응 관계는 여기서 못 박는다.
+     */
+    @Test
+    fun `모든 schedule 값이 OverseasSchedule 상수와 일대일로 맞물린다`() {
+        val configured = properties.overseas.map { it.schedule }.toSet()
+        val constants = OverseasSchedule.entries.map { it.name }.toSet()
+
+        assertThat(configured)
+            .describedAs("yml에만 있는 슬롯은 어떤 cron도 부를 수 없다")
+            .isEqualTo(constants)
+    }
+
     // 유로스톡스는 유럽 타임존이지만 미국 슬롯에 실린다 — 마감(계절에 따라 15:30~16:30 UTC)이
     // 아시아 슬롯(08:30 UTC)보다 7~8시간 늦어서다. 자세한 근거는 application.yml의 주석에 있다.
     // 이걸 "고쳐서" ASIA로 옮기면 화면이 늘 하루 뒤처진다.
