@@ -165,7 +165,9 @@ class EcosStatisticSearchClient(
         // 파서는 JSON 모양이 어긋난 경우만 EcosApiException으로 보고한다.
         // 본문이 아예 JSON이 아니면(HTML 오류 페이지 등) Jackson 예외가 그대로 새므로 여기서 감싼다.
         return try {
-            parser.parse(body)
+            // TODO(AF-102 Task 2): EcosQuery가 생기면 query.valuePolicy로 교체한다.
+            // 지금은 이 클라이언트의 유일한 호출자가 환율이라 POSITIVE로 고정해 둔다.
+            parser.parse(body, EcosValuePolicy.POSITIVE)
         } catch (e: EcosApiException) {
             // 파서는 RESULT.MESSAGE를 그대로 detail에 넣는다. 그건 서버가 준 문자열이라
             // 우리 요청 URI가 되울려 올 수 있고 길이 제한도 없다 — 본문 미리보기와 똑같은 경로다.

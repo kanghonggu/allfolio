@@ -19,16 +19,16 @@ class EcosResponseParserTest {
             ]}}
         """.trimIndent()
 
-        val result = parser.parse(json)
+        val result = parser.parse(json, EcosValuePolicy.POSITIVE)
 
         assertThat(result.rates).hasSize(2)
         assertThat(result.rates[0].baseDate).isEqualTo(LocalDate.of(2025, 8, 8))
-        assertThat(result.rates[0].rateKrw).isEqualByComparingTo("1385.5")
+        assertThat(result.rates[0].value).isEqualByComparingTo("1385.5")
         assertThat(result.skipped).isZero()
     }
 
     @Test
-    fun `값이 비었거나 0 이하인 행은 건너뛰고 센다`() {
+    fun `환율 정책은 값이 비었거나 0 이하인 행을 건너뛰고 센다`() {
         val json = """
             {"StatisticSearch":{"list_total_count":4,"row":[
               {"TIME":"20250808","DATA_VALUE":"1385.5"},
@@ -38,10 +38,38 @@ class EcosResponseParserTest {
             ]}}
         """.trimIndent()
 
-        val result = parser.parse(json)
+        val result = parser.parse(json, EcosValuePolicy.POSITIVE)
 
         assertThat(result.rates).hasSize(1)
         assertThat(result.skipped).isEqualTo(3)
+    }
+
+    /**
+     * 금리는 0.00%로 공표될 수 있고 마이너스 금리도 실재한다.
+     * 환율 정책을 그대로 쓰면 그 날이 통째로 사라지는데, 예외도 안 나고 경고 로그만 남는다.
+     */
+    @Test
+    fun `금리 정책은 0과 마이너스를 살리고 단위 오인만 거른다`() {
+        val json = """
+            {"StatisticSearch":{"list_total_count":5,"row":[
+              {"TIME":"20250808","DATA_VALUE":"3.5"},
+              {"TIME":"20250809","DATA_VALUE":"0"},
+              {"TIME":"20250810","DATA_VALUE":"-0.25"},
+              {"TIME":"20250811","DATA_VALUE":"100.0001"},
+              {"TIME":"20250812","DATA_VALUE":""}
+            ]}}
+        """.trimIndent()
+
+        val result = parser.parse(json, EcosValuePolicy.PERCENT)
+
+        assertThat(result.rates.map { it.value })
+            .usingElementComparator(java.math.BigDecimal::compareTo)
+            .containsExactly(
+                java.math.BigDecimal("3.5"),
+                java.math.BigDecimal("0"),
+                java.math.BigDecimal("-0.25"),
+            )
+        assertThat(result.skipped).isEqualTo(2)
     }
 
     @Test
@@ -53,7 +81,7 @@ class EcosResponseParserTest {
             ]}}
         """.trimIndent()
 
-        val result = parser.parse(json)
+        val result = parser.parse(json, EcosValuePolicy.POSITIVE)
 
         assertThat(result.rates).hasSize(1)
         assertThat(result.skipped).isEqualTo(1)
@@ -63,7 +91,7 @@ class EcosResponseParserTest {
     fun `ECOS 에러 응답은 예외로 올린다`() {
         val json = """{"RESULT":{"CODE":"INFO-200","MESSAGE":"해당하는 데이터가 없습니다."}}"""
 
-        assertThatThrownBy { parser.parse(json) }
+        assertThatThrownBy { parser.parse(json, EcosValuePolicy.POSITIVE) }
             .isInstanceOf(EcosApiException::class.java)
             .hasMessageContaining("INFO-200")
             .satisfies({ ex -> assertThat((ex as EcosApiException).code).isEqualTo("INFO-200") })
@@ -73,20 +101,20 @@ class EcosResponseParserTest {
     fun `RESULT에 CODE가 없으면 빈 code로 예외를 올린다`() {
         val json = """{"RESULT":{"MESSAGE":"코드 없는 오류"}}"""
 
-        assertThatThrownBy { parser.parse(json) }
+        assertThatThrownBy { parser.parse(json, EcosValuePolicy.POSITIVE) }
             .isInstanceOf(EcosApiException::class.java)
             .satisfies({ ex -> assertThat((ex as EcosApiException).code).isEmpty() })
     }
 
     @Test
     fun `예상 밖 형식은 예외로 올린다`() {
-        assertThatThrownBy { parser.parse("""{"something":"else"}""") }
+        assertThatThrownBy { parser.parse("""{"something":"else"}""", EcosValuePolicy.POSITIVE) }
             .isInstanceOf(EcosApiException::class.java)
     }
 
     @Test
     fun `행이 0건이면 빈 결과를 준다`() {
-        val result = parser.parse("""{"StatisticSearch":{"list_total_count":0,"row":[]}}""")
+        val result = parser.parse("""{"StatisticSearch":{"list_total_count":0,"row":[]}}""", EcosValuePolicy.POSITIVE)
 
         assertThat(result.rates).isEmpty()
     }
@@ -100,7 +128,7 @@ class EcosResponseParserTest {
             ]}}
         """.trimIndent()
 
-        val result = parser.parse(json)
+        val result = parser.parse(json, EcosValuePolicy.POSITIVE)
 
         assertThat(result.rates).isEmpty()
         assertThat(result.skipped).isEqualTo(2)
@@ -115,7 +143,7 @@ class EcosResponseParserTest {
             ]}}
         """.trimIndent()
 
-        val result = parser.parse(json)
+        val result = parser.parse(json, EcosValuePolicy.POSITIVE)
 
         assertThat(result.rates).hasSize(2)
         assertThat(result.rates.map { it.baseDate }).containsExactly(

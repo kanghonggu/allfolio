@@ -53,7 +53,7 @@ class EcosHistoricalRateSource(
 
         // 고시 단위를 1단위로 되돌린다 — JPY 100엔 고시가 그대로 들어가면 100배가 된다
         val rates = result.rates.map {
-            DailyRate(it.baseDate, it.rateKrw.divide(series.unitDivisor, SCALE, RoundingMode.HALF_UP))
+            DailyRate(it.baseDate, it.value.divide(series.unitDivisor, SCALE, RoundingMode.HALF_UP))
         }
         return SourceFetch(rates, result.skipped)
     }

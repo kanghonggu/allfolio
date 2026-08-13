@@ -93,7 +93,7 @@ class EcosStatisticSearchClientTest {
             "/api/StatisticSearch/$apiKey/json/kr/1/100000/TEST-STAT-CODE/D/20260102/20260304/TEST-ITEM-CODE",
         )
         assertThat(result.rates).hasSize(1)
-        assertThat(result.rates[0].rateKrw).isEqualByComparingTo("1390.2")
+        assertThat(result.rates[0].value).isEqualByComparingTo("1390.2")
     }
 
     @Test

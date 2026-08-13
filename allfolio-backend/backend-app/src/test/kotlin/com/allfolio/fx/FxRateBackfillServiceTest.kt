@@ -31,8 +31,8 @@ class FxRateBackfillServiceTest {
         val client = FakeClient(
             EcosParseResult(
                 listOf(
-                    EcosRate(LocalDate.of(2025, 8, 7), BigDecimal("1380.0")),
-                    EcosRate(LocalDate.of(2025, 8, 8), BigDecimal("1385.5")),
+                    EcosObservation(LocalDate.of(2025, 8, 7), BigDecimal("1380.0")),
+                    EcosObservation(LocalDate.of(2025, 8, 8), BigDecimal("1385.5")),
                 ),
                 skipped = 1,
             ),
@@ -72,7 +72,7 @@ class FxRateBackfillServiceTest {
         val existing = row(LocalDate.of(2025, 8, 7), "1111.0")
         val repo = FakeRepo(existing)
         val client = FakeClient(
-            EcosParseResult(listOf(EcosRate(LocalDate.of(2025, 8, 7), BigDecimal("1380.0"))), 0),
+            EcosParseResult(listOf(EcosObservation(LocalDate.of(2025, 8, 7), BigDecimal("1380.0"))), 0),
         )
 
         service(client, repo).backfill("USD", from, to)
@@ -90,7 +90,7 @@ class FxRateBackfillServiceTest {
             series = mapOf("JPY" to EcosProperties.Series("STAT", "ITEM", BigDecimal("100"))),
         )
         val client = FakeClient(
-            EcosParseResult(listOf(EcosRate(LocalDate.of(2025, 8, 7), BigDecimal("950.0"))), 0),
+            EcosParseResult(listOf(EcosObservation(LocalDate.of(2025, 8, 7), BigDecimal("950.0"))), 0),
         )
 
         service(client, repo, jpyProperties).backfill("JPY", from, to)
@@ -133,7 +133,7 @@ class FxRateBackfillServiceTest {
             series = mapOf("usd" to EcosProperties.Series("LOWER-STAT", "LOWER-ITEM", BigDecimal.ONE)),
         )
         val client = FakeClient(
-            EcosParseResult(listOf(EcosRate(LocalDate.of(2025, 8, 7), BigDecimal("1380.0"))), 0),
+            EcosParseResult(listOf(EcosObservation(LocalDate.of(2025, 8, 7), BigDecimal("1380.0"))), 0),
         )
 
         val summary = service(client, repo, lowerCaseProperties).backfill("USD", from, to)
@@ -152,9 +152,9 @@ class FxRateBackfillServiceTest {
         val client = FakeClient(
             EcosParseResult(
                 listOf(
-                    EcosRate(LocalDate.of(2025, 8, 7), BigDecimal("1380.0")),
-                    EcosRate(LocalDate.of(2025, 8, 7), BigDecimal("1390.0")),
-                    EcosRate(LocalDate.of(2025, 8, 8), BigDecimal("1385.5")),
+                    EcosObservation(LocalDate.of(2025, 8, 7), BigDecimal("1380.0")),
+                    EcosObservation(LocalDate.of(2025, 8, 7), BigDecimal("1390.0")),
+                    EcosObservation(LocalDate.of(2025, 8, 8), BigDecimal("1385.5")),
                 ),
                 skipped = 0,
             ),
@@ -179,9 +179,9 @@ class FxRateBackfillServiceTest {
         val client = FakeClient(
             EcosParseResult(
                 listOf(
-                    EcosRate(LocalDate.of(2025, 8, 7), BigDecimal("1380.0")),
-                    EcosRate(LocalDate.of(2025, 8, 20), BigDecimal("1401.0")),
-                    EcosRate(LocalDate.of(2025, 8, 1), BigDecimal("1370.0")),
+                    EcosObservation(LocalDate.of(2025, 8, 7), BigDecimal("1380.0")),
+                    EcosObservation(LocalDate.of(2025, 8, 20), BigDecimal("1401.0")),
+                    EcosObservation(LocalDate.of(2025, 8, 1), BigDecimal("1370.0")),
                 ),
                 skipped = 0,
             ),
@@ -204,7 +204,7 @@ class FxRateBackfillServiceTest {
         // "왜 실패했는지 안 보이는 예외"가 된다.
         val repo = FakeRepo()
         val client = FakeClient(
-            EcosParseResult(listOf(EcosRate(LocalDate.of(2025, 8, 20), BigDecimal("1400.0"))), 0),
+            EcosParseResult(listOf(EcosObservation(LocalDate.of(2025, 8, 20), BigDecimal("1400.0"))), 0),
         )
 
         assertThatThrownBy { service(client, repo).backfill("USD", from, to) }
@@ -224,10 +224,10 @@ class FxRateBackfillServiceTest {
         val client = FakeClient(
             EcosParseResult(
                 listOf(
-                    EcosRate(LocalDate.of(2025, 8, 7), BigDecimal("1380.0")),
+                    EcosObservation(LocalDate.of(2025, 8, 7), BigDecimal("1380.0")),
                     // 스케일만 다르고 값은 같다 — 정규화를 거치면 무변화다
-                    EcosRate(LocalDate.of(2025, 8, 8), BigDecimal("1385.50")),
-                    EcosRate(LocalDate.of(2025, 8, 11), BigDecimal("1390.2")),
+                    EcosObservation(LocalDate.of(2025, 8, 8), BigDecimal("1385.50")),
+                    EcosObservation(LocalDate.of(2025, 8, 11), BigDecimal("1390.2")),
                 ),
                 skipped = 2,
             ),
@@ -250,9 +250,9 @@ class FxRateBackfillServiceTest {
         val client = FakeClient(
             EcosParseResult(
                 listOf(
-                    EcosRate(LocalDate.of(2025, 8, 7), BigDecimal("1380.0")),
-                    EcosRate(LocalDate.of(2025, 8, 7), BigDecimal("1381.0")),
-                    EcosRate(LocalDate.of(2025, 8, 20), BigDecimal("1400.0")),
+                    EcosObservation(LocalDate.of(2025, 8, 7), BigDecimal("1380.0")),
+                    EcosObservation(LocalDate.of(2025, 8, 7), BigDecimal("1381.0")),
+                    EcosObservation(LocalDate.of(2025, 8, 20), BigDecimal("1400.0")),
                 ),
                 skipped = 3,
             ),
@@ -273,7 +273,7 @@ class FxRateBackfillServiceTest {
         val untouched = row(LocalDate.of(2025, 8, 8), "1385.5")
         val repo = FakeRepo(untouched)
         val client = FakeClient(
-            EcosParseResult(listOf(EcosRate(LocalDate.of(2025, 8, 7), BigDecimal("1380.0"))), 0),
+            EcosParseResult(listOf(EcosObservation(LocalDate.of(2025, 8, 7), BigDecimal("1380.0"))), 0),
         )
 
         val summary = service(client, repo).backfill("USD", from, to)
@@ -293,7 +293,7 @@ class FxRateBackfillServiceTest {
         val hana = row(LocalDate.of(2025, 8, 7), "1111.0", source = "HANA")
         val repo = FakeRepo(hana)
         val client = FakeClient(
-            EcosParseResult(listOf(EcosRate(LocalDate.of(2025, 8, 7), BigDecimal("1380.0"))), 0),
+            EcosParseResult(listOf(EcosObservation(LocalDate.of(2025, 8, 7), BigDecimal("1380.0"))), 0),
         )
 
         service(client, repo).backfill("USD", from, to)
@@ -310,7 +310,7 @@ class FxRateBackfillServiceTest {
         // 키 없이 먼저 배포하고 나중에 API로 백필하는 계획이라 실제로 벌어지는 경로다.
         val repo = FakeRepo(row(from, "1111.0"))
         val converter = adapter(repo)
-        val client = FakeClient(EcosParseResult(listOf(EcosRate(from, BigDecimal("1380.0"))), 0))
+        val client = FakeClient(EcosParseResult(listOf(EcosObservation(from, BigDecimal("1380.0"))), 0))
 
         val beforeBackfill = converter.toKrwOn(BigDecimal("1"), "USD", from)
         service(client, repo, converter = converter).backfill("USD", from, to)
