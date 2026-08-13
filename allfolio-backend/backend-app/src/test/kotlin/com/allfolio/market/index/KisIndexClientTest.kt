@@ -4,6 +4,7 @@ import com.allfolio.broker.kis.KisApiClient
 import com.allfolio.broker.kis.KisApiException
 import com.allfolio.broker.kis.KisProperties
 import com.allfolio.broker.kis.KisTokenResponse
+import com.allfolio.test.dedicatedConnector
 import com.sun.net.httpserver.HttpServer
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -48,7 +49,7 @@ class KisIndexClientTest {
         // 2026-08-13 운영 장애 그대로: 지수마다 발급하면 KIS가 분당 1회 제한으로 2번째부터
         // 403을 준다. 세 지수가 한 토큰을 나눠 쓰는지를 여기서 붙잡는다.
         val issuer = issuer(token("T1", expiresIn = 86_400))
-        val client = KisIndexClient(properties(), issuer)
+        val client = indexClient(properties(), issuer)
 
         assertThat(client.fetchRaw("0001")).containsEntry("bstp_nmix_prpr", "6579.04")
         assertThat(client.fetchRaw("1001")).containsEntry("bstp_nmix_prpr", "6579.04")
@@ -62,7 +63,7 @@ class KisIndexClientTest {
         // expires_in이 안전 여유(60초)보다 짧으면 캐시는 이미 만료된 상태로 들어간다.
         // 24시간을 상수로 박아둔 구현이라면 여기서 T1을 계속 재사용해 죽은 토큰을 내준다.
         val issuer = issuer(token("T1", expiresIn = 30), token("T2", expiresIn = 30))
-        val client = KisIndexClient(properties(), issuer)
+        val client = indexClient(properties(), issuer)
 
         client.fetchRaw("0001")
         client.fetchRaw("1001")
@@ -76,7 +77,7 @@ class KisIndexClientTest {
         // 0은 "24시간"이 아니라 "모른다"다. 모르는 값을 길게 잡으면 죽은 토큰을 오래 쓰게 되고,
         // 아예 캐시를 접으면 그 순간 원래 장애로 돌아간다 — 짧게 잡고 재사용한다.
         val issuer = issuer(token("T1", expiresIn = 0))
-        val client = KisIndexClient(properties(), issuer)
+        val client = indexClient(properties(), issuer)
 
         client.fetchRaw("0001")
         client.fetchRaw("1001")
@@ -92,7 +93,7 @@ class KisIndexClientTest {
             { throw KisApiException("403 Forbidden from POST /oauth2/tokenP") },
             { token("T2", expiresIn = 86_400) },
         )
-        val client = KisIndexClient(properties(), issuer)
+        val client = indexClient(properties(), issuer)
 
         // 발급 예외는 감싸지 않고 그대로 올라간다 — IndexCollectService가 그 메시지를
         // failures에 담아야 운영에서 원인(403)이 보인다.
@@ -110,7 +111,7 @@ class KisIndexClientTest {
     @Test
     fun `인증 정보가 없으면 토큰을 발급하지도 않는다`() {
         val issuer = issuer(token("T1", expiresIn = 86_400))
-        val client = KisIndexClient(KisProperties().apply { baseUrl = kis.baseUrl }, issuer)
+        val client = indexClient(KisProperties().apply { baseUrl = kis.baseUrl }, issuer)
 
         assertThatThrownBy { client.fetchRaw("0001") }
             .isInstanceOf(KisIndexException::class.java)
@@ -120,6 +121,10 @@ class KisIndexClientTest {
     }
 
     // ── helpers ──────────────────────────────────────────────────
+
+    /** 커넥터를 [dedicatedConnector]로 두는 이유는 그쪽 주석에 있다 — 빼면 간헐적으로 깨진다. */
+    private fun indexClient(properties: KisProperties, issuer: KisApiClient) =
+        KisIndexClient(properties, issuer).apply { connector = dedicatedConnector() }
 
     private fun properties() = KisProperties().apply {
         appKey = "key"

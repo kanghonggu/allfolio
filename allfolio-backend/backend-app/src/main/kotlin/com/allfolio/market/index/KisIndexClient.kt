@@ -3,10 +3,13 @@ package com.allfolio.market.index
 import com.allfolio.broker.kis.KisApiClient
 import com.allfolio.broker.kis.KisProperties
 import org.springframework.http.MediaType
+import org.springframework.http.client.reactive.ClientHttpConnector
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.bodyToMono
 import java.time.Duration
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicReference
 
 /** KIS 지수 응답을 신뢰할 수 없을 때. AF-99의 HanaFxParseException과 같은 뜻 — "응답이 이상하다" */
@@ -26,10 +29,28 @@ class KisIndexClient(
     private val kisProperties: KisProperties,
     private val kisApiClient: KisApiClient,
 ) {
-    private val webClient = WebClient.builder()
-        .baseUrl(kisProperties.baseUrl)
-        .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
-        .build()
+    /**
+     * `by lazy`인 이유는 아래 [connector] 때문이다 — 테스트가 생성 직후에 커넥터를 끼울 수
+     * 있어야 해서 첫 호출까지 조립을 미룬다. 운영 동작은 그대로다(빈 생성 시점에 만들든
+     * 첫 호출에 만들든 소켓을 열지 않는다).
+     */
+    private val webClient: WebClient by lazy {
+        WebClient.builder()
+            .baseUrl(kisProperties.baseUrl)
+            .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+            .also { builder -> connector?.let(builder::clientConnector) }
+            .build()
+    }
+
+    /**
+     * HTTP 커넥터. **운영은 null로 두고 기본값(reactor-netty 전역 커넥션 풀)을 쓴다.**
+     * 테스트만 전용 커넥터를 넣어 전역 풀을 공유하지 않게 한다 — `dedicatedConnector` 주석 참조.
+     *
+     * 생성자 인자가 아닌 이유: 이 클래스는 `@Component`라 생성자 인자를 두면 스프링이 자동
+     * 주입 대상으로 본다. `ClientHttpConnector`는 Spring Boot가 빈으로 등록해 두는 타입이라
+     * 기본값이 null이어도 **운영에서 그 빈이 주입돼** 동작이 바뀐다.
+     */
+    internal var connector: ClientHttpConnector? = null
 
     /**
      * 발급받은 access_token. Pair는 (만료 epoch millis, 토큰)이고, AF-99의
@@ -108,8 +129,89 @@ class KisIndexClient(
         return output
     }
 
+    /**
+     * 해외 지수 일별 시세의 **응답 전체**를 그대로 돌려준다 (AF-110).
+     *
+     * 엔드포인트·tr_id는 KIS 공식 샘플에서 확인했다:
+     * `examples_llm/overseas_stock/inquire_daily_chartprice`
+     *
+     * **일부러 파싱하지 않는다.** 이 응답은 `output1`과 `output2` 두 갈래로 오는데,
+     * 최신 봉이 어느 쪽에 실리는지, 각 갈래가 어떤 필드를 담는지가 확정되지 않았다.
+     * AF-101(국내 지수)에서 등락률의 단위(`1.23`인지 `0.0123`인지)와 부호 규약을 맞힌 이유는
+     * 똑똑해서가 아니라 **파서를 쓰기 전에 원본 응답 한 건을 눈으로 봤기 때문**이다.
+     * 추측으로 필드를 고르면 그 추측 위에 테스트까지 쌓여 틀린 값이 그럴듯하게 굳는다.
+     * 그래서 여기서는 한쪽을 고르지도, 펼치지도, 이름을 바꾸지도 않는다 —
+     * `rt_cd`·`msg1`을 포함한 본문을 통째로 올려보낸다.
+     *
+     * 토큰은 [accessToken]의 캐시를 그대로 쓴다. 진단용 호출이라도 발급을 새로 하면
+     * 분당 1회 제한을 같이 나눠 쓰는 수집 배치의 토큰 발급을 밀어내 403을 부를 수 있다.
+     *
+     * `iscd`에는 `.DJI`·`HK#HS`처럼 `.`과 `#`이 들어간다. 그래서 값을 URI 템플릿 변수로
+     * 넘겨 **쿼리 파라미터 값으로 인코딩**되게 한다 — 문자열을 직접 이어붙이면 `#`부터가
+     * 프래그먼트로 잘려 나가 `HK`만 KIS에 도착한다.
+     */
+    fun fetchOverseasRaw(iscd: String, from: LocalDate, to: LocalDate): Map<String, Any?> {
+        if (!kisProperties.isConfigured()) {
+            throw KisIndexException("KIS 인증 정보가 설정되지 않았습니다 (KIS_APP_KEY/KIS_APP_SECRET).")
+        }
+
+        val token = accessToken()
+
+        val body = try {
+            webClient.get()
+                .uri { b ->
+                    b.path("/uapi/overseas-price/v1/quotations/inquire-daily-chartprice")
+                        .queryParam("FID_COND_MRKT_DIV_CODE", "N")
+                        .queryParam("FID_INPUT_ISCD", "{iscd}")
+                        .queryParam("FID_INPUT_DATE_1", "{from}")
+                        .queryParam("FID_INPUT_DATE_2", "{to}")
+                        .queryParam("FID_PERIOD_DIV_CODE", "D")
+                        .build(
+                            mapOf(
+                                "iscd" to iscd,
+                                "from" to from.format(DateTimeFormatter.BASIC_ISO_DATE),
+                                "to" to to.format(DateTimeFormatter.BASIC_ISO_DATE),
+                            )
+                        )
+                }
+                .header("authorization", "Bearer $token")
+                .header("appkey", kisProperties.appKey)
+                .header("appsecret", kisProperties.appSecret)
+                .header("tr_id", OVERSEAS_TR_ID)
+                .retrieve()
+                .bodyToMono<Map<String, Any?>>()
+                .block(TIMEOUT)
+        } catch (e: Throwable) {
+            // fetchRaw와 같은 이유 — block(timeout)은 WebClientException이 아니라
+            // IllegalStateException을 던져서, WebClientException만 잡으면 타임아웃이 raw로 샌다.
+            if (e is Error) throw e
+            throw KisIndexException("KIS 해외 지수 조회 실패 iscd=$iscd: ${e.message}")
+        } ?: throw KisIndexException("KIS 해외 지수 응답이 비어 있습니다 iscd=$iscd")
+
+        if (body.isEmpty()) {
+            throw KisIndexException("KIS 해외 지수 응답이 비어 있습니다 iscd=$iscd")
+        }
+
+        // rt_cd가 아예 없으면 통과시킨다. 응답 모양을 보러 온 엔드포인트라 "우리가 아는 형식이
+        // 아니다"는 이유로 막으면 정작 보러 온 것을 못 본다. 대신 KIS가 실패라고 말했을 때는
+        // 그 문구를 그대로 올린다 — 빈 output을 성공으로 착각하지 않게.
+        val rtCd = body["rt_cd"]?.toString()
+        if (rtCd != null && rtCd != RT_CD_SUCCESS) {
+            throw KisIndexException("KIS 해외 지수 조회 실패 iscd=$iscd rt_cd=$rtCd: ${body["msg1"]}")
+        }
+
+        return body
+    }
+
     companion object {
         private const val TR_ID = "FHPUP02100000"
+
+        /** 해외지수 일별 차트 조회 (FID_COND_MRKT_DIV_CODE=N) */
+        private const val OVERSEAS_TR_ID = "FHKST03030100"
+
+        /** KIS 공통 응답의 성공 코드 */
+        private const val RT_CD_SUCCESS = "0"
+
         private val TIMEOUT: Duration = Duration.ofSeconds(15)
 
         /** 만료 직전 토큰으로 요청이 나가는 것을 막는 여유. 수집 한 바퀴가 이 안에 끝난다 */

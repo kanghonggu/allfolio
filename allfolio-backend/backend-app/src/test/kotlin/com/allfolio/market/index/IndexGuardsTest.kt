@@ -100,4 +100,72 @@ class IndexGuardsTest {
 
         assertThat(guards.check(bad)).hasSizeGreaterThan(1)
     }
+
+    // 해외는 전일종가를 응답이 직접 준다. 역산값과 어긋나면 필드가 밀렸거나 소수점이 틀린 것이다.
+    // 등락률 검사와 독립적이다 — 등락률이 맞아도 이게 틀릴 수 있다.
+    //
+    // "전일종가"만 보고 단언하면 안 된다. 전일종가 0 이하 메시지와 등락률 어긋남 메시지에도
+    // 같은 낱말이 들어 있어서, 구현이 엉뚱한 검사를 걸었는데도 통과할 수 있다.
+    // 이 검사만이 낼 수 있는 것 — 응답값과 역산값 두 숫자가 함께 실렸는지 — 으로 가른다.
+    @Test
+    fun `응답이 준 전일종가가 역산값과 다르면 걸린다`() {
+        assertThat(guards.check(realQuote(), reportedPrevClose = BigDecimal("6000.00")))
+            .anyMatch { it.contains("6000") && it.contains("6345.53") }
+    }
+
+    @Test
+    fun `응답이 준 전일종가가 역산값과 같으면 통과한다`() {
+        assertThat(guards.check(realQuote(), reportedPrevClose = BigDecimal("6345.53"))).isEmpty()
+    }
+
+    // 국내는 응답에 전일종가가 없다. null은 "출처가 안 준다"는 뜻이지 "우리가 빠뜨렸다"가 아니다.
+    @Test
+    fun `전일종가를 안 주면 그 검사를 건너뛴다`() {
+        assertThat(guards.check(realQuote(), reportedPrevClose = null)).isEmpty()
+    }
+
+    // 스케일이 달라도 값이 같으면 통과해야 한다. equals()로 비교하면 6345.53 != 6345.5300이다.
+    @Test
+    fun `스케일이 달라도 값이 같으면 통과한다`() {
+        assertThat(guards.check(realQuote(), reportedPrevClose = BigDecimal("6345.5300"))).isEmpty()
+    }
+
+    // 역산값은 quote.prevClose가 아니라 price - change에서 와야 한다. 파서가 prevClose에
+    // 응답값을 넣어 버리면(설계 문서의 매핑표가 한동안 그렇게 지시하고 있었다) quote.prevClose로
+    // 비교하는 구현은 자기 자신을 비교하게 되어 영원히 안 걸린다 — 아래가 정확히 그 응답이다.
+    // 등락률은 prevClose 6000 기준으로 맞춰 두었으므로(233.51/6000 = 3.89%) 이 검사만 걸린다.
+    @Test
+    fun `전일종가 필드에 응답값이 들어와도 역산으로 대조한다`() {
+        val prevCloseHoldsReported = IndexQuote(
+            indexCode = "HSI",
+            price = BigDecimal("6579.04"),
+            prevClose = BigDecimal("6000.00"),
+            change = BigDecimal("233.51"),
+            changeRate = BigDecimal("3.89"),
+        )
+
+        assertThat(guards.check(prevCloseHoldsReported, reportedPrevClose = BigDecimal("6000.00")))
+            .singleElement()
+            .satisfies({ assertThat(it).contains("6000").contains("6345.53") })
+    }
+
+    // 신규 검사는 다른 이상이 이미 잡혔을 때도 돌아야 한다. 두 메시지는 서로 다른 사실을 말하고,
+    // 두 번째가 정답 전일종가를 실어 준다 — `if (anomalies.isEmpty())`로 감싸면 그게 사라진다.
+    // 현재가가 잘려 온 응답(prpr "100.00" + vrss "233.51")이 정확히 이 모양이다.
+    @Test
+    fun `다른 이상이 이미 있어도 전일종가 교차검증은 돈다`() {
+        val truncated = IndexQuote(
+            indexCode = "HSI",
+            price = BigDecimal("100.00"),
+            prevClose = BigDecimal("100.00").subtract(BigDecimal("233.51")),
+            change = BigDecimal("233.51"),
+            changeRate = BigDecimal("3.68"),
+        )
+
+        val anomalies = guards.check(truncated, reportedPrevClose = BigDecimal("6345.53"))
+
+        assertThat(anomalies).hasSize(2)
+        assertThat(anomalies).anyMatch { it.contains("0 이하") }
+        assertThat(anomalies).anyMatch { it.contains("6345.53") && it.contains("-133.51") }
+    }
 }

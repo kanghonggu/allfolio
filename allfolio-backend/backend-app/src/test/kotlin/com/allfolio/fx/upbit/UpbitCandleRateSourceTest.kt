@@ -1,5 +1,6 @@
 package com.allfolio.fx.upbit
 
+import com.allfolio.test.dedicatedConnector
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sun.net.httpserver.HttpServer
 import org.assertj.core.api.Assertions.assertThat
@@ -74,8 +75,9 @@ class UpbitCandleRateSourceTest {
         java.time.OffsetDateTime.of(date, java.time.LocalTime.MIDNIGHT, java.time.ZoneOffset.ofHours(9))
             .toInstant()
 
+    /** 커넥터를 [dedicatedConnector]로 두는 이유는 그쪽 주석에 있다 — 빼면 간헐적으로 깨진다. */
     private fun source() = UpbitCandleRateSource(
-        UpbitCandleClient("http://localhost:${server.address.port}"),
+        UpbitCandleClient("http://localhost:${server.address.port}", dedicatedConnector()),
         UpbitCandleParser(ObjectMapper()),
     )
 

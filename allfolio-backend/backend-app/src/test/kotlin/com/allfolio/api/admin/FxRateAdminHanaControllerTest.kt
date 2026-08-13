@@ -7,6 +7,7 @@ import com.allfolio.config.GlobalExceptionHandler
 import com.allfolio.config.JwtUserIdFilter
 import com.allfolio.config.SecurityConfig
 import com.allfolio.config.SseTokenFilter
+import com.allfolio.fx.CashFlowRecomputeService
 import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
 import com.allfolio.fx.hana.HanaCollectSummary
@@ -75,6 +76,9 @@ class FxRateAdminHanaControllerTest {
     @MockBean private lateinit var fxRateService: FxRateService
     @MockBean private lateinit var backfillService: FxRateBackfillService
     @MockBean private lateinit var hanaCollectService: HanaFxCollectService
+
+    // 재계산 엔드포인트가 생기며 컨트롤러가 요구하게 됐다. 이 테스트에서는 불리지 않는다.
+    @MockBean private lateinit var recomputeService: CashFlowRecomputeService
 
     private val requested: LocalDate = LocalDate.of(2026, 8, 12)
     private val kstToday: LocalDate get() = LocalDate.now(ZoneId.of("Asia/Seoul"))

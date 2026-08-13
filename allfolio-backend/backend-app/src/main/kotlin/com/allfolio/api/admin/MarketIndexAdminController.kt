@@ -5,6 +5,10 @@ import com.allfolio.market.index.IndexCollectService
 import com.allfolio.market.index.IndexSlot
 import com.allfolio.market.index.KisIndexClient
 import com.allfolio.market.index.KisIndexException
+import com.allfolio.market.index.OverseasIndexCollectService
+import com.allfolio.market.index.OverseasIndexCollectSummary
+import com.allfolio.market.index.OverseasSchedule
+import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -13,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
+import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 
@@ -21,6 +27,7 @@ import java.time.ZoneOffset
 class MarketIndexAdminController(
     private val kisIndexClient: KisIndexClient,
     private val indexCollectService: IndexCollectService,
+    private val overseasIndexCollectService: OverseasIndexCollectService,
 ) {
     /**
      * GET /api/admin/market-index/raw?iscd=0001 — KIS 원본 응답 그대로 (AF-101).
@@ -33,6 +40,31 @@ class MarketIndexAdminController(
     fun raw(@RequestParam iscd: String): ResponseEntity<Map<String, Any?>> =
         try {
             ResponseEntity.ok(kisIndexClient.fetchRaw(iscd))
+        } catch (e: KisIndexException) {
+            throw ResponseStatusException(HttpStatus.BAD_GATEWAY, e.message)
+        }
+
+    /**
+     * GET /api/admin/market-index/raw-overseas?iscd=SPX&from=2026-08-01&to=2026-08-13
+     * — KIS 해외 지수 원본 응답 그대로 (AF-110).
+     *
+     * `/raw`와 같은 이유로 존재한다. 해외 지수 응답은 `output1`·`output2` 두 갈래로 오는데
+     * 최신 봉이 어느 쪽에 실리는지가 확정되지 않았고, 이 엔드포인트는 **그걸 눈으로 보려고**
+     * 있는 것이다. 국내 지수(AF-101)에서 등락률 단위와 부호 규약을 맞힌 것도 파서를 쓰기 전에
+     * 이 단계를 밟았기 때문이다. 여기에 필드 매핑이나 DTO를 얹으면 존재 이유가 사라진다.
+     *
+     * **`from`/`to`에 기본값을 두지 않는다.** 파라미터 이름을 오타내면 기본 구간이 조용히
+     * 채워져 아무도 고르지 않은 창을 조회하게 되는데, 응답은 멀쩡해 보여서 그게 엉뚱한 구간의
+     * 데이터라는 걸 알아볼 수가 없다. `/collect`의 `slot`에 기본값을 두지 않은 것과 같은 이유다.
+     */
+    @GetMapping("/raw-overseas")
+    fun rawOverseas(
+        @RequestParam iscd: String,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate,
+    ): ResponseEntity<Map<String, Any?>> =
+        try {
+            ResponseEntity.ok(kisIndexClient.fetchOverseasRaw(iscd, from, to))
         } catch (e: KisIndexException) {
             throw ResponseStatusException(HttpStatus.BAD_GATEWAY, e.message)
         }
@@ -99,6 +131,65 @@ class MarketIndexAdminController(
             throw ResponseStatusException(
                 HttpStatus.BAD_GATEWAY,
                 "국내 지수를 한 건도 수집하지 못했습니다 (slot=${summary.slot}, 요청 ${summary.requested}건): " +
+                    summary.failures.joinToString("; ").ifBlank { "사유 없음" },
+            )
+        }
+        return ResponseEntity.ok(summary)
+    }
+
+    /**
+     * POST /api/admin/market-index/collect-overseas?schedule=US — 해외 지수 수집 (어드민 전용, AF-110).
+     *
+     * **상태코드 규약(500 / 502 / 200)과 그 근거는 위 [collect]의 KDoc에 있다.** 같은 이유가
+     * 그대로 적용되므로 여기서 요약해 다시 쓰지 않는다 — 두 벌이 되면 한쪽만 고쳐져 갈라진다.
+     * 해외에서 달라지는 것만 아래에 적는다.
+     *
+     * **`schedule`은 [String]이 아니라 [OverseasSchedule]로 받는다.** 서비스는 문자열을 받지만
+     * 그 타입을 여기까지 끌고 오면 URL 오타(`schedule=Us`)가 설정 대조에서 0건이 되어
+     * `requested == 0` → **500**으로 나온다. 500 문구는 운영자를 `market-index.overseas`로
+     * 보내는데 그 yml은 멀쩡하고, 진짜 원인은 워크플로가 실어 보낸 URL이다. enum이면 Spring이
+     * 변환에서 400을 내고 받은 값을 문구에 싣는다 — 국내 `slot`이 [IndexSlot]으로 얻는 것과 같다.
+     * 서비스에는 `schedule.name`을 넘긴다(`"US"` 같은 리터럴을 박으면 ASIA 슬롯이 미국 지수를
+     * 수집한다 — 저장되는 값은 그럴듯해서 눈으로는 못 잡는다).
+     *
+     * **기본값을 두지 않는 이유도 국내와 같다.** 다만 해외는 슬롯이 곧 시장군이라 손해의 모양이
+     * 다르다: 빠뜨린 슬롯이 조용히 US로 떨어지면 아시아 3종은 며칠이고 아무도 수집하지 않고,
+     * 빈 자리는 실패가 아니라 "그냥 없는 데이터"로 보여서 경보에도 안 걸린다.
+     *
+     * **`Instant`를 여기서 넣는다.** 국내가 `LocalDateTime.now(ZoneOffset.UTC)`를 넣는 것과 같은
+     * 원칙 — 시각 변환은 한 곳에만 있어야 한다. [OverseasIndexCollectService.collect]가
+     * `LocalDateTime` 대신 [Instant]를 받는 덕에 국내에 있던 "UTC로 해석한다"는 규약 자체가 없다.
+     *
+     * `requested == 0` 문구는 `market-index.overseas`를 가리켜야 한다. 국내 문구를 복사해
+     * `domestic`이 남으면 운영자가 아무 관계 없는 블록을 들여다본다.
+     *
+     * [KisIndexException] → 502 catch도 국내와 같다. **오늘 이 catch로 들어오는 경로가 없는 것도
+     * 같다** — 지수별 try/catch가 삼켜 요약의 `failures`가 된다. 죽은 코드로 보고 지우지 말 것.
+     */
+    @PostMapping("/collect-overseas")
+    fun collectOverseas(
+        @RequestParam schedule: OverseasSchedule,
+    ): ResponseEntity<OverseasIndexCollectSummary> {
+        val summary = try {
+            overseasIndexCollectService.collect(schedule.name, Instant.now())
+        } catch (e: KisIndexException) {
+            throw ResponseStatusException(HttpStatus.BAD_GATEWAY, e.message)
+        }
+
+        if (summary.requested == 0) {
+            // 우리 설정 실수다. KIS를 확인하러 보내지 않도록 502가 아니라 500으로 낸다
+            throw ResponseStatusException(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "수집 대상 해외 지수가 설정에 없습니다 — application.yml의 market-index.overseas 를 확인하세요 " +
+                    "(schedule=${summary.schedule})",
+            )
+        }
+
+        if (summary.requested > 0 && summary.collected == 0) {
+            throw ResponseStatusException(
+                HttpStatus.BAD_GATEWAY,
+                "해외 지수를 한 건도 수집하지 못했습니다 (schedule=${summary.schedule}, " +
+                    "요청 ${summary.requested}건): " +
                     summary.failures.joinToString("; ").ifBlank { "사유 없음" },
             )
         }

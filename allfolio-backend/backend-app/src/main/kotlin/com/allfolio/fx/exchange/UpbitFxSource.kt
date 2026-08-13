@@ -1,6 +1,7 @@
 package com.allfolio.fx.exchange
 
 import org.slf4j.LoggerFactory
+import org.springframework.http.client.reactive.ClientHttpConnector
 import org.springframework.web.reactive.function.client.WebClient
 import java.math.BigDecimal
 import java.time.Duration
@@ -19,6 +20,8 @@ import java.time.Duration
 class UpbitFxSource(
     baseUrl: String,
     private val parser: UpbitFxParser,
+    /** 운영은 null(= reactor-netty 전역 풀). 테스트만 전용 커넥터를 넣는다 — `dedicatedConnector` 주석 참조. */
+    connector: ClientHttpConnector? = null,
 ) : FxQuoteSource {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -29,6 +32,7 @@ class UpbitFxSource(
         WebClient.builder()
             .baseUrl(baseUrl)
             .codecs { it.defaultCodecs().maxInMemorySize(256 * 1024) }
+            .also { builder -> connector?.let(builder::clientConnector) }
             .build()
     }
 

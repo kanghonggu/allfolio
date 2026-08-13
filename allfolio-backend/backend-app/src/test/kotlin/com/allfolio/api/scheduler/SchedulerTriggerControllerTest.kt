@@ -5,6 +5,7 @@ import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.api.admin.MarketRateAdminController
 import com.allfolio.config.GlobalExceptionHandler
 import com.allfolio.fx.BackfillSummary
+import com.allfolio.fx.CashFlowRecomputeService
 import com.allfolio.fx.EcosStatListClient
 import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
@@ -15,6 +16,9 @@ import com.allfolio.market.index.IndexCollectService
 import com.allfolio.market.index.IndexSlot
 import com.allfolio.market.index.KisIndexClient
 import com.allfolio.market.index.KisIndexException
+import com.allfolio.market.index.OverseasIndexCollectService
+import com.allfolio.market.index.OverseasIndexCollectSummary
+import com.allfolio.market.index.OverseasSchedule
 import com.allfolio.market.rate.RateCollectService
 import com.allfolio.market.rate.RateCollectSummary
 import org.junit.jupiter.api.Test
@@ -30,6 +34,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -160,6 +165,7 @@ class SchedulerTriggerControllerTest {
             mock(FxRateService::class.java),
             mock(FxRateBackfillService::class.java),
             collectService,
+            mock(CashFlowRecomputeService::class.java),
         )
 
         MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, "secret"))
@@ -285,6 +291,7 @@ class SchedulerTriggerControllerTest {
         val realIndexAdmin = MarketIndexAdminController(
             mock(KisIndexClient::class.java),
             collectService,
+            mock(OverseasIndexCollectService::class.java),
         )
 
         MockMvcBuilders.standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin, rateAdmin, "secret"))
@@ -326,7 +333,11 @@ class SchedulerTriggerControllerTest {
             .standaloneSetup(
                 SchedulerTriggerController(
                     admin,
-                    MarketIndexAdminController(mock(KisIndexClient::class.java), collectService),
+                    MarketIndexAdminController(
+                        mock(KisIndexClient::class.java),
+                        collectService,
+                        mock(OverseasIndexCollectService::class.java),
+                    ),
                     rateAdmin,
                     "secret",
                 )
@@ -341,6 +352,212 @@ class SchedulerTriggerControllerTest {
             .andExpect(status().isBadGateway)
             // 잡 요약에 남는 건 본문이다. 사유가 없으면 502만 보고 원인을 다시 찾아야 한다.
             .andExpect(jsonPath("$.error").exists())
+    }
+
+    // ── 해외 지수 트리거 (AF-110) ───────────────────────────────────────────────
+    //
+    // 국내 트리거의 여섯 케이스(정상 위임 / 파라미터 누락 400 / 401 / 503 / GET 405 /
+    // 502 위임)를 그대로 짝지어 둔다. 해외에만 있는 것은 스케줄 오타 400이다.
+
+    private val overseasSummary = OverseasIndexCollectSummary(
+        schedule = "US",
+        requested = 6,
+        collected = 6,
+        inserted = 6,
+        updated = 0,
+        failed = 0,
+        failures = emptyList(),
+        names = mapOf("SPX" to "S&P500 지수(SPX)"),
+    )
+
+    private fun verifyNoOverseasCollect() {
+        verify(indexAdmin, never()).collectOverseas(
+            any(OverseasSchedule::class.java) ?: OverseasSchedule.US,
+        )
+    }
+
+    /** 어드민을 세우는 자리가 여럿이라 한 곳으로 모은다 — 생성자 인자가 늘면 여기만 고친다 */
+    private fun realIndexAdmin(overseas: OverseasIndexCollectService) = MarketIndexAdminController(
+        mock(KisIndexClient::class.java),
+        mock(IndexCollectService::class.java),
+        overseas,
+    )
+
+    @Test
+    fun `토큰이 맞으면 요청한 스케줄 그대로 해외 수집을 실행한다`() {
+        `when`(indexAdmin.collectOverseas(OverseasSchedule.ASIA))
+            .thenReturn(ResponseEntity.ok(overseasSummary.copy(schedule = "ASIA", requested = 3, collected = 3)))
+
+        mvc("secret").perform(
+            post("/api/internal/scheduler/index/overseas")
+                .param("schedule", "ASIA")
+                .header("X-Scheduler-Token", "secret")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.schedule").value("ASIA"))
+            .andExpect(jsonPath("$.collected").value(3))
+            // names는 배포 후 9종 코드를 대조하는 유일한 수단이다. 응답에서 빠지면
+            // 워크플로의 ::warning:: 파이썬 블록이 찍을 것이 없어진다.
+            .andExpect(jsonPath("$.names").exists())
+
+        // US가 아니라 ASIA로 검증한다 — 어딘가에 US가 하드코딩돼 있으면 US로는 안 잡힌다
+        verify(indexAdmin).collectOverseas(OverseasSchedule.ASIA)
+    }
+
+    // 기본값을 붙이면 이 테스트가 무너진다. 해외에서 빠진 스케줄은 국내처럼 "엉뚱한 슬롯을
+    // 덮어쓰기"가 아니라 **한쪽 시장군이 통째로 수집되지 않기**다 — 실패로도 안 남는다.
+    @Test
+    fun `해외 스케줄이 없으면 400이고 수집을 부르지 않는다`() {
+        mvc("secret").perform(
+            post("/api/internal/scheduler/index/overseas").header("X-Scheduler-Token", "secret")
+        ).andExpect(status().isBadRequest)
+
+        verifyNoOverseasCollect()
+    }
+
+    // enum으로 받은 이유를 트리거 경로에서도 못 박는다. String이면 이 요청이 400이 아니라
+    // 500("설정에 해외 지수가 없습니다")으로 나가고, 그 문구는 운영자를 멀쩡한 yml로 보낸다.
+    @Test
+    fun `해외 스케줄에 오타가 있으면 400이고 수집을 부르지 않는다`() {
+        mvc("secret").perform(
+            post("/api/internal/scheduler/index/overseas")
+                .param("schedule", "Us")
+                .header("X-Scheduler-Token", "secret")
+        ).andExpect(status().isBadRequest)
+
+        verifyNoOverseasCollect()
+    }
+
+    @Test
+    fun `해외 지수 트리거도 토큰이 틀리면 401이고 수집을 부르지 않는다`() {
+        mvc("secret").perform(
+            post("/api/internal/scheduler/index/overseas")
+                .param("schedule", "US")
+                .header("X-Scheduler-Token", "wrong")
+        )
+            .andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.error").exists())
+
+        verifyNoOverseasCollect()
+    }
+
+    // 다른 트리거와 같은 authorize를 **재사용**하는지 본다. 경로마다 검사를 따로 짜면
+    // 새 경로 하나만 fail-open이어도 나머지 테스트가 전부 통과해버린다.
+    @Test
+    fun `설정 토큰이 비어 있으면 해외 지수 트리거도 503으로 닫는다`() {
+        mvc("").perform(
+            post("/api/internal/scheduler/index/overseas")
+                .param("schedule", "US")
+                .header("X-Scheduler-Token", "anything")
+        )
+            .andExpect(status().isServiceUnavailable)
+            .andExpect(jsonPath("$.error").exists())
+
+        verifyNoOverseasCollect()
+    }
+
+    @Test
+    fun `해외 지수 트리거는 GET으로는 열리지 않는다`() {
+        mvc("secret").perform(
+            get("/api/internal/scheduler/index/overseas")
+                .param("schedule", "US")
+                .header("X-Scheduler-Token", "secret")
+        ).andExpect(status().isMethodNotAllowed)
+
+        verifyNoOverseasCollect()
+    }
+
+    // 크론이 실제로 때리는 건 이 경로다. OverseasIndexCollectService는 9종이 전부 터져도
+    // 예외 대신 요약을 돌려주므로, 어드민이 502로 바꿔주지 않으면 전면 중단이 200으로 나가
+    // 잡이 초록으로 끝난다. 그 변환이 위임을 타고 여기까지 오는지 본다 —
+    // 어드민 테스트만으로는 트리거가 상태를 삼키거나 200으로 덮어써도 잡히지 않는다.
+    @Test
+    fun `해외 지수를 한 건도 못 모으면 트리거도 502를 낸다`() {
+        val overseasService = mock(OverseasIndexCollectService::class.java)
+        // any(...)는 매처를 등록하고 null을 돌려주는데, OverseasIndexCollectService는 Kotlin
+        // 파이널 클래스라 원본 바이트코드의 non-null 파라미터 검사가 남아 NPE가 난다.
+        // 엘비스로 아무 값이나 채우면 매처는 그대로 등록된 채 검사만 통과한다.
+        `when`(
+            overseasService.collect(
+                any(String::class.java) ?: "",
+                any(Instant::class.java) ?: Instant.EPOCH,
+            )
+        ).thenReturn(
+            overseasSummary.copy(
+                requested = 6,
+                collected = 0,
+                inserted = 0,
+                failed = 6,
+                failures = listOf("SPX: timeout", "NASDAQ: timeout"),
+                names = emptyMap(),
+            )
+        )
+
+        MockMvcBuilders
+            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, "secret"))
+            .setControllerAdvice(GlobalExceptionHandler())
+            .build()
+            .perform(
+                post("/api/internal/scheduler/index/overseas")
+                    .param("schedule", "US")
+                    .header("X-Scheduler-Token", "secret")
+            )
+            .andExpect(status().isBadGateway)
+            // 잡 요약에 남는 건 본문이다. 사유가 없으면 502만 보고 원인을 다시 찾아야 한다.
+            .andExpect(jsonPath("$.error").exists())
+    }
+
+    // 500(우리 설정)과 502(상류)를 가르는 것이 위임을 타고 오는지. 여기서 502로 뭉개지면
+    // 운영자가 KIS를 확인하러 가는데 진짜 원인은 빠진 market-index.overseas 블록이다.
+    @Test
+    fun `해외 수집 대상이 없으면 트리거는 500을 낸다`() {
+        val overseasService = mock(OverseasIndexCollectService::class.java)
+        `when`(
+            overseasService.collect(
+                any(String::class.java) ?: "",
+                any(Instant::class.java) ?: Instant.EPOCH,
+            )
+        ).thenReturn(
+            overseasSummary.copy(requested = 0, collected = 0, inserted = 0, names = emptyMap())
+        )
+
+        MockMvcBuilders
+            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, "secret"))
+            .setControllerAdvice(GlobalExceptionHandler())
+            .build()
+            .perform(
+                post("/api/internal/scheduler/index/overseas")
+                    .param("schedule", "US")
+                    .header("X-Scheduler-Token", "secret")
+            )
+            .andExpect(status().isInternalServerError)
+            .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("market-index.overseas")))
+    }
+
+    // 국내와 같은 이유로 진짜 어드민을 세운다 — 목이 이미 만들어진 ResponseStatusException을
+    // 던지게 하면 위임이 물려받으려던 catch (KisIndexException) 블록이 한 번도 실행되지 않아,
+    // 그걸 통째로 지워도 통과한다.
+    @Test
+    fun `해외 수집 중 KIS 응답이 이상하면 502로 옮겨진다`() {
+        val overseasService = mock(OverseasIndexCollectService::class.java)
+        `when`(
+            overseasService.collect(
+                any(String::class.java) ?: "",
+                any(Instant::class.java) ?: Instant.EPOCH,
+            )
+        ).thenThrow(KisIndexException("KIS 해외 응답에 output2가 없습니다"))
+
+        MockMvcBuilders
+            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, "secret"))
+            .setControllerAdvice(GlobalExceptionHandler())
+            .build()
+            .perform(
+                post("/api/internal/scheduler/index/overseas")
+                    .param("schedule", "US")
+                    .header("X-Scheduler-Token", "secret")
+            )
+            .andExpect(status().isBadGateway)
+            .andExpect(jsonPath("$.error").value("KIS 해외 응답에 output2가 없습니다"))
     }
 
     // ── 백필 트리거 (AF-100) ───────────────────────────────────────────────────
@@ -500,6 +717,7 @@ class SchedulerTriggerControllerTest {
             mock(FxRateService::class.java),
             backfillService,
             mock(HanaFxCollectService::class.java),
+            mock(CashFlowRecomputeService::class.java),
         )
 
         MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, "secret"))

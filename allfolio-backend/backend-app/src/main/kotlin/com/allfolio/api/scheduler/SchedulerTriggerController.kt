@@ -7,6 +7,8 @@ import com.allfolio.fx.BackfillSummary
 import com.allfolio.fx.hana.HanaCollectSummary
 import com.allfolio.market.index.DomesticIndexCollectSummary
 import com.allfolio.market.index.IndexSlot
+import com.allfolio.market.index.OverseasIndexCollectSummary
+import com.allfolio.market.index.OverseasSchedule
 import com.allfolio.market.rate.RateCollectSummary
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -96,6 +98,29 @@ class SchedulerTriggerController(
     ): ResponseEntity<DomesticIndexCollectSummary> {
         authorize(token)
         return indexAdmin.collect(slot)
+    }
+
+    /**
+     * POST /api/internal/scheduler/index/overseas?schedule=US — 해외 지수 수집 트리거 (AF-110)
+     *
+     * 국내 트리거([collectDomesticIndex])와 같은 구조다. 기본값을 두지 않는 것, 시각을 노출하지
+     * 않는 것, 어드민에 위임하는 것 모두 근거가 그쪽 KDoc에 있다 —
+     * **이 위임도 "정리"하지 말 것**([collectHanaFx] 참조).
+     *
+     * 해외에서만 다른 것: `schedule`은 하루 중 지점이 아니라 **어느 시장군**이다. 기본값을 두면
+     * cron 한 줄이 값을 빠뜨렸을 때 국내처럼 "엉뚱한 슬롯을 덮어쓰는" 게 아니라 **한쪽 시장군이
+     * 통째로 수집되지 않는다.** 빠진 아시아 3종은 실패가 아니라 "없는 데이터"로 보여서
+     * `failures`에도 안 남고 잡도 초록으로 끝난다. 400이 훨씬 낫다.
+     *
+     * 타입이 [OverseasSchedule]인 이유(오타를 500이 아니라 400으로 만든다)는 그 enum의 KDoc에 있다.
+     */
+    @PostMapping("/index/overseas")
+    fun collectOverseasIndex(
+        @RequestHeader(name = TOKEN_HEADER, required = false) token: String?,
+        @RequestParam schedule: OverseasSchedule,
+    ): ResponseEntity<OverseasIndexCollectSummary> {
+        authorize(token)
+        return indexAdmin.collectOverseas(schedule)
     }
 
     /**

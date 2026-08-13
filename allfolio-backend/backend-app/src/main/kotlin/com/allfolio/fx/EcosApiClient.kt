@@ -2,6 +2,7 @@ package com.allfolio.fx
 
 import com.fasterxml.jackson.core.JsonProcessingException
 import org.slf4j.LoggerFactory
+import org.springframework.http.client.reactive.ClientHttpConnector
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.WebClientRequestException
@@ -58,6 +59,7 @@ class EcosStatisticSearchClient(
         WebClient.builder()
             .baseUrl(properties.baseUrl)
             .codecs { it.defaultCodecs().maxInMemorySize(8 * 1024 * 1024) }
+            .also { builder -> connector?.let(builder::clientConnector) }
             .build()
     }
 
@@ -66,6 +68,17 @@ class EcosStatisticSearchClient(
      * 프로덕션에서 바꿀 값이 아니라 설정으로 빼지 않았다.
      */
     internal var timeout: Duration = DEFAULT_TIMEOUT
+
+    /**
+     * HTTP 커넥터. **운영은 null로 두고 기본값(reactor-netty 전역 커넥션 풀)을 쓴다.**
+     * 테스트만 전용 커넥터를 넣어 전역 풀을 공유하지 않게 한다 — `dedicatedConnector` 주석 참조.
+     *
+     * 생성자 인자가 아니라 [timeout]과 같은 `internal var`인 이유: 이 클래스는 `@Component`라
+     * 생성자 인자를 두면 스프링이 자동 주입 대상으로 본다. `ClientHttpConnector`는
+     * Spring Boot가 빈으로 등록해 두는 타입이라, 기본값 null이어도 **운영에서 그 빈이 주입돼**
+     * 동작이 바뀐다. 위 `by lazy`가 첫 호출 때 읽으므로 테스트는 생성 직후에 넣으면 된다.
+     */
+    internal var connector: ClientHttpConnector? = null
 
     companion object {
         private val DEFAULT_TIMEOUT = Duration.ofSeconds(30)
