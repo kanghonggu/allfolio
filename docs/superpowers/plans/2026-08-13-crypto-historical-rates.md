@@ -552,8 +552,23 @@ class UpbitCandleRateSourceTest {
     @AfterEach
     fun stop() = server.stop(0)
 
-    /** 퍼센트 인코딩을 단언하지 않는다 — WebClient가 `:`를 인코딩할지는 구현 세부라 깨지기 쉽다. */
-    private fun decoded(query: String) = java.net.URLDecoder.decode(query, "UTF-8")
+    /**
+     * 쿼리에서 `to` 값을 꺼내 **시각으로** 비교한다.
+     *
+     * 문자열 비교를 하지 않는 이유가 두 겹이다. WebClient가 `:`를 퍼센트 인코딩할지는 구현
+     * 세부이고, 더 고약하게는 `URLDecoder.decode`가 리터럴 `+`를 **공백으로** 바꾼다
+     * (form-urlencoded 규칙). `+09:00`이 ` 09:00`이 되어, 커서 계산이 완벽히 맞는데도
+     * 단언만 깨진다 — 실제로 이 함정에 한 번 빠졌다.
+     * 그래서 `+`를 먼저 보호한 뒤 디코드하고, OffsetDateTime으로 파싱해 값을 비교한다.
+     */
+    private fun toParam(query: String): java.time.OffsetDateTime {
+        val raw = Regex("to=([^&]+)").find(query)!!.groupValues[1]
+        val decoded = java.net.URLDecoder.decode(raw.replace("+", "%2B"), "UTF-8")
+        return java.time.OffsetDateTime.parse(decoded)
+    }
+
+    private fun cursorOf(date: java.time.LocalDate): java.time.OffsetDateTime =
+        java.time.OffsetDateTime.parse("${date}T00:00:00+09:00")
 
     private fun source() = UpbitCandleRateSource(
         UpbitCandleClient("http://localhost:${server.address.port}"),
@@ -594,7 +609,7 @@ class UpbitCandleRateSourceTest {
 
         source().fetch("BTC", to.minusDays(3), to)
 
-        assertThat(decoded(requests.single())).contains("to=2026-08-02T00:00:00+09:00")
+        assertThat(toParam(requests.single())).isEqualTo(cursorOf(LocalDate.of(2026, 8, 2)))
     }
 
     @Test
@@ -607,7 +622,7 @@ class UpbitCandleRateSourceTest {
         assertThat(requests).hasSize(2)
         // 커서는 to+1에서 출발하므로 첫 페이지는 to ~ (to+1-200) = to-199 를 덮는다.
         // 따라서 두 번째 to는 to-199다. to-200으로 쓰면 하루가 조용히 빈다.
-        assertThat(decoded(requests[1])).contains("to=${to.minusDays(199)}T00:00:00+09:00")
+        assertThat(toParam(requests[1])).isEqualTo(cursorOf(to.minusDays(199)))
         assertThat(fetched.rates.map { it.baseDate }.min()).isEqualTo(from)
     }
 
