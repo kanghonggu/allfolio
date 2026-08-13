@@ -3,6 +3,7 @@ package com.allfolio.market.index
 import com.allfolio.broker.kis.KisApiClient
 import com.allfolio.broker.kis.KisProperties
 import com.allfolio.broker.kis.KisTokenResponse
+import com.allfolio.test.dedicatedConnector
 import com.sun.net.httpserver.HttpServer
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -46,7 +47,7 @@ class KisIndexOverseasRawTest {
 
     @Test
     fun `해외 경로로 tr_id와 시장구분 N을 달고 나간다`() {
-        val client = KisIndexClient(properties(), issuer("T1"))
+        val client = indexClient(properties(), issuer("T1"))
 
         client.fetchOverseasRaw("SPX", from, to)
 
@@ -72,7 +73,7 @@ class KisIndexOverseasRawTest {
      */
     @Test
     fun `점과 샵이 든 심볼이 잘리지 않고 서버까지 도착한다`() {
-        val client = KisIndexClient(properties(), issuer("T1"))
+        val client = indexClient(properties(), issuer("T1"))
 
         client.fetchOverseasRaw(".DJI", from, to)
         client.fetchOverseasRaw("HK#HS", from, to)
@@ -93,7 +94,7 @@ class KisIndexOverseasRawTest {
      */
     @Test
     fun `output1과 output2가 그대로 살아서 올라온다`() {
-        val client = KisIndexClient(properties(), issuer("T1"))
+        val client = indexClient(properties(), issuer("T1"))
 
         val body = client.fetchOverseasRaw("SPX", from, to)
 
@@ -116,7 +117,7 @@ class KisIndexOverseasRawTest {
     @Test
     fun `두 번 불러도 토큰은 한 번만 발급된다`() {
         val issuer = issuer("T1")
-        val client = KisIndexClient(properties(), issuer)
+        val client = indexClient(properties(), issuer)
 
         client.fetchOverseasRaw("SPX", from, to)
         client.fetchOverseasRaw("NDX", from, to)
@@ -132,7 +133,7 @@ class KisIndexOverseasRawTest {
     @Test
     fun `KIS 에러 응답은 KisIndexException이 된다`() {
         kis.body = """{"rt_cd":"1","msg_cd":"OPSQ0001","msg1":"기간이 올바르지 않습니다."}"""
-        val client = KisIndexClient(properties(), issuer("T1"))
+        val client = indexClient(properties(), issuer("T1"))
 
         assertThatThrownBy { client.fetchOverseasRaw("SPX", from, to) }
             .isInstanceOf(KisIndexException::class.java)
@@ -142,7 +143,7 @@ class KisIndexOverseasRawTest {
     @Test
     fun `인증 정보가 없으면 토큰을 발급하지도 않는다`() {
         val issuer = issuer("T1")
-        val client = KisIndexClient(KisProperties().apply { baseUrl = kis.baseUrl }, issuer)
+        val client = indexClient(KisProperties().apply { baseUrl = kis.baseUrl }, issuer)
 
         assertThatThrownBy { client.fetchOverseasRaw("SPX", from, to) }
             .isInstanceOf(KisIndexException::class.java)
@@ -152,6 +153,10 @@ class KisIndexOverseasRawTest {
     }
 
     // ── helpers ──────────────────────────────────────────────────
+
+    /** 커넥터를 [dedicatedConnector]로 두는 이유는 그쪽 주석에 있다 — 빼면 간헐적으로 깨진다. */
+    private fun indexClient(properties: KisProperties, issuer: KisApiClient) =
+        KisIndexClient(properties, issuer).apply { connector = dedicatedConnector() }
 
     private fun properties() = KisProperties().apply {
         appKey = "key"

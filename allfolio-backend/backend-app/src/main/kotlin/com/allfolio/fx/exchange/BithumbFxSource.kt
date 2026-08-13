@@ -1,6 +1,7 @@
 package com.allfolio.fx.exchange
 
 import org.slf4j.LoggerFactory
+import org.springframework.http.client.reactive.ClientHttpConnector
 import org.springframework.web.reactive.function.client.WebClient
 import java.math.BigDecimal
 import java.time.Duration
@@ -18,6 +19,8 @@ import java.time.Duration
 class BithumbFxSource(
     baseUrl: String,
     private val parser: BithumbFxParser,
+    /** 운영은 null(= reactor-netty 전역 풀). 테스트만 전용 커넥터를 넣는다 — `dedicatedConnector` 주석 참조. */
+    connector: ClientHttpConnector? = null,
 ) : FxQuoteSource {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -30,6 +33,7 @@ class BithumbFxSource(
             // ALL_KRW는 상장 전 종목을 다 준다 — 2026-08-12 실측 169KB(480종목, 종목당 약 350B).
             // 기존 256KB로는 여유가 1.5배뿐이라 상장이 265개만 늘어도 조용히 실패한다.
             .codecs { it.defaultCodecs().maxInMemorySize(1024 * 1024) }
+            .also { builder -> connector?.let(builder::clientConnector) }
             .build()
     }
 

@@ -3,6 +3,7 @@ package com.allfolio.market.index
 import com.allfolio.broker.kis.KisApiClient
 import com.allfolio.broker.kis.KisProperties
 import org.springframework.http.MediaType
+import org.springframework.http.client.reactive.ClientHttpConnector
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.bodyToMono
@@ -28,10 +29,28 @@ class KisIndexClient(
     private val kisProperties: KisProperties,
     private val kisApiClient: KisApiClient,
 ) {
-    private val webClient = WebClient.builder()
-        .baseUrl(kisProperties.baseUrl)
-        .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
-        .build()
+    /**
+     * `by lazy`인 이유는 아래 [connector] 때문이다 — 테스트가 생성 직후에 커넥터를 끼울 수
+     * 있어야 해서 첫 호출까지 조립을 미룬다. 운영 동작은 그대로다(빈 생성 시점에 만들든
+     * 첫 호출에 만들든 소켓을 열지 않는다).
+     */
+    private val webClient: WebClient by lazy {
+        WebClient.builder()
+            .baseUrl(kisProperties.baseUrl)
+            .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+            .also { builder -> connector?.let(builder::clientConnector) }
+            .build()
+    }
+
+    /**
+     * HTTP 커넥터. **운영은 null로 두고 기본값(reactor-netty 전역 커넥션 풀)을 쓴다.**
+     * 테스트만 전용 커넥터를 넣어 전역 풀을 공유하지 않게 한다 — `dedicatedConnector` 주석 참조.
+     *
+     * 생성자 인자가 아닌 이유: 이 클래스는 `@Component`라 생성자 인자를 두면 스프링이 자동
+     * 주입 대상으로 본다. `ClientHttpConnector`는 Spring Boot가 빈으로 등록해 두는 타입이라
+     * 기본값이 null이어도 **운영에서 그 빈이 주입돼** 동작이 바뀐다.
+     */
+    internal var connector: ClientHttpConnector? = null
 
     /**
      * 발급받은 access_token. Pair는 (만료 epoch millis, 토큰)이고, AF-99의
