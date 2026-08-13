@@ -33,8 +33,12 @@ class MarketIndexPropertiesTest {
 
     @Test
     fun `application yml의 국내 지수 목록이 바인딩된다`() {
-        assertThat(properties.domestic.map { it.code }).containsExactly("KOSPI", "KOSDAQ", "KOSPI200")
-        assertThat(properties.domestic.map { it.kisIscd }).containsExactly("0001", "1001", "2001")
+        assertThat(properties.domestic.map { it.code })
+            .containsExactly("KOSPI", "KOSDAQ", "KOSPI200", "KOSDAQ150", "KRX300")
+        // 코드의 출처는 KIS 지수코드 마스터(idxcode.mst)다 — application.yml 주석 참조.
+        // 파생상품(레버리지·선물·인버스·TR)과 한 글자 차이라 눈으로 훑으면 놓친다
+        assertThat(properties.domestic.map { it.kisIscd })
+            .containsExactly("0001", "1001", "2001", "3003", "4300")
     }
 
     @SpringBootConfiguration
