@@ -64,6 +64,29 @@ class MarketIndexPropertiesTest {
         }
     }
 
+    // nameContains는 코드 오선택을 잡는 **유일한** 수단이다 — 엉뚱한 지수의 응답도 값끼리는
+    // 일관돼서 IndexGuards를 그대로 통과한다. 그런데 두 지수가 같은 문자열을 쓰면 그 둘 사이에서는
+    // 검사가 아예 없는 것과 같다. 실제로 그랬다: 2026-08-13 이전에는 NASDAQ(COMP)와
+    // NASDAQ100(NDX)이 둘 다 "나스닥"이라, 코드를 서로 바꿔 넣어도 아무 데서도 안 걸렸다.
+    // 첫 운영 수집의 실측 이름으로 좁혀 해소했고, 다시 넓혀 겹치는 것을 이 테스트가 막는다.
+    @Test
+    fun `이름 검사가 지수마다 서로 다르다`() {
+        assertThat(properties.overseas.map { it.nameContains })
+            .doesNotHaveDuplicates()
+    }
+
+    // 한쪽이 다른 쪽의 부분 문자열이어도 같은 구멍이 난다 — "나스닥"과 "나스닥 100"이 함께 있으면
+    // NDX 응답("나스닥 100")이 NASDAQ 자리에서도 통과한다. 중복만 보면 이걸 놓친다.
+    @Test
+    fun `이름 검사가 서로의 부분 문자열이 아니다`() {
+        val names = properties.overseas.map { it.code to it.nameContains }
+
+        assertThat(names).allSatisfy { (code, name) ->
+            assertThat(names.filter { it.first != code }.map { it.second })
+                .noneMatch { other -> other.contains(name) }
+        }
+    }
+
     // zoneId와 같은 이유다 — "16:00"이 "16.00"이나 "4:00 PM"으로 적히면 컴파일도 not-blank도
     // 통과하고, 수집이 그 지수만 조용히 실패시킨다. 아홉 종을 여기서 한 번에 판다.
     @Test
