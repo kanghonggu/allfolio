@@ -358,7 +358,7 @@ class FxRateBackfillServiceTest {
         repo: HistoricalFxRateJpaRepository,
         properties: EcosProperties = this.properties,
         converter: UnifiedAssetFxConverterAdapter = adapter(repo),
-    ) = FxRateBackfillService(client, repo, properties, converter)
+    ) = FxRateBackfillService(listOf(EcosHistoricalRateSource(client, properties)), repo, converter)
 
     private fun adapter(repo: HistoricalFxRateJpaRepository) =
         UnifiedAssetFxConverterAdapter(CurrencyConverter(StubFxRateService()), repo)

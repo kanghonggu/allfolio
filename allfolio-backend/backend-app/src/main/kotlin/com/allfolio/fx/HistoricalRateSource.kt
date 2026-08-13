@@ -28,8 +28,13 @@ interface HistoricalRateSource {
     /** `fx_rate_daily.source`에 들어갈 값 */
     val sourceName: String
 
+    /** `currency`는 호출자가 이미 trim+대문자화해서 넘긴다 — 대소문자 무관 매칭을 스스로 할 필요 없다. */
     fun supports(currency: String): Boolean
 
-    /** 실패는 예외로 알린다 — 호출자가 상태 코드로 옮긴다. */
+    /**
+     * `currency`는 호출자가 이미 trim+대문자화해서 넘긴다.
+     * `from..to`는 포함 범위이고, 이 범위 밖 날짜가 섞여 와도 된다 — 서비스가 걸러낸다.
+     * 실패는 예외로 알린다 — 호출자가 상태 코드로 옮긴다.
+     */
     fun fetch(currency: String, from: LocalDate, to: LocalDate): SourceFetch
 }
