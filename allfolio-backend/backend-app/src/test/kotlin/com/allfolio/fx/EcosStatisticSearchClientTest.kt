@@ -3,6 +3,7 @@ package com.allfolio.fx
 import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
+import com.allfolio.test.dedicatedConnector
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
@@ -62,10 +63,11 @@ class EcosStatisticSearchClientTest {
         exchange.responseBody.use { it.write(bytes) }
     }
 
+    // 커넥터를 dedicatedConnector로 두는 이유는 그쪽 주석에 있다 — 빼면 간헐적으로 깨진다.
     private fun client(port: Int) = EcosStatisticSearchClient(
         EcosProperties(apiKey = apiKey, baseUrl = "http://localhost:$port"),
         EcosResponseParser(ObjectMapper()),
-    )
+    ).apply { connector = dedicatedConnector() }
 
     private fun call(port: Int) = client(port).fetchDailyRates(
         "TEST-STAT-CODE", "TEST-ITEM-CODE", LocalDate.of(2026, 1, 2), LocalDate.of(2026, 3, 4),

@@ -1,5 +1,6 @@
 package com.allfolio.fx.exchange
 
+import com.allfolio.test.dedicatedConnector
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sun.net.httpserver.HttpServer
 import org.assertj.core.api.Assertions.assertThat
@@ -40,8 +41,9 @@ class ExchangeFxSourceTest {
 
     private fun baseUrl() = "http://localhost:${server.address.port}"
 
-    private fun upbit() = UpbitFxSource(baseUrl(), UpbitFxParser(ObjectMapper()))
-    private fun bithumb() = BithumbFxSource(baseUrl(), BithumbFxParser(ObjectMapper()))
+    // 커넥터를 dedicatedConnector로 두는 이유는 그쪽 주석에 있다 — 빼면 간헐적으로 깨진다.
+    private fun upbit() = UpbitFxSource(baseUrl(), UpbitFxParser(ObjectMapper()), dedicatedConnector())
+    private fun bithumb() = BithumbFxSource(baseUrl(), BithumbFxParser(ObjectMapper()), dedicatedConnector())
 
     @Test
     fun `Upbit은 세 마켓을 한 번에 정확한 경로로 조회한다`() {
