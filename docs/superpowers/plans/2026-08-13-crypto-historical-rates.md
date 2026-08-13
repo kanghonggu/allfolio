@@ -658,14 +658,23 @@ class UpbitCandleRateSourceTest {
         // Upbit에 그 이전 이력이 없는 경우(상장 이전 등). 예외는 아니지만 조용해서도 안 된다 —
         // 부분 결과가 완전한 성공과 구분되지 않으면 못 채운 날짜가 현재가 폴백으로 떨어진다.
         server.removeContext("/")
-        val oldest = LocalDate.of(2026, 7, 20)
+        // 거래소에 이 사흘치만 존재한다. **실제 Upbit처럼 커서보다 과거의 것만 돌려주고,
+        // 더 없으면 빈 배열을 준다.** 커서를 무시하고 같은 페이지를 계속 주면 그건
+        // "이력 소진"이 아니라 "고장난 서버"라서 no-progress 가드가 먼저 걸린다.
+        val history = listOf(
+            LocalDate.of(2026, 7, 22), LocalDate.of(2026, 7, 21), LocalDate.of(2026, 7, 20),
+        )
         server.createContext("/") { exchange ->
-            requests += exchange.requestURI.query ?: ""
-            // 200건이 아니라 3건만 있고 그마저 from보다 최신이다
-            val body = (0 until 3).joinToString(",") { i ->
-                val d = oldest.plusDays(i.toLong())
-                """{"candle_date_time_kst":"${d}T09:00:00","trade_price":90000000.0}"""
-            }
+            val query = exchange.requestURI.query ?: ""
+            requests += query
+            val cursor = Regex("to=([^&]+)").find(query)?.groupValues?.get(1)?.let {
+                LocalDate.parse(
+                    java.net.URLDecoder.decode(it.replace("+", "%2B"), "UTF-8").substring(0, 10)
+                )
+            } ?: LocalDate.of(2026, 8, 13)
+
+            val body = history.filter { it < cursor }
+                .joinToString(",") { """{"candle_date_time_kst":"${it}T09:00:00","trade_price":9.0E7}""" }
             val bytes = "[$body]".toByteArray(Charsets.UTF_8)
             exchange.sendResponseHeaders(200, bytes.size.toLong())
             exchange.responseBody.use { it.write(bytes) }
@@ -674,10 +683,11 @@ class UpbitCandleRateSourceTest {
         val to = LocalDate.of(2026, 8, 1)
         val fetched = source().fetch("BTC", to.minusDays(300), to)
 
-        // 있는 만큼은 돌려준다
-        assertThat(fetched.rates.map { it.baseDate }).containsExactlyInAnyOrder(
-            oldest, oldest.plusDays(1), oldest.plusDays(2),
-        )
+        // 있는 만큼은 돌려준다 (요청은 300일이었지만 사흘치만 존재한다)
+        assertThat(fetched.rates.map { it.baseDate })
+            .containsExactlyInAnyOrderElementsOf(history)
+        // 2회 요청: 1회차에 사흘치, 2회차는 빈 배열로 "더 없음"을 알린다
+        assertThat(requests).hasSize(2)
     }
 
     @Test
