@@ -129,4 +129,43 @@ class IndexGuardsTest {
     fun `스케일이 달라도 값이 같으면 통과한다`() {
         assertThat(guards.check(realQuote(), reportedPrevClose = BigDecimal("6345.5300"))).isEmpty()
     }
+
+    // 역산값은 quote.prevClose가 아니라 price - change에서 와야 한다. 파서가 prevClose에
+    // 응답값을 넣어 버리면(설계 문서의 매핑표가 한동안 그렇게 지시하고 있었다) quote.prevClose로
+    // 비교하는 구현은 자기 자신을 비교하게 되어 영원히 안 걸린다 — 아래가 정확히 그 응답이다.
+    // 등락률은 prevClose 6000 기준으로 맞춰 두었으므로(233.51/6000 = 3.89%) 이 검사만 걸린다.
+    @Test
+    fun `전일종가 필드에 응답값이 들어와도 역산으로 대조한다`() {
+        val prevCloseHoldsReported = IndexQuote(
+            indexCode = "HSI",
+            price = BigDecimal("6579.04"),
+            prevClose = BigDecimal("6000.00"),
+            change = BigDecimal("233.51"),
+            changeRate = BigDecimal("3.89"),
+        )
+
+        assertThat(guards.check(prevCloseHoldsReported, reportedPrevClose = BigDecimal("6000.00")))
+            .singleElement()
+            .satisfies({ assertThat(it).contains("6000").contains("6345.53") })
+    }
+
+    // 신규 검사는 다른 이상이 이미 잡혔을 때도 돌아야 한다. 두 메시지는 서로 다른 사실을 말하고,
+    // 두 번째가 정답 전일종가를 실어 준다 — `if (anomalies.isEmpty())`로 감싸면 그게 사라진다.
+    // 현재가가 잘려 온 응답(prpr "100.00" + vrss "233.51")이 정확히 이 모양이다.
+    @Test
+    fun `다른 이상이 이미 있어도 전일종가 교차검증은 돈다`() {
+        val truncated = IndexQuote(
+            indexCode = "HSI",
+            price = BigDecimal("100.00"),
+            prevClose = BigDecimal("100.00").subtract(BigDecimal("233.51")),
+            change = BigDecimal("233.51"),
+            changeRate = BigDecimal("3.68"),
+        )
+
+        val anomalies = guards.check(truncated, reportedPrevClose = BigDecimal("6345.53"))
+
+        assertThat(anomalies).hasSize(2)
+        assertThat(anomalies).anyMatch { it.contains("0 이하") }
+        assertThat(anomalies).anyMatch { it.contains("6345.53") && it.contains("-133.51") }
+    }
 }

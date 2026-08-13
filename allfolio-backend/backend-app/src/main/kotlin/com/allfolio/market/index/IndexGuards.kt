@@ -33,8 +33,9 @@ class IndexGuards {
 
     /**
      * @param reportedPrevClose 응답이 **직접 준** 전일종가(해외의 `ovrs_nmix_prdy_clpr`).
-     *        [IndexQuote.prevClose]는 `현재가 − 전일대비`로 역산한 값이므로, 이 둘은
-     *        서로 독립적인 출처다. 어긋나면 필드가 밀렸거나 소수점이 틀린 것이다.
+     *        이 값과 `현재가 − 전일대비`는 서로 독립적인 출처이므로 대조한다 — 어긋나면
+     *        필드가 밀렸거나 소수점이 틀린 것이다. 역산값은 [IndexQuote.prevClose]를 믿지 않고
+     *        아래에서 다시 계산한다(이유는 그 자리 주석).
      *
      *        **기본값이 null인 이유:** 국내 응답에는 전일종가 필드가 아예 없다. 즉 null은
      *        "출처가 안 준다"는 뜻이지 "호출부가 빠뜨렸다"가 아니다. 이 둘이 타입으로
@@ -75,22 +76,38 @@ class IndexGuards {
 
         // 해외 응답만 전일종가를 직접 준다. 그래서 여기서 처음으로 **독립적인 출처 둘**이 생긴다 —
         // 역산값(현재가 − 전일대비)과 응답값. 국내는 역산 말고는 대조할 것이 없어 이 검사가 없었다.
+        //
+        // 역산값을 quote.prevClose에서 가져오지 않고 **여기서 다시 계산한다.** 오늘은 파서가
+        // prevClose에 역산값을 넣어 주므로 두 값이 같지만, 그건 파서의 관례일 뿐 IndexQuote가
+        // 강제하는 게 아니다(네 필드가 독립인 data class다). prevClose에 응답값이 들어오는 순간
+        // 이 검사는 자기 자신과의 비교가 되어 영원히 안 걸리고, **테스트는 전부 초록으로 남는다.**
+        // 가정이 아니다 — 설계 문서의 저장 매핑표가 한동안 `prev_close ← ovrs_nmix_prdy_clpr`
+        // (응답 직접)이라고 정반대를 지시하고 있었고, 파서가 주석을 달아 일부러 어기고 있었다.
+        // 그러니 "같은 값인데 왜 다시 계산하지" 하고 quote.prevClose로 되돌리지 말 것.
+        //
         // 등락률 검사와는 별개다: 등락률은 change와 prevClose끼리만 맞으면 통과하므로,
-        // 셋이 통째로 다른 지수의 값이어도 등락률은 멀쩡히 맞는다.
+        // output1의 필드가 한 칸 밀려 ovrs_nmix_prdy_clpr 자리에 시가가 들어와도 등락률은
+        // 멀쩡히 맞고 여기서만 걸린다.
+        // (반대로 **응답 전체가 엉뚱한 지수**인 경우는 output1도 그 지수 기준으로 일관돼서
+        //  이 가드도 통과시킨다. 그건 이름 대조(nameContains)가 잡는 몫이지 여기가 아니다.)
         //
         // **허용오차를 두지 않는다 — 정확히 일치해야 한다.** 지나가다 "장중엔 두 출처가 갈라질 수
         // 있으니 오차를 두자"고 완화하지 말 것. 근거 셋:
         //  1. 2026-08-13 실측(HK#HS)은 **홍콩 장중 시각**에 찍은 것인데도 output1의 현재가와
-        //     output2[0]의 현재가가 25365.14로 완전히 같았다. 장중에도 갈라지지 않는다는 실측이다
+        //     output2[0]의 현재가가 25365.14로 같았다. 다만 **관측 1건이고 해석의 여지가 있다** —
+        //     그 봉은 acml_vol이 "0"인데 전일 봉은 23804413이다. 항셍은 거래량을 싣는 지수이니
+        //     장중 봉이 아직 갱신 전이라 output1에서 시딩된 껍데기였을 가능성과도 맞는다.
+        //     약한 증거인 채로 남긴다 — 결론은 아래 2·3만으로도 선다
         //  2. 실제 수집은 전부 장 마감 이후에 돈다(미국·유럽 21:30 UTC, 아시아 08:30 UTC)
         //  3. 어긋남은 시장 사건이 아니라 파싱 실패다. 오차를 두면 "소수점 한 칸"처럼
         //     이 클래스가 잡으라고 있는 어긋남이 그 폭 안에 숨는다
         //
         // 비교는 compareTo로 한다. equals/==는 스케일까지 보므로 6345.53 != 6345.5300이 되어
         // 자릿수만 다른 정상 응답을 이상으로 신고한다.
-        if (reportedPrevClose != null && reportedPrevClose.compareTo(quote.prevClose) != 0) {
+        val derived = quote.price.subtract(quote.change)
+        if (reportedPrevClose != null && reportedPrevClose.compareTo(derived) != 0) {
             anomalies += "${quote.indexCode} 응답 전일종가가 역산값과 다릅니다 " +
-                "(응답 ${plain(reportedPrevClose)}, 역산 ${plain(quote.prevClose)}, " +
+                "(응답 ${plain(reportedPrevClose)}, 역산 ${plain(derived)}, " +
                 "현재가 ${plain(quote.price)}, 전일대비 ${plain(quote.change)})"
         }
 
