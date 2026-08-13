@@ -1,7 +1,10 @@
 package com.allfolio.config
 
 import com.allfolio.api.admin.FxRateAdminController
+import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.api.scheduler.SchedulerTriggerController
+import com.allfolio.market.index.IndexCollectService
+import com.allfolio.market.index.KisIndexClient
 import com.allfolio.auth.JwtTokenService
 import com.allfolio.auth.UserEntity
 import com.allfolio.auth.UserRole
@@ -33,6 +36,7 @@ import java.math.BigDecimal
         SseTokenFilter::class,
         JwtTokenService::class,
         FxRateAdminController::class,
+        MarketIndexAdminController::class,
         SchedulerTriggerController::class,
     ],
     properties = [
@@ -52,6 +56,14 @@ class SecurityConfigAdminTest {
 
     @MockBean
     private lateinit var hanaFxCollectService: HanaFxCollectService
+
+    // 같은 이유로 자리만 채운다 — SchedulerTriggerController가 MarketIndexAdminController를,
+    // 그쪽이 이 둘을 요구한다 (AF-101).
+    @MockBean
+    private lateinit var kisIndexClient: KisIndexClient
+
+    @MockBean
+    private lateinit var indexCollectService: IndexCollectService
 
     @Autowired
     private lateinit var mockMvc: MockMvc
