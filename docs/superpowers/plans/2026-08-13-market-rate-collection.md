@@ -667,12 +667,42 @@ class MarketRatePropertiesTest {
         }
     }
 
+    /**
+     * 오타난 설정은 기동을 실패시킨다. 런타임에 종목별 실패로 흘리면 매일 실패 한 줄이
+     * 쌓일 뿐이고, 그 사이 그 종목은 비어 있다. `EcosProperties.Series`가 unit-divisor에
+     * 같은 판단을 한다 — 바인딩 시점에 막는다.
+     */
+    @Test
+    fun `코드가 비어 있으면 기동에 실패한다`() {
+        runner.withPropertyValues(
+            "market-rate.series[0].code=KTB_3Y",
+            "market-rate.series[0].stat-code=",
+            "market-rate.series[0].item-code=5030000",
+        ).run { context ->
+            assertThat(context).hasFailed()
+            assertThat(context.startupFailure).hasMessageContaining("KTB_3Y")
+        }
+    }
+
+    @Test
+    fun `지원하지 않는 주기는 기동에 실패한다`() {
+        runner.withPropertyValues(
+            "market-rate.series[0].code=BASE_RATE",
+            "market-rate.series[0].stat-code=722Y001",
+            "market-rate.series[0].item-code=0101000",
+            "market-rate.series[0].cycle=M",
+        ).run { context ->
+            assertThat(context).hasFailed()
+            assertThat(context.startupFailure).hasMessageContaining("주기")
+        }
+    }
+
     @EnableConfigurationProperties(MarketRateProperties::class)
     class TestConfig
 }
 ```
 
-> 위 테스트의 `721Y001`·`5030000`은 **바인딩이 되는지만 보는 더미 문자열이다.**
+> `721Y001`·`5030000`·`722Y001`·`0101000`은 **바인딩이 되는지만 보는 더미 문자열이다.**
 > 실제 코드는 Task 9에서 탐색 엔드포인트로 확인해 넣는다 — 이 값을 설정에 옮겨 적지 말 것.
 
 - [ ] **Step 2: 컴파일 실패를 확인한다**
@@ -713,13 +743,41 @@ class MarketRateProperties {
         /** ECOS 주기 코드. 현재 지원은 D뿐이다 */
         var cycle: String = "D"
     }
+
+    /**
+     * 오타난 설정으로는 기동하지 않는다.
+     *
+     * 런타임 실패로 흘리면 매일 실패 한 줄이 쌓일 뿐이고 그 종목은 계속 비어 있다.
+     * `EcosProperties.Series`가 `unit-divisor`에 같은 판단을 한다 — 바인딩 시점에 막는다.
+     *
+     * **`init` 블록으로는 안 된다.** 이 클래스는 setter 바인딩(`var`)이라 생성자가
+     * 빈 값으로 먼저 돌고 나서 프로퍼티가 채워진다 — `EcosProperties.Series`가 쓰는
+     * `require`가 여기서는 항상 빈 값에 대해 돈다. 바인딩이 끝난 뒤인 `@PostConstruct`여야 한다.
+     */
+    @PostConstruct
+    fun validate() {
+        val problems = series.flatMap { s ->
+            val label = s.code.ifBlank { "(code 없음)" }
+            buildList {
+                if (s.code.isBlank()) add("code가 비어 있습니다")
+                if (s.statCode.isBlank()) add("$label: stat-code가 비어 있습니다")
+                if (s.itemCode.isBlank()) add("$label: item-code가 비어 있습니다")
+                // 클라이언트도 같은 검사를 하지만 그건 호출 시점이라 종목별 실패로 흩어진다.
+                // 여기서 막으면 배포가 실패해 사람이 즉시 본다
+                if (s.cycle != "D") add("$label: 지원하지 않는 주기입니다: ${s.cycle} (현재 D만 지원)")
+            }
+        }
+        require(problems.isEmpty()) { "market-rate.series 설정이 올바르지 않습니다 — " + problems.joinToString("; ") }
+    }
 }
 ```
+
+임포트: `jakarta.annotation.PostConstruct`
 
 - [ ] **Step 4: 테스트가 통과하는지 확인한다**
 
 Run: `cd allfolio-backend && ./gradlew :backend-app:test --tests '*MarketRateProperties*' --no-daemon`
-Expected: BUILD SUCCESSFUL (2 tests)
+Expected: BUILD SUCCESSFUL (4 tests)
 
 - [ ] **Step 5: `application.yml`에 빈 블록을 둔다**
 
