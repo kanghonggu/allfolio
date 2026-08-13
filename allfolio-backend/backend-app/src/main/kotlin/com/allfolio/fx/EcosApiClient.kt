@@ -10,14 +10,23 @@ import java.time.Duration
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
+/**
+ * ECOS 시계열 하나를 가리키는 좌표.
+ *
+ * @param cycle ECOS 주기 코드. 현재 지원은 `D`뿐이다 — 다른 주기는 요청 날짜 형식과
+ *              응답 `TIME` 형식이 함께 바뀌므로, 확인되지 않은 채 넓히면 조용히 0건이 된다.
+ * @param valuePolicy 어떤 값을 받아들일지. 환율과 금리가 다르다 — [EcosValuePolicy] 참조
+ */
+data class EcosQuery(
+    val statCode: String,
+    val itemCode: String,
+    val cycle: String,
+    val valuePolicy: EcosValuePolicy,
+)
+
 interface EcosApiClient {
-    /** 지정 기간의 일별 통계를 가져온다. 실패하면 예외를 던진다 — 호출자가 기존 값을 지키도록. */
-    fun fetchDailyRates(
-        statCode: String,
-        itemCode: String,
-        from: LocalDate,
-        to: LocalDate,
-    ): EcosParseResult
+    /** 지정 기간의 통계를 가져온다. 실패하면 예외를 던진다 — 호출자가 기존 값을 지키도록. */
+    fun fetch(query: EcosQuery, from: LocalDate, to: LocalDate): EcosParseResult
 }
 
 /**
@@ -63,6 +72,9 @@ class EcosStatisticSearchClient(
         /** 실패 시 로그에 남길 응답 앞부분 길이. 본문 전체는 남기지 않는다(길고, 되울린 URI가 섞인다). */
         private const val BODY_PREVIEW_LENGTH = 200
 
+        /** 현재 유일하게 지원하는 주기. 다른 주기는 요청 날짜 형식·TIME 파싱이 모두 달라진다. */
+        private const val DAILY_CYCLE = "D"
+
         /**
          * 되울려 온 우리 요청 URI. 경로 첫 세그먼트가 인증키라 통째로 지운다.
          * 공백·따옴표·꺾쇠에서 멈춘다 — HTML 안에 박혀 와도 뒤따르는 마크업까지 먹지 않도록.
@@ -92,25 +104,25 @@ class EcosStatisticSearchClient(
         return masked.replace(REQUEST_PATH, "[요청 URI 생략]").take(BODY_PREVIEW_LENGTH)
     }
 
-    override fun fetchDailyRates(
-        statCode: String,
-        itemCode: String,
-        from: LocalDate,
-        to: LocalDate,
-    ): EcosParseResult {
+    override fun fetch(query: EcosQuery, from: LocalDate, to: LocalDate): EcosParseResult {
         // 설정 누락은 서버 문제다. IllegalArgumentException으로 던지면 GlobalExceptionHandler가
         // 400 Bad Request로 내보내 클라이언트 잘못처럼 보인다.
         if (properties.apiKey.isBlank()) {
             throw EcosApiException("NO_KEY", "ECOS 인증키가 설정되지 않았습니다 (ECOS_API_KEY)")
         }
-        if (statCode.isBlank() || itemCode.isBlank()) {
+        if (query.statCode.isBlank() || query.itemCode.isBlank()) {
             throw EcosApiException("NO_SERIES", "ECOS 통계표·항목 코드가 설정되지 않았습니다")
+        }
+        // 아래 DATE_FORMAT(yyyyMMdd)과 파서의 TIME 해석이 둘 다 일별 전제다.
+        // 다른 주기를 통과시키면 ECOS가 0건을 돌려주고, 그건 "코드가 틀렸다"와 구분되지 않는다.
+        if (query.cycle != DAILY_CYCLE) {
+            throw EcosApiException("CYCLE", "지원하지 않는 주기입니다: ${query.cycle} (현재 D만 지원)")
         }
 
         val path = "/api/StatisticSearch/${properties.apiKey}/json/kr/1/$MAX_ROWS/" +
-            "$statCode/D/${from.format(DATE_FORMAT)}/${to.format(DATE_FORMAT)}/$itemCode"
+            "${query.statCode}/${query.cycle}/${from.format(DATE_FORMAT)}/${to.format(DATE_FORMAT)}/${query.itemCode}"
 
-        log.info("[ECOS] 조회 statCode={} itemCode={} {}~{}", statCode, itemCode, from, to)
+        log.info("[ECOS] 조회 statCode={} itemCode={} {}~{}", query.statCode, query.itemCode, from, to)
 
         val body = try {
             webClient.get()
@@ -127,16 +139,16 @@ class EcosStatisticSearchClient(
                 // 2xx인데 이 예외가 나왔다는 건 본문을 못 읽었다는 뜻이다(코덱 8MB 초과, 중간 절단 등).
                 // "HTTP 200 실패"로 보고하면 운영자가 한국은행 쪽을 보게 되므로 코드를 따로 준다 —
                 // Task 11은 code만 받으므로 여기서 구분하지 않으면 구분할 방법이 없다.
-                log.warn("[ECOS] 응답 본문 디코드 실패 status={} statCode={} reason={}", status, statCode, e.javaClass.simpleName)
+                log.warn("[ECOS] 응답 본문 디코드 실패 status={} statCode={} reason={}", status, query.statCode, e.javaClass.simpleName)
                 throw EcosApiException("DECODE", "응답 본문을 읽지 못했습니다 (status=$status)")
             }
-            log.warn("[ECOS] HTTP {} statCode={} preview={}", status, statCode, preview(e.responseBodyAsString))
+            log.warn("[ECOS] HTTP {} statCode={} preview={}", status, query.statCode, preview(e.responseBodyAsString))
             throw EcosApiException("HTTP-$status", "ECOS가 HTTP $status 를 반환했습니다")
         } catch (e: WebClientRequestException) {
             // 전송 계층 실패(connection refused·DNS·TLS·reset). 외부 정부 API라 4xx보다 오히려 흔하다.
             // Reactor가 붙이는 *__checkpoint suppressed 예외에 요청 URI가 통째로 들어 있어 여기도 인증키가 샌다.
             // 응답 경로와 같은 이유로 cause를 붙이지 않고, 원인은 클래스 이름만 남긴다.
-            log.warn("[ECOS] 연결 실패 statCode={} reason={}", statCode, e.cause?.javaClass?.simpleName)
+            log.warn("[ECOS] 연결 실패 statCode={} reason={}", query.statCode, e.cause?.javaClass?.simpleName)
             throw EcosApiException("CONN", "ECOS 연결에 실패했습니다")
         } catch (e: EcosApiException) {
             throw e // 위 EMPTY. 우리가 만든 예외라 이미 깨끗하다.
@@ -158,16 +170,14 @@ class EcosStatisticSearchClient(
                 // 플래그가 지워지면 종료 중 끊긴 백필이 ECOS 장애로 읽히고 Task 10 루프가 다음 통화로 넘어간다.
                 Thread.currentThread().interrupt()
             }
-            log.warn("[ECOS] 호출 실패 statCode={} reason={}", statCode, e.javaClass.simpleName)
+            log.warn("[ECOS] 호출 실패 statCode={} reason={}", query.statCode, e.javaClass.simpleName)
             throw EcosApiException("IO", "ECOS 호출에 실패했습니다")
         }
 
         // 파서는 JSON 모양이 어긋난 경우만 EcosApiException으로 보고한다.
         // 본문이 아예 JSON이 아니면(HTML 오류 페이지 등) Jackson 예외가 그대로 새므로 여기서 감싼다.
         return try {
-            // TODO(AF-102 Task 2): EcosQuery가 생기면 query.valuePolicy로 교체한다.
-            // 지금은 이 클라이언트의 유일한 호출자가 환율이라 POSITIVE로 고정해 둔다.
-            parser.parse(body, EcosValuePolicy.POSITIVE)
+            parser.parse(body, query.valuePolicy)
         } catch (e: EcosApiException) {
             // 파서는 RESULT.MESSAGE를 그대로 detail에 넣는다. 그건 서버가 준 문자열이라
             // 우리 요청 URI가 되울려 올 수 있고 길이 제한도 없다 — 본문 미리보기와 똑같은 경로다.
@@ -182,7 +192,7 @@ class EcosStatisticSearchClient(
             // cause도 붙이지 않는다: JsonParseException 메시지가 원본 본문을 [Source: (String)"..."]로 물고 있다.
             log.warn(
                 "[ECOS] 응답이 JSON이 아닙니다 statCode={} reason={} preview={}",
-                statCode, e.javaClass.simpleName, preview(body),
+                query.statCode, e.javaClass.simpleName, preview(body),
             )
             throw EcosApiException("MALFORMED", "응답 본문이 올바른 JSON이 아닙니다")
         }

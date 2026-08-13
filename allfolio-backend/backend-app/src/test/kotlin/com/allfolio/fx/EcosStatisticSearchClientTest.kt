@@ -67,9 +67,15 @@ class EcosStatisticSearchClientTest {
         EcosResponseParser(ObjectMapper()),
     )
 
-    private fun call(port: Int) = client(port).fetchDailyRates(
-        "TEST-STAT-CODE", "TEST-ITEM-CODE", LocalDate.of(2026, 1, 2), LocalDate.of(2026, 3, 4),
+    private fun query(cycle: String = "D") = EcosQuery(
+        statCode = "TEST-STAT-CODE",
+        itemCode = "TEST-ITEM-CODE",
+        cycle = cycle,
+        valuePolicy = EcosValuePolicy.POSITIVE,
     )
+
+    private fun call(port: Int) =
+        client(port).fetch(query(), LocalDate.of(2026, 1, 2), LocalDate.of(2026, 3, 4))
 
     /** 예외 전체(메시지 + cause 체인 + suppressed + 모든 스택프레임)에 비밀이 없는지 본다. */
     private fun assertNoSecretAnywhere(t: Throwable) {
@@ -193,7 +199,7 @@ class EcosStatisticSearchClientTest {
         val client = client(port).apply { timeout = Duration.ofMillis(300) }
 
         val raw = catchThrowable {
-            client.fetchDailyRates("TEST-STAT-CODE", "TEST-ITEM-CODE", LocalDate.now(), LocalDate.now())
+            client.fetch(query(), LocalDate.now(), LocalDate.now())
         }
 
         assertThat(raw).isInstanceOf(EcosApiException::class.java)
@@ -214,7 +220,7 @@ class EcosStatisticSearchClientTest {
         val worker = Thread {
             started.countDown()
             try {
-                client.fetchDailyRates("TEST-STAT-CODE", "TEST-ITEM-CODE", LocalDate.now(), LocalDate.now())
+                client.fetch(query(), LocalDate.now(), LocalDate.now())
             } catch (e: Throwable) {
                 thrown.set(e)
             }
@@ -281,15 +287,24 @@ class EcosStatisticSearchClientTest {
         // IllegalArgumentException이면 GlobalExceptionHandler가 400을 내보낸다 — 서버 설정 누락은 클라이언트 잘못이 아니다.
         val noKey = EcosStatisticSearchClient(EcosProperties(), EcosResponseParser(ObjectMapper()))
 
-        assertThatThrownBy { noKey.fetchDailyRates("S", "I", LocalDate.now(), LocalDate.now()) }
+        assertThatThrownBy { noKey.fetch(query(), LocalDate.now(), LocalDate.now()) }
             .isInstanceOf(EcosApiException::class.java)
             .hasMessageContaining("NO_KEY")
 
         val noSeries = EcosStatisticSearchClient(
             EcosProperties(apiKey = apiKey), EcosResponseParser(ObjectMapper()),
         )
-        assertThatThrownBy { noSeries.fetchDailyRates("", "", LocalDate.now(), LocalDate.now()) }
+        assertThatThrownBy {
+            noSeries.fetch(query().copy(statCode = "", itemCode = ""), LocalDate.now(), LocalDate.now())
+        }
             .isInstanceOf(EcosApiException::class.java)
             .hasMessageContaining("NO_SERIES")
+    }
+
+    @Test
+    fun `D가 아닌 주기는 호출 전에 거부한다`() {
+        assertThatThrownBy { client(9999).fetch(query("M"), LocalDate.now(), LocalDate.now()) }
+            .isInstanceOf(EcosApiException::class.java)
+            .hasMessageContaining("주기")
     }
 }

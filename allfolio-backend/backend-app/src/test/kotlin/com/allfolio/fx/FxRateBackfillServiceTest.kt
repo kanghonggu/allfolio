@@ -379,26 +379,16 @@ class FxRateBackfillServiceTest {
         var lastStatCode: String? = null
         var lastItemCode: String? = null
 
-        override fun fetchDailyRates(
-            statCode: String,
-            itemCode: String,
-            from: LocalDate,
-            to: LocalDate,
-        ): EcosParseResult {
-            lastStatCode = statCode
-            lastItemCode = itemCode
+        override fun fetch(query: EcosQuery, from: LocalDate, to: LocalDate): EcosParseResult {
+            lastStatCode = query.statCode
+            lastItemCode = query.itemCode
             return result
         }
     }
 
     private class ExplodingClient(private val failure: RuntimeException) :
         FakeClient(EcosParseResult(emptyList(), 0)) {
-        override fun fetchDailyRates(
-            statCode: String,
-            itemCode: String,
-            from: LocalDate,
-            to: LocalDate,
-        ): EcosParseResult = throw failure
+        override fun fetch(query: EcosQuery, from: LocalDate, to: LocalDate): EcosParseResult = throw failure
     }
 
     /**
