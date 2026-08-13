@@ -77,6 +77,44 @@ class KisIndexParserTest {
         assertThat(q.change).isEqualByComparingTo("233.51")
     }
 
+    // 절댓값은 크기를 남기면서 **모순을 지운다**. 값이 음수인데 부호 코드가 상승이면
+    // 파서는 아무 일 없다는 듯 +233.51을 내놓고, IndexGuards도 못 잡는다 —
+    // 같은 방향을 change와 changeRate에 똑같이 곱하므로 둘은 언제나 서로 맞기 때문이다.
+    // 그러면 하락한 날이 상승으로 저장된다.
+    @Test
+    fun `값이 음수인데 부호가 상승이면 거부한다`() {
+        assertThatThrownBy { parser.parse("KOSPI", realResponse(vrss = "-233.51", sign = "2")) }
+            .isInstanceOf(KisIndexException::class.java)
+            .hasMessageContaining("부호")
+    }
+
+    // 등락률 쪽에만 모순이 있어도 같은 이유로 거부한다. 한 필드만 검사하면 나머지 하나로 새어 나간다.
+    @Test
+    fun `등락률만 음수여도 부호가 상승이면 거부한다`() {
+        assertThatThrownBy { parser.parse("KOSPI", realResponse(ctrt = "-3.68", sign = "2")) }
+            .isInstanceOf(KisIndexException::class.java)
+            .hasMessageContaining("부호")
+    }
+
+    // 보합(3)도 마찬가지다. 음수가 왔다는 건 필드 뜻을 우리가 잘못 안다는 뜻이다.
+    @Test
+    fun `값이 음수인데 부호가 보합이면 거부한다`() {
+        assertThatThrownBy { parser.parse("KOSPI", realResponse(vrss = "-233.51", sign = "3")) }
+            .isInstanceOf(KisIndexException::class.java)
+            .hasMessageContaining("부호")
+    }
+
+    // 어느 관례를 KIS가 쓰는지 모르므로 "부호 있는 하락"은 모순이 아니다. 양수는 어느 코드와도 맞는다.
+    @Test
+    fun `부호가 일관되면 상승 하락 보합 모두 통과한다`() {
+        assertThat(parser.parse("KOSPI", realResponse(vrss = "-233.51", sign = "5", ctrt = "-3.68")).change)
+            .isEqualByComparingTo("-233.51")
+        assertThat(parser.parse("KOSPI", realResponse(vrss = "-233.51", sign = "4", ctrt = "-3.68")).change)
+            .isEqualByComparingTo("-233.51")
+        assertThat(parser.parse("KOSPI", realResponse(sign = "1")).change).isEqualByComparingTo("233.51")
+        assertThat(parser.parse("KOSPI", realResponse(sign = "3")).change).isEqualByComparingTo(BigDecimal.ZERO)
+    }
+
     @Test
     fun `모르는 부호 코드는 거부한다`() {
         assertThatThrownBy { parser.parse("KOSPI", realResponse(sign = "9")) }

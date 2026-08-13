@@ -156,10 +156,13 @@ class MarketIndexAdminControllerTest {
 
     /**
      * requested == 0은 "아무도 아무것도 요청하지 않았다"(설정이 빔)이지 상류 장애가 아니다.
-     * 이걸 502로 내보내면 운영자가 KIS를 확인하러 가는데 진짜 문제는 빠진 YAML 블록이다.
+     * 그래서 502는 아니지만 **200도 아니다** — 200으로 두면 `market-index:` 키를 바꾸거나
+     * `@ConfigurationProperties` prefix가 어긋나는 순간 수집이 멈춘 채 잡이 영원히 초록으로 끝난다.
+     * 502가 막으려던 그 조용한 중단이다. 우리 설정 실수이므로 500이고, 문구는 운영자를
+     * KIS가 아니라 설정 키로 보내야 한다.
      */
     @Test
-    fun `수집 대상이 없으면 502가 아니다`() {
+    fun `수집 대상이 없으면 500을 낸다`() {
         stubSummary(
             summary.copy(
                 requested = 0,
@@ -171,9 +174,11 @@ class MarketIndexAdminControllerTest {
             )
         )
 
-        val response = controller.collect(IndexSlot.CLOSE)
+        val thrown = assertThrows(ResponseStatusException::class.java) {
+            controller.collect(IndexSlot.CLOSE)
+        }
 
-        assertThat(response.statusCode).isEqualTo(HttpStatus.OK)
-        assertThat(response.body?.requested).isEqualTo(0)
+        assertThat(thrown.statusCode).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR)
+        assertThat(thrown.reason).contains("market-index.domestic")
     }
 }

@@ -12,6 +12,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
 import org.slf4j.LoggerFactory
+import org.springframework.dao.DataIntegrityViolationException
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -94,6 +95,60 @@ class IndexCollectServiceTest {
         assertThat(repo.rows).hasSize(3)
         assertThat(repo.rows.map { it.id }).containsExactlyInAnyOrderElementsOf(idsAfterFirst)
         assertThat(repo.row("KOSPI").price).isEqualByComparingTo("6600.00")
+    }
+
+    @Test
+    fun `같은 날 다른 슬롯은 각각 행으로 남고 findLatest는 CLOSE를 돌려준다`() {
+        // 이 기능의 저장 방식 자체가 여기 걸려 있다 — 하루에 세 번 수집하되 슬롯마다 행이 따로 남고,
+        // 그중 CLOSE가 그날의 대표값이다. 슬롯이 키에서 빠지면 아침 값이 종가에 덮이고,
+        // 슬롯 순위가 사전순으로 바뀌면 OPEN이 종가보다 최신으로 잡힌다.
+        val repo = FakeRepo()
+        val client = FakeClient(responses)
+        service(repo, client).collect(IndexSlot.OPEN, utcOpenSharp)
+
+        client.responses = mapOf(
+            "0001" to output("6600.00", "254.47", "4.01"),
+            "1001" to kosdaq,
+            "2001" to kospi200,
+        )
+        val summary = service(repo, client).collect(IndexSlot.CLOSE, utcAfterClose)
+
+        assertThat(summary.inserted).isEqualTo(3)   // 같은 날이어도 슬롯이 다르면 새 행이다
+        assertThat(summary.updated).isZero()
+
+        val kospiRows = repo.rows.filter { it.indexCode == "KOSPI" }
+        assertThat(kospiRows).hasSize(2)
+        assertThat(kospiRows.map { it.slot }).containsExactlyInAnyOrder("OPEN", "CLOSE")
+        assertThat(kospiRows.map { it.tradeDate }).containsOnly(tradeDate)
+        assertThat(repo.row("KOSPI", "OPEN").price).isEqualByComparingTo("6579.04")
+        assertThat(repo.row("KOSPI", "OPEN").marketStatus).isEqualTo("장중")
+        assertThat(repo.row("KOSPI", "CLOSE").price).isEqualByComparingTo("6600.00")
+        assertThat(repo.row("KOSPI", "CLOSE").marketStatus).isEqualTo("장마감")
+
+        val latest = repo.findLatest("KOSPI")
+        assertThat(latest?.slot).isEqualTo("CLOSE")
+        assertThat(latest?.price).isEqualByComparingTo("6600.00")
+    }
+
+    @Test
+    fun `삽입이 유니크 충돌을 내면 다시 읽어 갱신으로 끝낸다`() {
+        // 콜드 스타트에서 첫 요청의 --max-time이 만료돼도 서버는 collect()를 계속 돌고 있고,
+        // curl은 20초 뒤 두 번째 요청을 보낸다. 둘 다 existing == null을 보고 둘 다 넣으면
+        // 늦은 쪽이 uk_market_index_quote에 걸린다. 그걸 실패로 세면 세 지수가 다 부딪힌 순간
+        // collected == 0 → 502가 되어, 첫 요청이 세 행을 멀쩡히 저장했는데도 잡이 빨개진다.
+        val repo = FakeRepo().apply { collideOnInsert += listOf("KOSPI", "KOSDAQ", "KOSPI200") }
+
+        val summary = service(repo).collect(IndexSlot.MID, utcMidday)
+
+        assertThat(summary.collected).isEqualTo(3)
+        assertThat(summary.inserted).isZero()
+        assertThat(summary.updated).isEqualTo(3)
+        assertThat(summary.failed).isZero()
+        assertThat(summary.failures).isEmpty()
+        assertThat(repo.rows).hasSize(3)
+        // 먼저 도착한 요청이 넣어 둔 행 위에 이번 값이 얹힌다
+        assertThat(repo.row("KOSPI").price).isEqualByComparingTo("6579.04")
+        assertThat(repo.row("KOSPI").changeRate).isEqualByComparingTo("3.68")
     }
 
     @Test
@@ -299,6 +354,13 @@ class IndexCollectServiceTest {
 
         val rows = seed.toMutableList()
 
+        /**
+         * 여기 담긴 지수는 **첫 삽입에서 유니크 충돌을 낸다.** 겹쳐 도는 요청이 우리가 읽고 나서
+         * 넣기 전에 먼저 넣어 버린 상황을 그대로 흉내낸다 — 승자 행을 rows에 남기고 예외를 던지므로,
+         * 이어지는 findBy…가 그 행을 돌려준다.
+         */
+        val collideOnInsert = mutableSetOf<String>()
+
         /** 이번 실행이 쓴 행. 직전 영업일을 미리 심어 둔 테스트가 있어 슬롯까지 좁힌다 */
         fun row(indexCode: String, slot: String = "MID") =
             rows.single { it.indexCode == indexCode && it.slot == slot }
@@ -317,7 +379,27 @@ class IndexCollectServiceTest {
 
         // JPA와 같게: 이미 관리 중인 인스턴스를 다시 저장해도 행이 늘지 않는다
         override fun <S : MarketIndexQuoteEntity> save(entity: S): S {
-            if (rows.none { it === entity }) rows += entity
+            if (rows.none { it === entity }) {
+                if (collideOnInsert.remove(entity.indexCode)) {
+                    // 먼저 도착한 요청이 넣어 둔 행. 값은 일부러 다르게 둬서 갱신이 실제로 얹히는지 본다
+                    rows += MarketIndexQuoteEntity(
+                        id = UUID.randomUUID(),
+                        indexCode = entity.indexCode,
+                        tradeDate = entity.tradeDate,
+                        slot = entity.slot,
+                        price = BigDecimal("1"),
+                        prevClose = BigDecimal("1"),
+                        changeValue = BigDecimal.ZERO,
+                        changeRate = BigDecimal.ZERO,
+                        prevCloseDate = null,
+                        marketStatus = "개장전",
+                        source = "KIS",
+                        collectedAt = LocalDateTime.of(2026, 8, 12, 3, 29),
+                    )
+                    throw DataIntegrityViolationException("uk_market_index_quote 위반")
+                }
+                rows += entity
+            }
             return entity
         }
 

@@ -68,12 +68,30 @@ class IndexGuardsTest {
             .anyMatch { it.contains("현재가") }
     }
 
-    // 전일종가가 0이면 등락률을 계산할 수 없다. 0으로 나누어 터지지 말 것.
+    // 전일종가가 0이면 등락률을 계산할 수 없다. 0으로 나누어 터지지 말 것 —
+    // 그렇다고 조용히 통과시켜도 안 된다. 반환이 비면 "저장해도 좋다"는 뜻이라
+    // 검사를 건너뛰는 것이 곧 이 클래스의 유일한 내용 검사를 스스로 끄는 일이 된다.
+    // (앞선 `isNotNull` 단언은 Kotlin List가 결코 null이 아니라 아무것도 못 잡았다.)
     @Test
-    fun `전일종가가 0이면 등락률 검사를 건너뛰고 터지지 않는다`() {
+    fun `전일종가가 0이면 터지지 않고 이상으로 잡는다`() {
         val q = IndexQuote("KOSPI", BigDecimal("100"), BigDecimal.ZERO, BigDecimal("100"), BigDecimal("0"))
 
-        assertThat(guards.check(q)).isNotNull   // 예외가 나지 않는 것이 요점
+        assertThat(guards.check(q)).anyMatch { it.contains("전일종가") }
+    }
+
+    // price - change라 전일종가는 음수가 될 수 있다. 현재가가 잘려서 온 응답
+    // (prpr "100.00" + vrss "233.51")이 정확히 이 모양이고, 파싱은 멀쩡히 성공한다.
+    @Test
+    fun `전일종가가 음수면 이상으로 잡는다`() {
+        val truncated = IndexQuote(
+            "KOSPI",
+            BigDecimal("100.00"),
+            BigDecimal("100.00").subtract(BigDecimal("233.51")),
+            BigDecimal("233.51"),
+            BigDecimal("3.68"),
+        )
+
+        assertThat(guards.check(truncated)).anyMatch { it.contains("전일종가") }
     }
 
     @Test

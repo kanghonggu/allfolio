@@ -44,8 +44,15 @@ class IndexGuards {
             anomalies += "${quote.indexCode} 현재가가 0 이하입니다 (${plain(quote.price)})"
         }
 
-        // 전일종가가 0이면 등락률을 계산할 수 없다. 나누지 않고 이 검사만 건너뛴다
-        if (quote.prevClose > BigDecimal.ZERO) {
+        // 전일종가는 price - change라 응답 어느 쪽이 틀려도 여기로 흘러든다.
+        // 0 이하면 등락률을 계산할 수 없으니 나눗셈은 건너뛰되, **건너뛰고 조용히 통과시키면 안 된다** —
+        // 반환이 비면 "저장해도 좋다"는 뜻이라 이 클래스의 유일한 내용 검사를 스스로 꺼 버리는 셈이다.
+        // 예: 현재가가 잘려서 온 응답(prpr "100.00", vrss "233.51")은 전일종가 -133.51로 떨어지는데,
+        // 그게 바로 이 가드가 존재하는 이유인 "파싱은 됐는데 틀린 값"이다.
+        if (quote.prevClose <= BigDecimal.ZERO) {
+            anomalies += "${quote.indexCode} 전일종가가 0 이하입니다 " +
+                "(${plain(quote.prevClose)}, 현재가 ${plain(quote.price)}, 전일대비 ${plain(quote.change)})"
+        } else {
             val computed = quote.change
                 .divide(quote.prevClose, RATE_SCALE, RoundingMode.HALF_UP)
                 .multiply(HUNDRED)

@@ -3,6 +3,7 @@ package com.allfolio.market.index
 import com.allfolio.unifiedasset.infrastructure.entity.MarketIndexQuoteEntity
 import com.allfolio.unifiedasset.infrastructure.jpa.MarketIndexQuoteJpaRepository
 import org.slf4j.LoggerFactory
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -111,8 +112,25 @@ class IndexCollectService(
 
                 val existing = repository.findByIndexCodeAndTradeDateAndSlot(index.code, tradeDate, slot.name)
                 if (existing == null) {
-                    repository.save(newEntity(index.code, tradeDate, slot, quote, status, now))
-                    inserted++
+                    try {
+                        repository.save(newEntity(index.code, tradeDate, slot, quote, status, now))
+                        inserted++
+                    } catch (e: DataIntegrityViolationException) {
+                        // 읽고-나서-넣기 사이에 다른 요청이 같은 (지수, 거래일, 슬롯)을 먼저 넣었다.
+                        // **경합의 원인은 우리 재시도 자체다.** 콜드 스타트로 첫 요청의
+                        // `--max-time 120`이 만료돼도 서버는 collect()를 계속 돌고 있고, curl은
+                        // 20초 뒤 두 번째 요청을 보내 같은 인스턴스에서 같은 루프가 겹쳐 돈다.
+                        // 워크플로의 concurrency 그룹은 **잡 하나 안의 겹침**을 못 본다.
+                        //
+                        // 여기서 그냥 실패로 세면 세 지수가 다 부딪힌 순간 collected == 0이 되어
+                        // 컨트롤러가 502를 내고, 첫 요청이 세 행을 멀쩡히 저장했는데도 잡이 빨개진다.
+                        // 그래서 한 번만 다시 읽어 갱신으로 돌린다. @Transactional은 붙이지 않는다 —
+                        // 지수마다 HTTP 호출이 있어 루프 내내 Neon 커넥션을 쥐게 된다.
+                        val winner = repository.findByIndexCodeAndTradeDateAndSlot(index.code, tradeDate, slot.name)
+                            ?: throw e   // 유니크 충돌이 아니었다는 뜻이다. 삼키면 안 된다
+                        repository.save(winner.apply { overwrite(quote, status, now) })
+                        updated++
+                    }
                 } else {
                     repository.save(existing.apply { overwrite(quote, status, now) })
                     updated++

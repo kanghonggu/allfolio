@@ -21,6 +21,11 @@ data class IndexQuote(
  * 부호를 싣는다. 값은 절댓값으로만 쓰고 방향은 `prdy_vrss_sign`에서만 가져오면
  * 원본에 부호가 있든 없든 결과가 같다.
  *
+ * 다만 절댓값은 **모순도 같이 지운다**. 원본 부호가 `prdy_vrss_sign`과 어긋나면
+ * (예: 값 `-233.51` + 부호 `2`) 그건 우리가 필드 뜻을 잘못 알고 있다는 뜻이므로 거부한다.
+ * 놓치면 하락한 날을 상승으로 저장한다. 거부만 하고 원본 부호로 방향을 추론하지는 않는다 —
+ * 자세한 규칙은 [magnitude].
+ *
  * 응답의 모든 값은 **문자열**이다.
  */
 @Component
@@ -28,9 +33,10 @@ class KisIndexParser {
 
     fun parse(indexCode: String, output: Map<String, Any?>): IndexQuote {
         val price = number(output, "bstp_nmix_prpr")
-        val rawChange = number(output, "bstp_nmix_prdy_vrss").abs()
-        val rawRate = number(output, "bstp_nmix_prdy_ctrt").abs()
-        val direction = direction(text(output, "prdy_vrss_sign"))
+        val sign = text(output, "prdy_vrss_sign")
+        val direction = direction(sign)
+        val rawChange = magnitude(output, "bstp_nmix_prdy_vrss", sign, direction)
+        val rawRate = magnitude(output, "bstp_nmix_prdy_ctrt", sign, direction)
 
         val change = rawChange.multiply(BigDecimal(direction))
         return IndexQuote(
@@ -52,6 +58,35 @@ class KisIndexParser {
         "3" -> 0
         "4", "5" -> -1
         else -> throw KisIndexException("알 수 없는 전일대비 부호 코드: '$sign'")
+    }
+
+    /**
+     * 크기만 돌려준다. 방향은 여전히 `prdy_vrss_sign`에서만 온다 — **여기서 원본 부호로
+     * 방향을 추론하지 않는다.** 다만 `abs()`는 크기를 남기면서 *모순을 지운다*: KIS가
+     * `bstp_nmix_prdy_vrss: "-233.51"`을 `prdy_vrss_sign: "2"`(상승)와 함께 보내도
+     * 파서는 +233.51을 내놓고 아무도 눈치채지 못한다. [IndexGuards]는 구조적으로 이걸 못 잡는다 —
+     * 같은 방향을 `change`와 `changeRate`에 똑같이 곱하므로 둘은 항상 서로 맞는다.
+     *
+     * KIS가 부호 있는 관례를 쓰는지 없는 관례를 쓰는지는 실측으로 확정되지 않았으므로,
+     * **어느 쪽도 가정하지 않고 모순만** 거부한다.
+     * - 값이 음수인데 코드가 상승(1·2)이나 보합(3) → 모순, 거부
+     * - 값이 음수이고 코드가 하락(4·5) → 부호 있는 관례로 일관, 통과
+     * - 값이 0 이상 → 어느 코드와도 모순이 아니다(부호 없는 관례), 통과
+     */
+    private fun magnitude(
+        output: Map<String, Any?>,
+        key: String,
+        sign: String,
+        direction: Int,
+    ): BigDecimal {
+        val raw = number(output, key)
+        if (raw.signum() < 0 && direction >= 0) {
+            throw KisIndexException(
+                "KIS 지수 응답의 부호가 서로 모순됩니다: $key='${raw.toPlainString()}'(음수)인데 " +
+                    "prdy_vrss_sign='$sign'(${if (direction == 0) "보합" else "상승"})입니다",
+            )
+        }
+        return raw.abs()
     }
 
     private fun text(output: Map<String, Any?>, key: String): String =

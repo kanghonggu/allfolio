@@ -64,6 +64,13 @@ class MarketIndexAdminController(
      * 설정 상태이지 상류 장애가 아니다. 이걸 502로 내보내면 운영자가 KIS를 확인하러 가는데
      * 진짜 문제는 빠진 YAML 블록이다.
      *
+     * **대신 `requested == 0`은 500이다.** 502에서 빼 놓고 아무 데도 안 걸면 조용한 수집 중단이
+     * 다른 길로 되돌아온다: `application.yml`의 `market-index:` 키 이름을 바꾸거나 리팩터링에서
+     * `@ConfigurationProperties` prefix가 어긋나면 목록이 비고, 서비스는 아무도 안 읽는 WARN을
+     * 찍고, 여기서 200이 나가고, 워크플로는 본문을 일부러 파싱하지 않아 잡이 영원히 초록으로 끝난다.
+     * 502가 막으려던 바로 그 실패다. 502가 아니라 500인 이유는 이게 **우리 설정 실수**이지 KIS의
+     * 오작동이 아니기 때문이다 — 502로 부르면 운영자가 남의 API를 확인하느라 시간을 버린다.
+     *
      * [KisIndexException]을 502로 갈아끼우는 이유는 백필·하나은행 엔드포인트와 같다 —
      * 요청은 멀쩡했고 상류 응답이 이상한 것이라, 전역 폴백의 500 + "서버 오류"로 뭉개지면
      * 운영자가 우리 버그를 찾으러 간다. **다만 오늘 이 catch로 들어오는 경로는 없다** —
@@ -77,6 +84,15 @@ class MarketIndexAdminController(
             indexCollectService.collect(slot, LocalDateTime.now(ZoneOffset.UTC))
         } catch (e: KisIndexException) {
             throw ResponseStatusException(HttpStatus.BAD_GATEWAY, e.message)
+        }
+
+        if (summary.requested == 0) {
+            // 우리 설정 실수다. KIS를 확인하러 보내지 않도록 502가 아니라 500으로 낸다
+            throw ResponseStatusException(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "수집 대상 국내 지수가 설정에 없습니다 — application.yml의 market-index.domestic 을 확인하세요 " +
+                    "(slot=${summary.slot})",
+            )
         }
 
         if (summary.requested > 0 && summary.collected == 0) {
