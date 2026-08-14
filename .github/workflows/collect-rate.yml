@@ -3,13 +3,8 @@ name: Collect Rate
 # Render 무료 플랜에는 크론 잡이 없고, 무료 웹 서비스는 15분 유휴 시 잠들어 인스턴스 안의
 # @Scheduled만으로는 주기 실행이 성립하지 않는다. collect-fx.yml·collect-index.yml과 같은 구조다.
 #
-# **cron이 아직 없다.** market-rate.series가 빈 동안은 수집이 500으로 끝나므로,
-# 지금 켜면 매일 빨간 잡이 된다. AF-102 Task 9(코드 확인 후 설정 채우기)에서 아래를 켠다:
-#
-#   schedule:
-#     - cron: "10 9 * * 1-5"   # KST 18:10 — ECOS 일별 계열은 마감 후 공표된다
-#
 # 18:10인 이유: 국내 지수 CLOSE 수집(15:50 KST)과 시간을 벌려 같은 인스턴스에 겹치지 않게 한다.
+# ECOS 일별 계열은 마감 후 공표된다.
 # GitHub cron이 5~30분 밀려도 수집 창이 최근 2주라 밀림이 데이터에 남지 않는다.
 #
 # **요일 필드(1-5)가 성립하는 조건은 "UTC 15:00 이전"이다.** cron은 UTC로 해석되므로 여기 적힌
@@ -19,6 +14,8 @@ name: Collect Rate
 # 옆 파일을 근거로 삼지 말고 이 줄을 볼 것. 시각을 UTC 15:00 이후로 옮기면 KST가 다음 날로
 # 넘어가 금요일 실행이 토요일이 되면서 1-5에서 조용히 사라진다.
 on:
+  schedule:
+    - cron: "10 9 * * 1-5"   # UTC 09:10 = KST 18:10 (평일)
   workflow_dispatch:
 
 permissions:
