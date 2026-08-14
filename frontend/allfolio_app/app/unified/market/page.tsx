@@ -5,8 +5,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useMarketApi } from '@/lib/useApi'
 import PageHeader from '@/components/ui/PageHeader'
-import Label from '@/components/ui/Label'
 import { ErrorState, LoadingState } from '@/components/ui/states'
+import IndexCards from '@/components/market/IndexCards'
 import FxPanel from '@/components/market/FxPanel'
 import RatePanel from '@/components/market/RatePanel'
 import { cx } from '@/lib/cx'
@@ -79,9 +79,10 @@ export default function MarketPage() {
         {isError && <ErrorState message="시장 데이터를 불러오지 못했습니다." onRetry={() => refetch()} />}
         {data && (
           <>
-            {/* 지수 탭 본문은 Task 6이 채운다 */}
-            {tab === 'domestic' && <Label size="sm" tone="faint">국내 지수</Label>}
-            {tab === 'overseas' && <Label size="sm" tone="faint">해외 지수</Label>}
+            {/* **`data.domestic ?? []`를 쓰지 말 것.** null은 플래그 off라 이 탭 자체가 없고,
+                []는 켜져 있고 데이터가 없다는 뜻이다. 합치면 킬 스위치가 화면상 무력해진다 */}
+            {tab === 'domestic' && data.domestic && <IndexCards quotes={data.domestic} />}
+            {tab === 'overseas' && data.overseas && <IndexCards quotes={data.overseas} />}
             {/* fx가 null이면(데이터 없음) 패널 안에서 빈 상태를 그린다 */}
             {tab === 'fx' && <FxPanel fx={data.fx} />}
             {/* rates는 빈 배열로 온다 — 빈 상태는 패널 안에서 그린다 */}
