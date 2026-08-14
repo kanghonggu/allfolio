@@ -10,6 +10,7 @@ import { createAiApi } from './ai-api'
 import { createCashFlowApi } from './cashflow-api'
 import { createBenchmarkApi } from './benchmark-api'
 import { createExclusionPresetAdminApi } from './exclusion-preset-admin-api'
+import { createMarketApi } from './market-api'
 
 export function useUnifiedApi() {
   const { accessToken } = useAuth()
@@ -71,6 +72,14 @@ export function useExclusionPresetAdminApi() {
   const { accessToken } = useAuth()
   return useMemo(
     () => (accessToken ? createExclusionPresetAdminApi(accessToken) : null),
+    [accessToken],
+  )
+}
+
+export function useMarketApi() {
+  const { accessToken } = useAuth()
+  return useMemo(
+    () => (accessToken ? createMarketApi(accessToken) : null),
     [accessToken],
   )
 }
