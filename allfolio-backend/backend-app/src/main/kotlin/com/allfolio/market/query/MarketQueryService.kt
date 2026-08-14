@@ -101,7 +101,10 @@ class MarketQueryService(
      * 기준일 순으로 정렬해도 안 된다 — 공표가 늦는 기준금리 때문에 줄 순서가 날마다 뒤바뀐다.
      */
     private fun rateViews(): List<RateView> {
-        val codes = rateProperties.series.map { it.code }
+        // ECOS 목록만 본다. 설정이 소스별로 갈렸어도 화면 계약은 안 바뀐다 —
+        // 오늘 수집되는 게 ECOS 6종뿐이라 이 목록이 곧 전체다. FRED 종목이 설정에 들어오는
+        // 시점에 여기도 합치지 않으면 수집은 되는데 화면에만 안 나오는 상태가 된다
+        val codes = rateProperties.ecos.map { it.code }
         // 빈 목록을 그대로 넘기면 `IN ()`이라 벤더에 따라 문법 오류다. 설정이 빈 건 그 자체로 사고지만
         // 화면이 SQL 오류로 죽을 일은 아니다. 지수 쪽 findLatestByCodes도 똑같이 노출돼 있다.
         if (codes.isEmpty()) return emptyList()
@@ -116,7 +119,7 @@ class MarketQueryService(
             .sortedBy { it.quoteDate }
             .groupBy { it.rateCode }
 
-        return rateProperties.series.mapNotNull { series ->
+        return rateProperties.ecos.mapNotNull { series ->
             // 수집된 적 없는 지표는 빠진다 — 0으로 채우면 화면이 그걸 진짜 금리로 보여준다.
             // **30일 넘게 안 들어온 지표도 같이 빠진다.** 무료 플랜에서 평일 크론이 죽거나
             // ECOS가 통계표 코드를 내리면 실제로 그렇게 된다. 묵은 값을 정직한 기준일과 함께

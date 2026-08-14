@@ -415,8 +415,8 @@ class MarketQueryServiceTest {
         // 뒤집어 두면 세 가지 변이가 전부 여기서 깨진다: 코드 사전순 정렬, 기준일 정렬,
         // 그리고 설정 대신 groupBy 맵(= DB가 준 순서)을 도는 것.
         val rateProperties = MarketRateProperties().apply {
-            series = listOf("KTB_3Y", "BASE_RATE").map { seriesCode ->
-                MarketRateProperties.RateSeries().apply { code = seriesCode }
+            ecos = listOf("KTB_3Y", "BASE_RATE").map { seriesCode ->
+                MarketRateProperties.EcosSeries().apply { code = seriesCode }
             }
         }
         val queryProperties = MarketQueryProperties().apply { this.indicesEnabled = indicesEnabled }

@@ -15,14 +15,14 @@ class MarketRatePropertiesTest {
         .withUserConfiguration(TestConfig::class.java)
 
     @Test
-    fun `series 목록을 바인딩한다`() {
+    fun `ecos 목록을 바인딩한다`() {
         runner.withPropertyValues(
-            "market-rate.series[0].code=KTB_3Y",
-            "market-rate.series[0].stat-code=721Y001",
-            "market-rate.series[0].item-code=5030000",
-            "market-rate.series[0].cycle=D",
+            "market-rate.ecos[0].code=KTB_3Y",
+            "market-rate.ecos[0].stat-code=721Y001",
+            "market-rate.ecos[0].item-code=5030000",
+            "market-rate.ecos[0].cycle=D",
         ).run { context ->
-            val series = context.getBean(MarketRateProperties::class.java).series
+            val series = context.getBean(MarketRateProperties::class.java).ecos
             assertThat(series).hasSize(1)
             assertThat(series[0].code).isEqualTo("KTB_3Y")
             assertThat(series[0].statCode).isEqualTo("721Y001")
@@ -34,7 +34,7 @@ class MarketRatePropertiesTest {
     @Test
     fun `설정이 없으면 빈 목록이다`() {
         runner.run { context ->
-            assertThat(context.getBean(MarketRateProperties::class.java).series).isEmpty()
+            assertThat(context.getBean(MarketRateProperties::class.java).ecos).isEmpty()
         }
     }
 
@@ -46,9 +46,9 @@ class MarketRatePropertiesTest {
     @Test
     fun `stat-code가 비어 있으면 기동에 실패한다`() {
         runner.withPropertyValues(
-            "market-rate.series[0].code=KTB_3Y",
-            "market-rate.series[0].stat-code=",
-            "market-rate.series[0].item-code=5030000",
+            "market-rate.ecos[0].code=KTB_3Y",
+            "market-rate.ecos[0].stat-code=",
+            "market-rate.ecos[0].item-code=5030000",
         ).run { context ->
             assertThat(context).hasFailed()
             // 스프링이 BeanCreationException으로 감싸서 표면 메시지엔 우리 문구가 없다.
@@ -60,12 +60,12 @@ class MarketRatePropertiesTest {
     @Test
     fun `code가 비어 있으면 기동에 실패한다`() {
         runner.withPropertyValues(
-            "market-rate.series[0].stat-code=721Y001",
-            "market-rate.series[0].item-code=5030000",
+            "market-rate.ecos[0].stat-code=721Y001",
+            "market-rate.ecos[0].item-code=5030000",
         ).run { context ->
             assertThat(context).hasFailed()
-            // code가 비어 있으면 라벨로 쓸 code 자체가 없다 — "series[0]"처럼 위치로 짚는다.
-            assertThat(context.startupFailure).rootCause().hasMessageContaining("series[0]")
+            // code가 비어 있으면 라벨로 쓸 code 자체가 없다 — "ecos[0]"처럼 목록과 위치로 짚는다.
+            assertThat(context.startupFailure).rootCause().hasMessageContaining("ecos[0]")
                 .hasMessageContaining("code가 비어 있습니다")
         }
     }
@@ -73,8 +73,8 @@ class MarketRatePropertiesTest {
     @Test
     fun `item-code가 비어 있으면 기동에 실패한다`() {
         runner.withPropertyValues(
-            "market-rate.series[0].code=KTB_3Y",
-            "market-rate.series[0].stat-code=721Y001",
+            "market-rate.ecos[0].code=KTB_3Y",
+            "market-rate.ecos[0].stat-code=721Y001",
         ).run { context ->
             assertThat(context).hasFailed()
             assertThat(context.startupFailure).rootCause()
@@ -86,10 +86,10 @@ class MarketRatePropertiesTest {
     @Test
     fun `지원하지 않는 주기는 기동에 실패한다`() {
         runner.withPropertyValues(
-            "market-rate.series[0].code=BASE_RATE",
-            "market-rate.series[0].stat-code=722Y001",
-            "market-rate.series[0].item-code=0101000",
-            "market-rate.series[0].cycle=M",
+            "market-rate.ecos[0].code=BASE_RATE",
+            "market-rate.ecos[0].stat-code=722Y001",
+            "market-rate.ecos[0].item-code=0101000",
+            "market-rate.ecos[0].cycle=M",
         ).run { context ->
             assertThat(context).hasFailed()
             assertThat(context.startupFailure).rootCause().hasMessageContaining("주기")
@@ -104,12 +104,12 @@ class MarketRatePropertiesTest {
     @Test
     fun `code가 중복되면 기동에 실패한다`() {
         runner.withPropertyValues(
-            "market-rate.series[0].code=KTB_3Y",
-            "market-rate.series[0].stat-code=721Y001",
-            "market-rate.series[0].item-code=5030000",
-            "market-rate.series[1].code=KTB_3Y",
-            "market-rate.series[1].stat-code=721Y001",
-            "market-rate.series[1].item-code=5030001",
+            "market-rate.ecos[0].code=KTB_3Y",
+            "market-rate.ecos[0].stat-code=721Y001",
+            "market-rate.ecos[0].item-code=5030000",
+            "market-rate.ecos[1].code=KTB_3Y",
+            "market-rate.ecos[1].stat-code=721Y001",
+            "market-rate.ecos[1].item-code=5030001",
         ).run { context ->
             assertThat(context).hasFailed()
             assertThat(context.startupFailure).rootCause()

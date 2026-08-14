@@ -1,8 +1,5 @@
 package com.allfolio.market.rate
 
-import com.allfolio.fx.EcosApiClient
-import com.allfolio.fx.EcosQuery
-import com.allfolio.fx.RateValuePolicy
 import com.allfolio.unifiedasset.infrastructure.entity.MarketRateEntity
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -20,7 +17,7 @@ import java.util.UUID
  * ECOS 정정이 59건의 동일값 재기록에 묻혀 안 보인다. 2주 창을 둔 이유가 정정을 잡는 것인데
  * 요약이 정정을 못 보여주면 창이 무의미해진다.
  *
- * @param requested 설정에 있는 종목 수. **0이면 설정이 빈 것이지 ECOS 문제가 아니다**
+ * @param requested 수집 대상 수 = 소스별 코드 수의 합. **0이면 설정이 빈 것이지 상류 문제가 아니다**
  * @param collected 실제로 저장한 행 수 = [inserted] + [updated] + [unchanged].
  *                  **저장이 끝난 뒤에 센 값이다** — 어드민이 이 값으로 "한 건도 안 들어간 실행"을 가른다
  * @param inserted 그 날짜에 행이 없어 새로 만든 수
@@ -55,7 +52,7 @@ data class RateCollectSummary(
 /**
  * 금리 수집 (AF-102).
  *
- * 일일 수집과 백필이 같은 경로를 쓴다 — 둘 다 "이 구간을 ECOS가 준 값으로 맞춘다"이고 멱등하다.
+ * 일일 수집과 백필이 같은 경로를 쓴다 — 둘 다 "이 구간을 소스가 준 값으로 맞춘다"이고 멱등하다.
  * 스케줄 실행이 매번 최근 2주를 다시 조회하는 이유는 셋이다:
  * 공표가 밀리는 계열이 있고, ECOS는 값을 정정하며, 잡이 하루 실패해도 다음 날이 메운다.
  *
@@ -70,12 +67,16 @@ data class RateCollectSummary(
  *
  * `@Transactional`을 붙이지 않는다 — 종목마다 HTTP 호출이 하나씩 있어서 트랜잭션에 넣으면
  * 루프가 끝날 때까지 Neon 커넥션을 쥐고 앉아 있게 된다. AF-101 지수 수집과 같은 이유다.
+ *
+ * **가져오기만 [RateSource]로 갈라져 있고 그 뒤는 전부 여기 한 벌뿐이다.** 아래 방어들
+ * (구간 밖 날짜 필터·0건 명명·중복 접기·저장 뒤 계수·정정과 무변동 분리·종목별 실패 격리)은
+ * ECOS를 겪으며 네 차례에 걸쳐 붙은 것이고 소스와 무관하게 옳다. 소스가 늘어도 복제하지 말 것 —
+ * 복제하는 순간 한쪽만 고쳐진 판본이 생기고, 그 차이는 요약이 초록인 채로 숨는다.
  */
 @Service
 class RateCollectService(
-    private val client: EcosApiClient,
+    private val sources: List<RateSource>,
     private val store: Store,
-    private val properties: MarketRateProperties,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -91,8 +92,6 @@ class RateCollectService(
     }
 
     companion object {
-        private const val SOURCE = "ECOS"
-
         /**
          * 실패 사유 길이 상한.
          *
@@ -114,19 +113,13 @@ class RateCollectService(
         val emptySeries = mutableListOf<String>()
         val failures = mutableListOf<String>()
 
-        for (series in properties.series) {
+        // 소스 x 코드로 편다. 어느 소스가 어느 코드를 갖는지는 소스가 안다 —
+        // 서비스는 설정 모양을 알 필요가 없고, 그래서 소스가 늘어도 이 루프는 안 바뀐다
+        val targets = sources.flatMap { source -> source.codes.map { source to it } }
+
+        for ((source, code) in targets) {
             try {
-                val result = client.fetch(
-                    EcosQuery(
-                        statCode = series.statCode,
-                        itemCode = series.itemCode,
-                        cycle = series.cycle,
-                        // 금리는 0.00%도 마이너스도 실재한다 — 환율 정책으로 부르면 그 날이 사라진다
-                        valuePolicy = RateValuePolicy.PERCENT,
-                    ),
-                    from,
-                    to,
-                )
+                val result = source.fetch(code, from, to)
                 skippedRows += result.skipped
 
                 // 요청 구간 밖 날짜를 먼저 걷어낸다. 파서는 날짜만 파싱되면 통과시키므로
@@ -135,8 +128,8 @@ class RateCollectService(
                 // 안 잡혀 새 UUID로 INSERT가 나가고 uk_market_rate가 배치 전체를 죽인다.
                 // 재실행해도 똑같이 실패하고 운영자에게는 불투명한 제약 위반만 남는다.
                 // AF-100의 FxRateBackfillService가 같은 방어를 한다 — 겪고 나서 생긴 것이다.
-                val inRange = result.rates.filter { it.baseDate in from..to }
-                outOfRange += result.rates.size - inRange.size
+                val inRange = result.rows.filter { it.quoteDate in from..to }
+                outOfRange += result.rows.size - inRange.size
 
                 // **0건을 실패로 만들지 않는다.** 계열에 따라 2주 창이 정상적으로 빌 수 있고,
                 // 통계표 코드가 죽어도 똑같이 0건이라 자동으로는 못 가른다 — 이름을 남겨 사람이 보게 한다.
@@ -144,9 +137,9 @@ class RateCollectService(
                 // 실측은 반대였다: 2020-01-01 이후 2,415행, 주말까지 포함해 달력 하루도 안 빠진다.
                 // 공표가 시장금리보다 이틀쯤 늦을 뿐이다. 그래서 BASE_RATE가 비면 정상이 아니라
                 // 뭔가 깨진 것이다 — 그걸 정상이라고 적어 두면 다음 사람이 경보를 무시한다.
-                if (inRange.isEmpty()) emptySeries += series.code
+                if (inRange.isEmpty()) emptySeries += code
 
-                val existing = store.findRange(series.code, from, to).associateBy { it.quoteDate }
+                val existing = store.findRange(code, from, to).associateBy { it.quoteDate }
                 val toInsert = mutableListOf<MarketRateEntity>()
 
                 // 갱신 대상. 키가 엔티티 인스턴스이고 MarketRateEntity는 equals를 정의하지 않으므로
@@ -155,14 +148,14 @@ class RateCollectService(
                 val toUpdate = LinkedHashMap<MarketRateEntity, BigDecimal>()
 
                 for (row in inRange) {
-                    val prior = existing[row.baseDate]
+                    val prior = existing[row.quoteDate]
                     if (prior == null) {
                         toInsert += MarketRateEntity(
                             id = UUID.randomUUID(),
-                            rateCode = series.code,
-                            quoteDate = row.baseDate,
+                            rateCode = code,
+                            quoteDate = row.quoteDate,
                             rateValue = row.value,
-                            source = SOURCE,
+                            source = source.sourceName,
                             collectedAt = now,
                         )
                     } else {
@@ -172,7 +165,7 @@ class RateCollectService(
                         // (FRED가 후속으로 붙는다) 첫 수집 소스가 그대로 굳으면,
                         // 정정된 값을 설명하려고 들여다볼 바로 그 필드가 거짓말을 한다
                         prior.rateValue = row.value
-                        prior.source = SOURCE
+                        prior.source = source.sourceName
                         prior.collectedAt = now
                     }
                 }
@@ -198,7 +191,7 @@ class RateCollectService(
                 }
             } catch (e: Exception) {
                 // 한 종목의 실패가 나머지를 끌고 가지 않는다
-                failures += "${series.code}: ${detail(e)}"
+                failures += "$code: ${detail(e)}"
             }
 
             // 종료 신호는 예외로 위장해서 온다 — EcosApiClient는 InterruptedException을 만나면
@@ -210,7 +203,10 @@ class RateCollectService(
         val summary = RateCollectSummary(
             from = from,
             to = to,
-            requested = properties.series.size,
+            // 설정 항목 수가 아니라 소스 x 코드 대상 수다. ECOS 한 소스뿐인 오늘은 같은 값이지만,
+            // 소스가 늘면 갈린다 — 어드민이 requested == 0으로 "설정이 빈 실행"을 가르므로
+            // 실제로 돈 대상을 세야 한다
+            requested = targets.size,
             collected = inserted + updated + unchanged,
             inserted = inserted,
             updated = updated,
@@ -223,8 +219,8 @@ class RateCollectService(
         )
 
         when {
-            properties.series.isEmpty() ->
-                log.warn("[금리] 설정된 수집 대상이 없습니다 — market-rate.series 확인")
+            targets.isEmpty() ->
+                log.warn("[금리] 설정된 수집 대상이 없습니다 — market-rate 설정 확인")
             failures.isEmpty() -> log.info("[금리] 수집 완료 {}", summary)
             else -> log.warn("[금리] 일부 실패 {}", summary)
         }

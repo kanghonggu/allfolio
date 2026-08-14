@@ -35,7 +35,7 @@ class MarketRatePropertiesYamlTest {
 
     @Test
     fun `application yml에 금리 6종이 확인한 코드로 들어 있다`() {
-        assertThat(properties.series.map { it.code })
+        assertThat(properties.ecos.map { it.code })
             .containsExactly("BASE_RATE", "CALL_ON", "CD_91D", "KTB_3Y", "KTB_10Y", "CORP_AA3Y")
     }
 
@@ -46,7 +46,7 @@ class MarketRatePropertiesYamlTest {
      */
     @Test
     fun `통계표와 항목 코드가 확인한 값과 일치한다`() {
-        assertThat(properties.series.map { "${it.code}=${it.statCode}/${it.itemCode}" })
+        assertThat(properties.ecos.map { "${it.code}=${it.statCode}/${it.itemCode}" })
             .containsExactly(
                 "BASE_RATE=722Y001/0101000",     // 한국은행 기준금리
                 "CALL_ON=817Y002/010101000",     // 콜금리(1일, 전체거래)
@@ -60,7 +60,7 @@ class MarketRatePropertiesYamlTest {
     /** 클라이언트가 D만 받는다. 다른 주기가 섞이면 그 종목은 매 실행 실패로 남는다 */
     @Test
     fun `전 종목이 일별 주기다`() {
-        assertThat(properties.series.map { it.cycle }).containsOnly("D")
+        assertThat(properties.ecos.map { it.cycle }).containsOnly("D")
     }
 
     @SpringBootConfiguration
