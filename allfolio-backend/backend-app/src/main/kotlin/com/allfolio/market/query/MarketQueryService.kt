@@ -65,15 +65,20 @@ class MarketQueryService(
         // 이 확인을 함수 맨 앞의 조기 반환으로 옮기지 말 것 — 지수 두 탭을 끄려다 환율·금리까지
         // 같이 사라진다. 플래그가 지우는 건 지수뿐이다([MarketQueryProperties]).
         val indicesOn = queryProperties.indicesEnabled
-        val latestByCode = if (indicesOn) latestIndexQuotes() else emptyMap()
+        // off면 맵이 아니라 null이다. `emptyMap()`을 두면 아래 두 줄이 각자 다시 플래그를 봐야 하고,
+        // 그중 하나만 고치면 한 탭만 새어 나간다. null로 두면 "안 읽었으면 안 싣는다"가 타입으로 강제된다.
+        val latestByCode = if (indicesOn) latestIndexQuotes() else null
 
         // 국내·해외를 코드로 다시 가른다. 설정 순서를 그대로 유지해야 화면 줄 순서가 안 흔들린다.
         // 수집된 적 없는 지수는 맵에 없어 빠진다 — 0으로 채우면 화면이 그걸 진짜 값으로 보여준다.
         // **off는 빈 리스트가 아니라 null이다.** 빈 리스트는 "조회했는데 데이터가 없다"는 뜻이라
         // 뜻이 다르고, 프런트가 그걸 렌더해도 이미 늦다(MarketSnapshot KDoc).
+        // **flags는 `latestByCode != null`로 유도하지 말 것.** 플래그는 조회 결과가 아니라 설정을
+        // 보고해야 한다 — 유도해 두면 조회를 건너뛰는 최적화(캐시 등)가 들어오는 날
+        // 설정은 on인데 응답은 off라고 말한다.
         return MarketSnapshot(
-            domestic = if (indicesOn) indexProperties.domestic.mapNotNull { latestByCode[it.code]?.toView() } else null,
-            overseas = if (indicesOn) indexProperties.overseas.mapNotNull { latestByCode[it.code]?.toView() } else null,
+            domestic = latestByCode?.let { byCode -> indexProperties.domestic.mapNotNull { byCode[it.code]?.toView() } },
+            overseas = latestByCode?.let { byCode -> indexProperties.overseas.mapNotNull { byCode[it.code]?.toView() } },
             fx = fxSnapshot(),
             rates = rateViews(),
             flags = MarketFlags(indicesEnabled = indicesOn),
