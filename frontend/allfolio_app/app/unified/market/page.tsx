@@ -8,6 +8,7 @@ import PageHeader from '@/components/ui/PageHeader'
 import Label from '@/components/ui/Label'
 import { ErrorState, LoadingState } from '@/components/ui/states'
 import FxPanel from '@/components/market/FxPanel'
+import RatePanel from '@/components/market/RatePanel'
 import { cx } from '@/lib/cx'
 
 type TabKey = 'domestic' | 'overseas' | 'fx' | 'rates'
@@ -83,7 +84,8 @@ export default function MarketPage() {
             {tab === 'overseas' && <Label size="sm" tone="faint">해외 지수</Label>}
             {/* fx가 null이면(데이터 없음) 패널 안에서 빈 상태를 그린다 */}
             {tab === 'fx' && <FxPanel fx={data.fx} />}
-            {tab === 'rates' && <Label size="sm" tone="faint">금리</Label>}
+            {/* rates는 빈 배열로 온다 — 빈 상태는 패널 안에서 그린다 */}
+            {tab === 'rates' && <RatePanel rates={data.rates} />}
           </>
         )}
       </div>
