@@ -11,6 +11,8 @@ const NAV_ITEMS = [
   { href: '/unified/reports', label: '보고서' },
   { href: '/unified/cashflow', label: '현금흐름' },
   { href: '/unified/recon', label: '대사·검증' },
+  // 맨 끝인 게 설계다 — 부차적 화면이라 대시보드보다 먼저 눈에 들어오면 안 된다
+  { href: '/unified/market', label: '시장' },
 ]
 
 const ADMIN_ITEMS = [
