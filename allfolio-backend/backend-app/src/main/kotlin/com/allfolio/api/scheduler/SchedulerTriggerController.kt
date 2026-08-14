@@ -172,8 +172,8 @@ class SchedulerTriggerController(
      * 통계표·항목 코드가 틀렸다)의 구분이 Actions 로그를 읽는 사람에게 그대로 필요하다.
      * 500에는 원인이 하나 더 있다: `market-rate.ecos`·`market-rate.fred`가 둘 다 비면
      * 요청 대상이 0건이라 역시 500이다.
-     * 이게 지금 이 PR의 상태이고, `collect-rate.yml`의 cron이 아직 주석인 이유다 — 켜 두면
-     * 설정이 채워질 때까지 매 평일 잡이 빨갛게 끝난다.
+     * 그 상태는 AF-102가 코드를 채우면서 끝났고 cron도 그때 켰다 — 지금 둘 다 비는 건
+     * 설정 사고뿐이다.
      * **이 위임을 "정리"하지 말 것.**
      */
     @PostMapping("/rate")
