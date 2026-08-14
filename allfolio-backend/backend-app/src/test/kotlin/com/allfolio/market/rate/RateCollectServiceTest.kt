@@ -5,7 +5,7 @@ import com.allfolio.fx.EcosApiException
 import com.allfolio.fx.EcosObservation
 import com.allfolio.fx.EcosParseResult
 import com.allfolio.fx.EcosQuery
-import com.allfolio.fx.EcosValuePolicy
+import com.allfolio.fx.RateValuePolicy
 import com.allfolio.unifiedasset.infrastructure.entity.MarketRateEntity
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -311,7 +311,7 @@ class RateCollectServiceTest {
         service(client, FakeRepo(), series("KTB_3Y", "S1")).collect(from, to, now)
 
         // 환율 정책으로 부르면 0.00% 공표일이 조용히 사라진다
-        assertThat(client.queries.single().valuePolicy).isEqualTo(EcosValuePolicy.PERCENT)
+        assertThat(client.queries.single().valuePolicy).isEqualTo(RateValuePolicy.PERCENT)
         assertThat(client.queries.single().cycle).isEqualTo("D")
     }
 

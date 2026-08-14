@@ -17,13 +17,13 @@ import java.time.format.DateTimeFormatter
  *
  * @param cycle ECOS 주기 코드. 현재 지원은 `D`뿐이다 — 다른 주기는 요청 날짜 형식과
  *              응답 `TIME` 형식이 함께 바뀌므로, 확인되지 않은 채 넓히면 조용히 0건이 된다.
- * @param valuePolicy 어떤 값을 받아들일지. 환율과 금리가 다르다 — [EcosValuePolicy] 참조
+ * @param valuePolicy 어떤 값을 받아들일지. 환율과 금리가 다르다 — [RateValuePolicy] 참조
  */
 data class EcosQuery(
     val statCode: String,
     val itemCode: String,
     val cycle: String,
-    val valuePolicy: EcosValuePolicy,
+    val valuePolicy: RateValuePolicy,
 ) {
     companion object {
         /**

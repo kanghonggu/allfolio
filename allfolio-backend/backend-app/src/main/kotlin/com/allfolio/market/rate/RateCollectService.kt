@@ -2,7 +2,7 @@ package com.allfolio.market.rate
 
 import com.allfolio.fx.EcosApiClient
 import com.allfolio.fx.EcosQuery
-import com.allfolio.fx.EcosValuePolicy
+import com.allfolio.fx.RateValuePolicy
 import com.allfolio.unifiedasset.infrastructure.entity.MarketRateEntity
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -122,7 +122,7 @@ class RateCollectService(
                         itemCode = series.itemCode,
                         cycle = series.cycle,
                         // 금리는 0.00%도 마이너스도 실재한다 — 환율 정책으로 부르면 그 날이 사라진다
-                        valuePolicy = EcosValuePolicy.PERCENT,
+                        valuePolicy = RateValuePolicy.PERCENT,
                     ),
                     from,
                     to,

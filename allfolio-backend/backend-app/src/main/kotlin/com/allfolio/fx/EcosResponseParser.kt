@@ -34,7 +34,7 @@ class EcosResponseParser(
         private val TIME_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd")
     }
 
-    fun parse(json: String, valuePolicy: EcosValuePolicy): EcosParseResult {
+    fun parse(json: String, valuePolicy: RateValuePolicy): EcosParseResult {
         val root = mapper.readTree(json)
 
         val result = root.path("RESULT")

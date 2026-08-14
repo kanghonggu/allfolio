@@ -44,7 +44,7 @@ class EcosHistoricalRateSource(
                     itemCode = series.itemCode,
                     cycle = EcosQuery.DAILY_CYCLE,
                     // 0원짜리 환율은 없다. 금리와 달리 부호로 거르는 게 맞다
-                    valuePolicy = EcosValuePolicy.POSITIVE,
+                    valuePolicy = RateValuePolicy.POSITIVE,
                 ),
                 from,
                 to,

@@ -73,7 +73,7 @@ class EcosStatisticSearchClientTest {
         statCode = "TEST-STAT-CODE",
         itemCode = "TEST-ITEM-CODE",
         cycle = cycle,
-        valuePolicy = EcosValuePolicy.POSITIVE,
+        valuePolicy = RateValuePolicy.POSITIVE,
     )
 
     private fun call(port: Int) =
@@ -322,7 +322,7 @@ class EcosStatisticSearchClientTest {
     @Test
     fun `valuePolicy가 파서까지 실제로 전달된다`() {
         // 이 테스트가 없으면 parser.parse(body, query.valuePolicy)를
-        // parser.parse(body, EcosValuePolicy.POSITIVE)로 되돌려도 스위트 전체가 그린이다 —
+        // parser.parse(body, RateValuePolicy.POSITIVE)로 되돌려도 스위트 전체가 그린이다 —
         // 이 파일의 query()는 늘 POSITIVE를 쓰고, 값도 늘 양수라 둘을 구분할 수 없기 때문이다.
         // 0은 POSITIVE에서는 걸러지고 PERCENT에서는 통과하는 값이라, 정책이 실제로 넘어갔는지를 가른다.
         val port = serve { ex ->
@@ -330,7 +330,7 @@ class EcosStatisticSearchClientTest {
         }
 
         val result = client(port).fetch(
-            query().copy(valuePolicy = EcosValuePolicy.PERCENT),
+            query().copy(valuePolicy = RateValuePolicy.PERCENT),
             LocalDate.of(2026, 1, 2), LocalDate.of(2026, 3, 4),
         )
 
