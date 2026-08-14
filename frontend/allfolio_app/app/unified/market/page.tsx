@@ -7,6 +7,7 @@ import { useMarketApi } from '@/lib/useApi'
 import PageHeader from '@/components/ui/PageHeader'
 import Label from '@/components/ui/Label'
 import { ErrorState, LoadingState } from '@/components/ui/states'
+import FxPanel from '@/components/market/FxPanel'
 import { cx } from '@/lib/cx'
 
 type TabKey = 'domestic' | 'overseas' | 'fx' | 'rates'
@@ -77,10 +78,11 @@ export default function MarketPage() {
         {isError && <ErrorState message="시장 데이터를 불러오지 못했습니다." onRetry={() => refetch()} />}
         {data && (
           <>
-            {/* 탭 본문은 Task 4~6이 채운다 — 지금은 셸이 도는 것까지 */}
+            {/* 지수 탭 본문은 Task 6이 채운다 */}
             {tab === 'domestic' && <Label size="sm" tone="faint">국내 지수</Label>}
             {tab === 'overseas' && <Label size="sm" tone="faint">해외 지수</Label>}
-            {tab === 'fx' && <Label size="sm" tone="faint">환율</Label>}
+            {/* fx가 null이면(데이터 없음) 패널 안에서 빈 상태를 그린다 */}
+            {tab === 'fx' && <FxPanel fx={data.fx} />}
             {tab === 'rates' && <Label size="sm" tone="faint">금리</Label>}
           </>
         )}
