@@ -31,7 +31,16 @@ data class MarketSnapshot(
     val overseas: List<IndexQuoteView>?,
     /** 수집이 한 번도 안 됐으면 null. 지수와 달리 끌 플래그가 없다 — AF-108 재배포 검토 대상은 지수다 */
     val fx: FxSnapshot?,
-    /** 설정(`market-rate.series`) 순서 그대로다. 수집된 적 없는 지표는 빠져 6종보다 짧을 수 있다 */
+    /**
+     * 설정(`market-rate.series`) 순서 그대로다. 수집된 적 없는 지표는 빠져 6종보다 짧을 수 있다.
+     *
+     * **마지막 공표가 30일보다 오래된 지표도 똑같이 빠진다** — 조회 창이 30일이라 그 밖은 안 읽는다.
+     * 크론이 죽어 며칠 밀린 것과 ECOS가 통계표 코드를 내린 것이 여기서는 구분되지 않고,
+     * 둘 다 "수집된 적 없음"과도 구분되지 않는다. 응답만 보고는 가릴 수 없으니 로그·어드민으로 갈 것.
+     * 묵은 값을 정직한 [RateView.quoteDate]와 함께 실어 보내는 선택지도 있었지만, 화면은 그걸
+     * 오늘 값처럼 읽는다 — 묵은 값을 진짜처럼 보여주느니 뺀다.
+     * (30일이라는 길이 자체는 넉넉하다. 국내 최장 휴장이 6일쯤이라 연휴로 비는 일은 없다.)
+     */
     val rates: List<RateView>,
     val flags: MarketFlags,
 )
@@ -109,6 +118,10 @@ data class FxQuoteView(
  * [changeBp]는 %p가 아니라 **bp**다(1%p = 100bp). 국고채가 하루에 0.01%p 움직이면 `1.00`이다 —
  * 화면에서 다시 100을 곱하지 말 것. null이면 비교할 직전 값이 없다는 뜻이고, 0은 "안 움직였다"는 뜻이라
  * 둘을 같게 만들면 안 된다.
+ *
+ * `1.00`은 소수 둘째 자리까지라는 뜻 그대로다 — Jackson이 BigDecimal 스케일을 보존하므로
+ * 계산 결과의 스케일이 곧 전송 형식이다. 서비스가 2로 고정한다(`MarketQueryService.rateViews`).
+ * 고정을 걷어내면 스케일이 `market_rate.rate_value` 컬럼에서 딸려와 `1.0000`으로 나간다.
  */
 data class RateView(
     val code: String,

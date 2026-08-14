@@ -26,11 +26,12 @@ import java.time.ZoneId
  */
 @Service
 // open-in-view가 꺼져 있고 커넥션 풀이 10이라, 트랜잭션이 없으면 리포지터리 호출마다
-// 커넥션을 따로 빌렸다 돌려준다. 환율 4번에 금리가 시리즈당 1번(운영 설정 6종)씩 더 붙는다.
-// **이 커넥션 절약이 이 애너테이션의 이유 전부다. 시점 일관성은 여기서 얻지 못한다** —
-// 격리 수준은 READ COMMITTED 그대로다(readOnly는 격리를 안 바꾼다). 쿼리마다 스냅샷이 새로 잡힌다.
-// 환율은 2·4번째 쿼리를 1·3번째가 준 (기준일, 회차)로 걸기 때문에 머리와 본문은 항상 같은 회차다.
-// 그사이 수집 크론이 새 회차를 커밋하면 한 회차 묵은 응답이 나갈 뿐 안에서 어긋나지는 않는다.
+// 커넥션을 따로 빌렸다 돌려준다. 스냅샷 한 장을 조립하는 동안 커넥션 하나로 끝내는 것,
+// **이 커넥션 절약이 이 애너테이션의 이유 전부다.**
+// 구간별 쿼리 횟수는 여기 적지 않고 각 구간의 KDoc에 둔다 — 여기 적어 두면 어느 구간을 고치든
+// 이 주석이 거짓이 되고, 실제로 두 번 그랬다.
+// **시점 일관성은 여기서 얻지 못한다** — 격리 수준은 READ COMMITTED 그대로다(readOnly는 격리를
+// 안 바꾼다). 쿼리마다 스냅샷이 새로 잡힌다. 그런데도 환율이 한 회차로 모이는 이유는 [fxSnapshot] 참조.
 // (기존 관례: GetDashboardUseCase)
 @Transactional(readOnly = true)
 class MarketQueryService(
@@ -73,30 +74,56 @@ class MarketQueryService(
     }
 
     /**
-     * 종목마다 최근 [RATE_LOOKBACK_DAYS]일을 한 번에 읽어 마지막 둘로 값과 bp 변동을 만든다.
-     * 종목당 쿼리 하나이고 운영 설정이 6종이라 6회다.
+     * 설정에 있는 전 지표의 최근 [RATE_LOOKBACK_DAYS]일을 **쿼리 한 번으로** 긁어,
+     * 지표마다 마지막 둘로 값과 bp 변동을 만든다.
+     * 지표마다 부르면 원격 Neon 왕복이 지표 수(운영 설정 6종)만큼 난다.
      *
-     * 설정 순서를 그대로 유지한다 — 기준일 순으로 정렬하면 공표가 늦는 기준금리 때문에
-     * 화면 줄 순서가 날마다 뒤바뀐다.
+     * **출력은 설정 순서다.** 묶음 결과를 `groupBy`한 맵을 돌면 안 된다 — 그 맵의 순서는 DB가
+     * 행을 준 순서라 임의이고, "설정엔 있는데 수집된 적 없는 지표는 빠진다"는 뜻도 같이 사라진다.
+     * 기준일 순으로 정렬해도 안 된다 — 공표가 늦는 기준금리 때문에 줄 순서가 날마다 뒤바뀐다.
      */
     private fun rateViews(): List<RateView> {
+        val codes = rateProperties.series.map { it.code }
+        // 빈 목록을 그대로 넘기면 `IN ()`이라 벤더에 따라 문법 오류다. 설정이 빈 건 그 자체로 사고지만
+        // 화면이 SQL 오류로 죽을 일은 아니다. 지수 쪽 findLatestByCodes도 똑같이 노출돼 있다.
+        if (codes.isEmpty()) return emptyList()
+
         val to = LocalDate.now(KST)
         val from = to.minusDays(RATE_LOOKBACK_DAYS)
+        // 리포지터리는 순서를 보장하지 않는다. 정렬 없이 마지막 둘을 집으면 최신도 직전도 아닐 수 있다.
+        // 정렬은 묶기 **전에** 한 번만 한다 — groupBy가 그룹 안의 등장 순서를 지키므로 결과는 같고,
+        // 정렬이 지표 수만큼이 아니라 한 번이다.
+        val rowsByCode = rateRepository
+            .findByRateCodeInAndQuoteDateBetween(codes, from, to)
+            .sortedBy { it.quoteDate }
+            .groupBy { it.rateCode }
+
         return rateProperties.series.mapNotNull { series ->
-            // 리포지터리는 순서를 보장하지 않는다. 정렬 없이 마지막 둘을 집으면 최신도 직전도 아닐 수 있다
-            val rows = rateRepository
-                .findByRateCodeAndQuoteDateBetween(series.code, from, to)
-                .sortedBy { it.quoteDate }
-            // 수집된 적 없는 지표는 빠진다 — 0으로 채우면 화면이 그걸 진짜 금리로 보여준다
+            // 수집된 적 없는 지표는 빠진다 — 0으로 채우면 화면이 그걸 진짜 금리로 보여준다.
+            // **30일 넘게 안 들어온 지표도 같이 빠진다.** 무료 플랜에서 평일 크론이 죽거나
+            // ECOS가 통계표 코드를 내리면 실제로 그렇게 된다. 묵은 값을 정직한 기준일과 함께
+            // 보여주는 쪽이 아니라 빼는 쪽을 골랐다 — 묵은 값을 진짜처럼 보여주느니 뺀다.
+            val rows = rowsByCode[series.code].orEmpty()
             val latest = rows.lastOrNull() ?: return@mapNotNull null
-            val prior = rows.getOrNull(rows.size - 2)
+            // "끝에서 두 번째 행"이 아니라 "기준일이 더 이른 마지막 행"이다. uk_market_rate
+            // (rate_code, quote_date) 덕에 오늘은 둘이 같지만, 같은 날짜가 두 벌 들어오면
+            // 끝에서 두 번째는 같은 날끼리의 차(대개 0)가 되어 화면에 "안 움직였다"로 찍힌다.
+            // 제약조건에 말없이 기대지 않도록 조건으로 쓴다.
+            val prior = rows.lastOrNull { it.quoteDate < latest.quoteDate }
             RateView(
-                code = latest.rateCode,
+                // 행이 아니라 설정에서 가져온다 — 묶음 키와 어긋날 수 없는 쪽이다
+                code = series.code,
                 value = latest.rateValue,
                 quoteDate = latest.quoteDate,
                 // %p가 아니라 bp로 낸다(1%p = 100bp). 화면이 다시 100을 곱하지 않는다.
-                // 비교할 직전 값이 없으면 0이 아니라 null이다 — 0은 "안 움직였다"는 뜻이 된다
-                changeBp = prior?.let { (latest.rateValue - it.rateValue) * BP_PER_PERCENT },
+                // 비교할 직전 값이 없으면 0이 아니라 null이다 — 0은 "안 움직였다"는 뜻이 된다.
+                // **스케일을 2로 못 박는다.** 빼기·곱하기는 스케일을 컬럼에서 물려받아 1bp가
+                // `-1.0000`으로 직렬화되고(Jackson은 BigDecimal 스케일을 보존한다), market_rate의
+                // precision/scale을 누가 고치면 API 숫자 형식이 조용히 따라 바뀐다.
+                // 소스 해상도가 0.0001%p = 0.01bp라 자리 손실은 없다.
+                changeBp = prior?.let {
+                    ((latest.rateValue - it.rateValue) * BP_PER_PERCENT).setScale(2, RoundingMode.HALF_UP)
+                },
             )
         }
     }
@@ -107,6 +134,10 @@ class MarketQueryService(
      * 쿼리 4회로 끝난다: 최신 한 건 → 그 회차 전량 → 직전 기준일 한 건 → 그 회차 전량.
      * 통화가 58종이라 통화마다 최신을 찾으면 왕복이 58번이 되고,
      * 통화별로 회차가 갈려 한 화면에 서로 다른 회차가 섞인다.
+     *
+     * 트랜잭션이 시점 일관성을 주지 않는데도(클래스 애너테이션 주석 참조) 응답이 한 회차로 모이는
+     * 이유는 2·4번째 쿼리를 1·3번째가 준 (기준일, 회차)로 걸기 때문이다. 그사이 수집 크론이 새 회차를
+     * 커밋하면 한 회차 묵은 응답이 나갈 뿐, 응답 안에서 회차가 어긋나지는 않는다.
      */
     private fun fxSnapshot(): FxSnapshot? {
         val latest = fxRepository.findTopByOrderByBaseDateDescRoundNoDesc() ?: return null

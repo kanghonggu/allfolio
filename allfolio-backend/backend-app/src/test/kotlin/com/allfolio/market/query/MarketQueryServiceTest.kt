@@ -12,14 +12,15 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyCollection
-import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoMoreInteractions
 import org.mockito.Mockito.`when`
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 class MarketQueryServiceTest {
@@ -33,8 +34,18 @@ class MarketQueryServiceTest {
     /** 묶음 조회에 넘어간 코드들 — 호출 한 번당 한 줄 */
     private val requestedCodes = mutableListOf<List<String>>()
 
+    /** 금리 스텁이 돌려줄 행. 리포지터리가 순서를 보장하지 않으므로 넣은 순서 그대로 돌려준다 */
+    private val rateRows = mutableListOf<MarketRateEntity>()
+
+    /** 금리 묶음 조회에 넘어간 (코드들, from, to) — 호출 한 번당 한 줄 */
+    private val rateQueries = mutableListOf<Triple<List<String>, LocalDate, LocalDate>>()
+
     private val today = LocalDate.of(2026, 8, 13)
     private val yesterday = LocalDate.of(2026, 8, 12)
+
+    init {
+        stubRateQuery()
+    }
 
     @Test
     fun `설정에 있는 지수를 국내와 해외로 나눠 싣는다`() {
@@ -199,7 +210,6 @@ class MarketQueryServiceTest {
     @Test
     fun `금리의 bp 변동은 직전 기준일과 비교한다`() {
         stubRates(
-            "KTB_3Y",
             marketRate("KTB_3Y", LocalDate.of(2026, 8, 13), "3.7810"),
             marketRate("KTB_3Y", LocalDate.of(2026, 8, 11), "3.5000"),
             marketRate("KTB_3Y", LocalDate.of(2026, 8, 12), "3.7910"),
@@ -216,12 +226,69 @@ class MarketQueryServiceTest {
     /** 수집 첫날처럼 비교할 직전 행이 없으면 0이 아니라 null이다 — 0은 "안 움직였다"는 뜻이 된다 */
     @Test
     fun `행이 하나뿐이면 bp 변동이 null이다`() {
-        stubRates("KTB_3Y", marketRate("KTB_3Y", LocalDate.of(2026, 8, 13), "3.7810"))
+        stubRates(marketRate("KTB_3Y", LocalDate.of(2026, 8, 13), "3.7810"))
 
         val view = service().snapshot().rates.single()
 
         assertThat(view.value).isEqualByComparingTo("3.7810")
         assertThat(view.changeBp).isNull()
+    }
+
+    /**
+     * 응답에 나가는 자리수를 못 박는다. Jackson이 BigDecimal 스케일을 보존하므로 계산 결과의
+     * 스케일이 곧 전송 형식이다 — 컬럼에서 물려받은 채로 두면 1bp가 `-1.0000`으로 나가는데
+     * KDoc은 `1.00`이라고 말한다. `isEqualByComparingTo`는 스케일을 안 보므로 여기서는 문자열로 본다.
+     */
+    @Test
+    fun `bp 변동은 소수 둘째 자리로 고정해 내보낸다`() {
+        stubRates(
+            marketRate("KTB_3Y", LocalDate.of(2026, 8, 12), "3.7910"),
+            marketRate("KTB_3Y", LocalDate.of(2026, 8, 13), "3.7810"),
+        )
+
+        assertThat(service().snapshot().rates.single().changeBp.toString()).isEqualTo("-1.00")
+    }
+
+    /**
+     * 지표가 몇 종이든 쿼리는 한 번이다. 지표마다 부르면 운영 설정 6종에 원격 Postgres 왕복이 6번 난다.
+     */
+    @Test
+    fun `지표가 여럿이어도 금리 조회는 한 번으로 끝난다`() {
+        stubRates(
+            marketRate("BASE_RATE", LocalDate.of(2026, 8, 11), "2.5000"),
+            marketRate("KTB_3Y", LocalDate.of(2026, 8, 13), "3.7810"),
+        )
+
+        service().snapshot()
+
+        verify(rateRepo, times(1)).findByRateCodeInAndQuoteDateBetween(
+            anyCollection() ?: emptyList(),
+            any(LocalDate::class.java) ?: LocalDate.EPOCH,
+            any(LocalDate::class.java) ?: LocalDate.EPOCH,
+        )
+        // 지표별 조회가 끼어들면 여기서 깨진다
+        verifyNoMoreInteractions(rateRepo)
+        assertThat(rateQueries.single().first).containsExactlyInAnyOrder("BASE_RATE", "KTB_3Y")
+    }
+
+    /**
+     * **조회 창의 인자 순서를 값으로 못 박는다.** 매처로만 넘기면 `Between(codes, to, from)`으로
+     * 뒤집는 변이가 통과한다 — 실제로 13개가 다 초록이었다. 운영에서 그 변이는
+     * `BETWEEN to AND from`(to > from)이라 어떤 행도 안 걸려 금리 구간이 통째로 `[]`가 되고,
+     * 그 화면은 "수집된 적 없음"과 구분되지 않는다. 창을 0일로 줄이는 변이도 여기서 걸린다.
+     *
+     * 시간대(KST)는 여기서 단언하지 않는다 — 개발 장비에서는 항상 참이라 무의미하고,
+     * CI가 UTC면 하루 중 아홉 시간만 붉어지는 테스트가 된다.
+     */
+    @Test
+    fun `금리 조회 창은 오늘까지 거슬러 30일이다`() {
+        stubRates(marketRate("KTB_3Y", LocalDate.of(2026, 8, 13), "3.7810"))
+
+        service().snapshot()
+
+        val (_, from, to) = rateQueries.single()
+        assertThat(from).isBefore(to)
+        assertThat(ChronoUnit.DAYS.between(from, to)).isEqualTo(30)
     }
 
     /** 수집이 한 번도 안 된 지표는 행이 없다. 0으로 채우면 화면이 그걸 진짜 금리로 보여준다 */
@@ -233,18 +300,21 @@ class MarketQueryServiceTest {
     /**
      * **같은 응답 안에서 항목마다 기준일이 다르다.** 실측으로 기준금리 공표가 시장금리보다
      * 이틀 늦은 것이 확인됐다. 헤더에 기준일 하나를 두고 뭉뚱그리면 화면이 거짓말을 한다.
+     *
+     * 줄 순서도 여기서 함께 못 박는다 — 설정 순서다. 픽스처의 설정 순서는 사전순과도, 기준일
+     * 순서와도, 아래 스텁을 쌓은 순서(= DB가 행을 주는 순서)와도 일부러 다르게 잡았다([service] 주석).
      */
     @Test
-    fun `항목마다 자기 기준일을 단다`() {
-        stubRates("BASE_RATE", marketRate("BASE_RATE", LocalDate.of(2026, 8, 11), "2.5000"))
-        stubRates("KTB_3Y", marketRate("KTB_3Y", LocalDate.of(2026, 8, 13), "3.7810"))
+    fun `항목마다 자기 기준일을 달고 설정 순서로 실린다`() {
+        // 설정 순서(KTB_3Y 먼저)와 **반대로** 쌓는다 — 묶음 결과의 맵을 그냥 도는 구현이면 여기서 깨진다
+        stubRates(marketRate("BASE_RATE", LocalDate.of(2026, 8, 11), "2.5000"))
+        stubRates(marketRate("KTB_3Y", LocalDate.of(2026, 8, 13), "3.7810"))
 
         val rates = service().snapshot().rates
 
-        // 설정 순서 그대로 싣는다(운영 설정도 기준금리가 앞이다)
-        assertThat(rates.map { it.code }).containsExactly("BASE_RATE", "KTB_3Y")
+        assertThat(rates.map { it.code }).containsExactly("KTB_3Y", "BASE_RATE")
         assertThat(rates.map { it.quoteDate })
-            .containsExactly(LocalDate.of(2026, 8, 11), LocalDate.of(2026, 8, 13))
+            .containsExactly(LocalDate.of(2026, 8, 13), LocalDate.of(2026, 8, 11))
     }
 
     /**
@@ -263,20 +333,34 @@ class MarketQueryServiceTest {
 
     /**
      * 조회 창(from·to)은 `LocalDate.now(KST)`에 걸려 있어 날마다 달라진다 — 값으로 스텁할 수 없다.
+     * 그래서 매처로 받고 넘어온 인자는 [rateQueries]에 직접 적어 둔다. `ArgumentCaptor.capture()`는
+     * null을 돌려주는데 인자가 코틀린 non-null이라 검증 지점에서 NPE가 난다([stubLatest]와 같은 이유).
      *
-     * `?: `가 붙은 이유: 매처는 null을 돌려주는데 인자가 코틀린 non-null이라 코틀린이 호출 지점에
+     * `?: `가 붙은 이유: 매처도 null을 돌려주는데 인자가 코틀린 non-null이라 코틀린이 호출 지점에
      * 널 검사를 넣는다. 그대로 두면 스텁 지점에서 NPE가 나고, 매처가 큐에 남아 **다음 테스트가**
      * `InvalidUseOfMatchersException`으로 깨진다 — 무엇이 틀렸는지가 아니라 엉뚱한 테스트가 붉어진다.
      * 뒤의 값은 쓰이지 않는다(매처가 이미 등록됐다).
+     *
+     * 요청한 코드로 걸러 돌려준다 — 리포지터리가 하는 일이 그것이고, 걸러 두면 엉뚱한 코드를
+     * 넘기는 변이가 빈 결과로 드러난다.
      */
-    private fun stubRates(code: String, vararg rows: MarketRateEntity) {
+    private fun stubRateQuery() {
         `when`(
-            rateRepo.findByRateCodeAndQuoteDateBetween(
-                eq(code) ?: code,
+            rateRepo.findByRateCodeInAndQuoteDateBetween(
+                anyCollection() ?: emptyList(),
                 any(LocalDate::class.java) ?: LocalDate.EPOCH,
                 any(LocalDate::class.java) ?: LocalDate.EPOCH,
             ),
-        ).thenReturn(rows.toList())
+        ).thenAnswer { invocation ->
+            val codes = invocation.getArgument<Collection<String>>(0).toList()
+            rateQueries += Triple(codes, invocation.getArgument(1), invocation.getArgument(2))
+            rateRows.filter { it.rateCode in codes }
+        }
+    }
+
+    /** 스텁이 돌려줄 행을 쌓는다. 여러 번 불러 지표를 섞을 수 있고, 쌓은 순서가 곧 DB가 준 순서다 */
+    private fun stubRates(vararg rows: MarketRateEntity) {
+        rateRows += rows
     }
 
     private fun service(): MarketQueryService {
@@ -284,9 +368,13 @@ class MarketQueryServiceTest {
             domestic = listOf(MarketIndexProperties.DomesticIndex().apply { code = "KOSPI" })
             overseas = listOf(MarketIndexProperties.OverseasIndex().apply { code = "SPX" })
         }
-        // 운영 설정 순서와 같게 기준금리를 앞에 둔다 — 공표가 늦는 쪽이 앞줄이라 순서 회귀가 눈에 띈다
+        // **일부러 운영 설정 순서(BASE_RATE가 앞)와 반대로 둔다.** 운영 순서를 그대로 베끼면
+        // 설정 순서가 사전순과도, 기준일 오름차순과도 우연히 같아져 정렬 회귀가 통과해 버린다 —
+        // 실제로 결과에 `.sortedBy { it.quoteDate }`를 넣어도 13개가 다 초록이었다.
+        // 뒤집어 두면 세 가지 변이가 전부 여기서 깨진다: 코드 사전순 정렬, 기준일 정렬,
+        // 그리고 설정 대신 groupBy 맵(= DB가 준 순서)을 도는 것.
         val rateProperties = MarketRateProperties().apply {
-            series = listOf("BASE_RATE", "KTB_3Y").map { seriesCode ->
+            series = listOf("KTB_3Y", "BASE_RATE").map { seriesCode ->
                 MarketRateProperties.RateSeries().apply { code = seriesCode }
             }
         }
