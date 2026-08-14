@@ -141,7 +141,9 @@ class MarketRateAdminController(
             // 우리 설정 실수다. ECOS를 확인하러 보내지 않도록 502가 아니라 500으로 낸다
             throw ResponseStatusException(
                 HttpStatus.INTERNAL_SERVER_ERROR,
-                "수집 대상 금리가 설정에 없습니다 — application.yml의 market-rate.series 를 확인하세요",
+                // 목록 **둘 다** 이름을 댄다. 하나만 대면 다른 쪽이 빈 경우에 운영자가
+                // 멀쩡한 목록만 들여다본다. `market-rate.series`는 이제 없는 키다
+                "수집 대상 금리가 설정에 없습니다 — application.yml의 market-rate.ecos·market-rate.fred 를 확인하세요",
             )
         }
 

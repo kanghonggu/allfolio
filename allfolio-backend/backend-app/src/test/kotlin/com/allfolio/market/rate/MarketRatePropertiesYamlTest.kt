@@ -63,6 +63,24 @@ class MarketRatePropertiesYamlTest {
         assertThat(properties.ecos.map { it.cycle }).containsOnly("D")
     }
 
+    /**
+     * 미국 금리도 같은 이유로 시리즈 ID까지 단언한다 — 항목이 빠지면 목록만 조용히 짧아진다.
+     *
+     * **T10Y2Y(10년-2년 스프레드)가 여기 없는 것이 정상이다.** FRED가 스프레드를 자기 시계열로
+     * 주지만 우리는 UST_10Y - UST_2Y로 조회 시 계산한다 — 저장해 두면 둘이 어긋난 날
+     * 어느 쪽이 맞는지 가릴 방법이 없다. 한·미 기준금리차도 같다. 추가하지 말 것.
+     */
+    @Test
+    fun `application yml에 미국 금리 4종이 들어 있다`() {
+        assertThat(properties.fred.map { "${it.code}=${it.seriesId}" })
+            .containsExactly(
+                "US_FFR=DFF",      // 연방기금금리(실효)
+                "UST_2Y=DGS2",     // 미국채 2년
+                "UST_10Y=DGS10",   // 미국채 10년
+                "UST_30Y=DGS30",   // 미국채 30년
+            )
+    }
+
     @SpringBootConfiguration
     @EnableAutoConfiguration
     class TestApplication

@@ -37,7 +37,10 @@ class MarketRateAdminControllerTest {
         val thrown = assertThrows(ResponseStatusException::class.java) { controller.collect(null, null) }
 
         assertThat(thrown.statusCode).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR)
-        assertThat(thrown.reason).contains("market-rate.series")
+        // **실제로 존재하는 설정 키를 대는지까지 본다.** 예전 문구는 `market-rate.series`를
+        // 가리켰는데 그 키는 이제 없다 — 없는 키를 알려주는 안내는 운영자를 엉뚱한 곳으로 보낸다.
+        // 소스가 둘이라 목록도 둘이고, 어느 쪽이 비었는지는 응답이 모르니 둘 다 대야 한다
+        assertThat(thrown.reason).contains("market-rate.ecos", "market-rate.fred")
     }
 
     /**

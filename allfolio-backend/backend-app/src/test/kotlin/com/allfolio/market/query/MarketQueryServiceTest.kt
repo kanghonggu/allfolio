@@ -309,7 +309,9 @@ class MarketQueryServiceTest {
         )
         // 지표별 조회가 끼어들면 여기서 깨진다
         verifyNoMoreInteractions(rateRepo)
-        assertThat(rateQueries.single().first).containsExactlyInAnyOrder("BASE_RATE", "KTB_3Y")
+        // 픽스처 설정 전량이다(한국 2종 + 미국 1종). 행이 없는 종목도 조회에는 들어가야 한다 —
+        // 코드 목록은 설정에서 오고, 뭐가 있는지는 조회해 봐야 아는 것이라서다
+        assertThat(rateQueries.single().first).containsExactlyInAnyOrder("BASE_RATE", "KTB_3Y", "US_FFR")
     }
 
     /**
@@ -356,6 +358,31 @@ class MarketQueryServiceTest {
         assertThat(rates.map { it.code }).containsExactly("KTB_3Y", "BASE_RATE")
         assertThat(rates.map { it.quoteDate })
             .containsExactly(LocalDate.of(2026, 8, 13), LocalDate.of(2026, 8, 11))
+    }
+
+    /**
+     * **수집만 되고 화면에는 안 나오는 실패를 여기서 막는다.**
+     *
+     * 조회는 설정 목록에서 코드를 열거하는데, 그 목록이 소스별로 갈려 있다. `ecos`만 열거하면
+     * FRED 종목은 조회 대상에 아예 안 들어가 DB에는 쌓이는데 화면에만 없고, 오류도 로그도 안 난다.
+     * (계획이 실제로 "조회는 안 고쳐도 된다"고 적었다가 리뷰에서 잡힌 지점이다.)
+     *
+     * 줄 순서도 함께 못 박는다 — 한국 → 미국이고, 그게 화면 순서다. 두 목록을 미국부터 더하는
+     * 변이는 여기서 깨진다.
+     */
+    @Test
+    fun `한국과 미국 금리를 한 응답에 함께 싣는다`() {
+        stubRates(
+            marketRate("US_FFR", LocalDate.of(2026, 8, 12), "4.3300", source = "FRED"),
+            marketRate("KTB_3Y", LocalDate.of(2026, 8, 13), "3.7810"),
+        )
+
+        val rates = service().snapshot().rates
+
+        assertThat(rates.map { it.code }).containsExactly("KTB_3Y", "US_FFR")
+        // 응답만 보면 스텁이 코드로 걸러 주기에 의존하게 된다. 묶음 조회에 미국 코드가 실제로
+        // 넘어갔는지를 따로 본다 — 쿼리가 두 번으로 갈리는 변이도 single()이 잡는다
+        assertThat(rateQueries.single().first).contains("US_FFR")
     }
 
     /**
@@ -418,6 +445,10 @@ class MarketQueryServiceTest {
             ecos = listOf("KTB_3Y", "BASE_RATE").map { seriesCode ->
                 MarketRateProperties.EcosSeries().apply { code = seriesCode }
             }
+            // **미국 종목을 반드시 함께 채운다.** 설정이 소스별로 갈려 있어서, ecos만 채운 픽스처로는
+            // 조회가 `ecos`만 열거하는 구현이 전부 초록으로 통과한다 — 그 구현의 증상은
+            // "수집은 되는데 화면에 없다"이고 오류도 로그도 안 난다
+            fred = listOf(MarketRateProperties.FredSeries().apply { code = "US_FFR" })
         }
         val queryProperties = MarketQueryProperties().apply { this.indicesEnabled = indicesEnabled }
         return MarketQueryService(indexRepo, properties, fxRepo, rateRepo, rateProperties, queryProperties)
@@ -446,12 +477,17 @@ class MarketQueryServiceTest {
         collectedAt = LocalDateTime.of(2026, 8, 13, 15, 50),
     )
 
-    private fun marketRate(code: String, date: LocalDate, value: String) = MarketRateEntity(
+    private fun marketRate(
+        code: String,
+        date: LocalDate,
+        value: String,
+        source: String = "ECOS",
+    ) = MarketRateEntity(
         id = UUID.randomUUID(),
         rateCode = code,
         quoteDate = date,
         rateValue = BigDecimal(value),
-        source = "ECOS",
+        source = source,
         collectedAt = LocalDateTime.of(2026, 8, 13, 18, 10),
     )
 

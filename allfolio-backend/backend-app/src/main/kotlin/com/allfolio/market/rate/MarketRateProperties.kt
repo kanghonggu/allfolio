@@ -29,8 +29,17 @@ import org.springframework.stereotype.Component
 class MarketRateProperties {
     var ecos: List<EcosSeries> = emptyList()
 
-    /** FRED 시계열은 아직 설정에 없다 — 소스 구현이 붙기 전까지 빈 목록이다 */
     var fred: List<FredSeries> = emptyList()
+
+    /**
+     * 수집·조회 양쪽이 쓰는 전체 코드 목록. **순서가 한국 → 미국이고, 그게 화면 순서가 된다.**
+     *
+     * 이 프로퍼티가 있는 이유: 코드 목록을 필요로 하는 곳이 둘(수집 서비스는 소스를 통해,
+     * 조회 서비스는 여기를 통해)인데, 양쪽이 각자 `ecos + fred`를 더하면 소스가 셋이 되는 날
+     * 한쪽만 고쳐진다. 그때 증상은 "수집은 되는데 화면에 없다"이고, 오류도 로그도 안 난다.
+     */
+    val allCodes: List<String>
+        get() = ecos.map { it.code } + fred.map { it.code }
 
     class EcosSeries {
         /** 우리가 정한 canonical 코드. DB의 rate_code가 된다 */
@@ -94,7 +103,7 @@ class MarketRateProperties {
         // 하나씩 있는 경우를 놓치는데, 그게 정확히 위 문제의 더 나쁜 판본이다 — 소스가 둘이라
         // 값도 출처도 매 실행 뒤에 도는 쪽으로 뒤집히고, 제약조건도 요약도 여전히 조용하다.
         val duplicateProblems = buildList {
-            (ecos.map { it.code } + fred.map { it.code })
+            allCodes
                 // 빈 코드는 위에서 이미 잡았다. 여기 남겨 두면 "빈 문자열이 중복됩니다"라는
                 // 읽을 수 없는 두 번째 문제가 같이 나온다
                 .filter { it.isNotBlank() }
