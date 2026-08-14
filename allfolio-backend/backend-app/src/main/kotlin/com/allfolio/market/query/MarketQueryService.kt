@@ -23,8 +23,10 @@ import java.math.RoundingMode
 @Service
 // open-in-view가 꺼져 있고 커넥션 풀이 10이라, 트랜잭션이 없으면 리포지터리 호출마다
 // 커넥션을 따로 빌렸다 돌려준다. 환율 4번이 여기 붙었고 금리 시리즈당 1번이 Task 3에서 더 붙는다.
-// 스냅샷 조립 중간에 수집 크론이 커밋해도 한 시점으로 읽는 효과도 같이 얻는다 —
-// 환율은 네 쿼리에 걸쳐 읽으므로 그사이 새 회차가 커밋되면 머리와 본문이 다른 회차가 될 수 있다.
+// **이 커넥션 절약이 이 애너테이션의 이유 전부다. 시점 일관성은 여기서 얻지 못한다** —
+// 격리 수준은 READ COMMITTED 그대로다(readOnly는 격리를 안 바꾼다). 쿼리마다 스냅샷이 새로 잡힌다.
+// 환율은 2·4번째 쿼리를 1·3번째가 준 (기준일, 회차)로 걸기 때문에 머리와 본문은 항상 같은 회차다.
+// 그사이 수집 크론이 새 회차를 커밋하면 한 회차 묵은 응답이 나갈 뿐 안에서 어긋나지는 않는다.
 // (기존 관례: GetDashboardUseCase)
 @Transactional(readOnly = true)
 class MarketQueryService(
@@ -69,7 +71,10 @@ class MarketQueryService(
             roundNo = latest.roundNo,
             collectedAt = latest.collectedAt,
             quotes = current.map { quote ->
-                val before = prior[quote.currency]?.baseRate
+                // 직전 값이 0이면 "직전이 없다"로 함께 다룬다 — change만 살려 두면 화면에 매매기준율만 한
+                // 큰 폭이 등락률 없이 찍힌다. 하나은행이 0을 고시할 일은 없고 파서도 0 이하를 버리지만
+                // (HanaFxParser.number의 `it > ZERO`), 파싱이 어긋나면 들어올 수 있어 두 값을 같은 조건에 건다.
+                val before = prior[quote.currency]?.baseRate?.takeIf { it.signum() != 0 }
                 FxQuoteView(
                     currency = quote.currency,
                     baseRate = quote.baseRate,
@@ -79,10 +84,10 @@ class MarketQueryService(
                     remitReceive = quote.remitReceive,
                     // 어제 없던 통화는 0이 아니라 null이다 — 0은 "안 움직였다"는 뜻이 된다
                     change = before?.let { quote.baseRate - it },
-                    // 0으로 나누기를 막는다. 하나은행이 0을 고시할 일은 없지만 파싱이 어긋나면 들어올 수 있다
-                    changeRate = before?.takeIf { it.signum() != 0 }?.let {
-                        (quote.baseRate - it).divide(it, 6, RoundingMode.HALF_UP)
-                            .multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
+                    // 100을 먼저 곱하고 나눗셈에서 한 번만 반올림한다. 나눠서 반올림하고 곱한 뒤
+                    // 다시 반올림하면 경계값에서 마지막 자리가 한 칸 밀린다 — 반올림은 한 번뿐이어야 한다
+                    changeRate = before?.let {
+                        (quote.baseRate - it).multiply(BigDecimal(100)).divide(it, 2, RoundingMode.HALF_UP)
                     },
                 )
             }.sortedBy { it.currency },
