@@ -29,9 +29,12 @@ import java.util.UUID
  * @param skippedRows 값·날짜가 이상해 파서가 버린 행 수. 0이 아니면 형식이 바뀐 신호다
  * @param outOfRange 요청 구간 밖 날짜라 걷어낸 행 수. 아래 필터 주석 참조
  * @param emptySeries 저장할 행이 한 건도 남지 않은 종목 (0건 응답이거나 전부 구간 밖이라 걷힌 경우).
- *                    **실패가 아니다** — 기준금리처럼 변경 시에만 공표되는 계열은 2주 창에 값이 없는 게
- *                    정상이다. 다만 코드가 죽어도 똑같이 0건이라, 어느 쪽인지는 사람이 봐야 한다.
- *                    그래서 세지 말고 이름을 남긴다
+ *                    **그 자체로 실패는 아니다** — 계열에 따라 2주 창이 비는 게 정상일 수 있다.
+ *                    다만 통계표 코드가 죽어도 똑같이 0건이라, 어느 쪽인지는 사람이 봐야 한다.
+ *                    그래서 세지 말고 이름을 남긴다.
+ *                    **기준금리(BASE_RATE)를 그 "정상적으로 빈" 예로 들지 말 것** — 실측 결과
+ *                    2020-01-01 이후 2,415행으로 주말까지 포함한 달력 전일 행이 있고, 공표만
+ *                    시장금리보다 이틀쯤 늦다. BASE_RATE가 여기 뜨면 정상이 아니라 뭔가 깨진 신호다
  * @param failures "KTB_3Y: <사유>" 형태. 어느 종목이 왜 빠졌는지 한 번에 보여야 한다
  */
 data class RateCollectSummary(
@@ -135,9 +138,12 @@ class RateCollectService(
                 val inRange = result.rates.filter { it.baseDate in from..to }
                 outOfRange += result.rates.size - inRange.size
 
-                // **0건을 실패로 만들지 않는다.** 기준금리처럼 변경 시에만 공표되는 계열은
-                // 2주 창에 값이 없는 게 정상이다. 다만 통계표 코드가 죽어도 똑같이 0건이라
-                // 자동으로는 못 가른다 — 이름을 남겨 사람이 보게 한다.
+                // **0건을 실패로 만들지 않는다.** 계열에 따라 2주 창이 정상적으로 빌 수 있고,
+                // 통계표 코드가 죽어도 똑같이 0건이라 자동으로는 못 가른다 — 이름을 남겨 사람이 보게 한다.
+                // **기준금리(BASE_RATE)는 그 예가 아니다.** "변경 시에만 공표된다"고 적혀 있었지만
+                // 실측은 반대였다: 2020-01-01 이후 2,415행, 주말까지 포함해 달력 하루도 안 빠진다.
+                // 공표가 시장금리보다 이틀쯤 늦을 뿐이다. 그래서 BASE_RATE가 비면 정상이 아니라
+                // 뭔가 깨진 것이다 — 그걸 정상이라고 적어 두면 다음 사람이 경보를 무시한다.
                 if (inRange.isEmpty()) emptySeries += series.code
 
                 val existing = store.findRange(series.code, from, to).associateBy { it.quoteDate }
@@ -178,7 +184,8 @@ class RateCollectService(
                 // 갱신분은 detached 상태라(open-in-view: false + 트랜잭션 없음) 필드만 바꿔서는
                 // 아무 일도 일어나지 않는다. saveAll을 거쳐야 merge가 나간다.
                 val rows = deduped + toUpdate.keys
-                // 빈 배치도 리포지토리 레벨 트랜잭션을 연다. BASE_RATE는 대부분의 실행에서 정상적으로 비어 있다
+                // 빈 배치도 리포지토리 레벨 트랜잭션을 연다. 상류가 0건을 주는 실행은 실제로 있다
+                // (예전 이 자리에 BASE_RATE를 예로 적었는데 틀린 예다 — 위 emptySeries 주석 참조)
                 if (rows.isNotEmpty()) store.saveAll(rows)
 
                 // **반드시 저장한 뒤에 센다.** 세고 나서 저장하면 saveAll이 통째로 터진 실행에서도
