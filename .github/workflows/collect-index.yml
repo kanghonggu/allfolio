@@ -45,9 +45,9 @@ jobs:
   domestic-index:
     name: 국내 지수 수집
     runs-on: ubuntu-latest
-    # 아래 curl 재시도 예산(최악 9분)보다 커야 한다. 잡이 먼저 잘리면 요약도 애너테이션도
+    # 아래 curl 재시도 예산(최악 10.5분)보다 커야 한다. 잡이 먼저 잘리면 요약도 애너테이션도
     # 남지 않고 "cancelled"만 떠서 백엔드 문제가 러너 문제처럼 보인다.
-    timeout-minutes: 12
+    timeout-minutes: 14
     steps:
       - name: Trigger collection
         env:
@@ -114,14 +114,20 @@ jobs:
           # 재시도가 안전한 이유는 수집이 멱등하기 때문이다 — 같은 (지수, 거래일, 슬롯)이면
           # IndexCollectService가 기존 행을 덮어쓴다.
           #
+          # **멱등하다는 것이 "공짜"라는 뜻은 아니다.** curl이 --max-time에 포기해도 서버는
+          # 그 수집을 끝까지 돌린다. 즉 재시도 한 번은 KIS 호출 5번을 더 쓰는 것이고, 뒤 시도가
+          # 상류 제한에 걸리면 **이미 저장이 끝났는데도 잡이 빨개진다.** 해외 워크플로의 첫
+          # 예약 실행(2026-08-13)이 정확히 그랬다 — 6행이 정상 저장됐는데 잡은 실패였다.
+          # 같은 구조라 여기서도 언제든 난다. 그래서 시도당 시간을 늘리고 재시도를 줄인다.
+          #
           # -o/-w로 본문과 상태를 분리해 받는다. --fail을 쓰면 4xx/5xx에서 본문이 버려져
           # 왜 실패했는지(502 KIS 응답 이상인지 400 슬롯 오타인지) 알 수 없게 된다.
           # 지수 수집은 부분 실패(3건 중 1건 실패)가 HTTP 200으로 나오므로, 본문의
           # failures 배열이 유일한 단서다.
           #
           # --max-time은 전체가 아니라 "시도 1회당" 상한이다. 그래서 최악 소요는
-          # 120초 x 4회 시도 + 20초 x 3회 대기 = 540초(9분)이고, 이 값은 위
-          # timeout-minutes(12)보다 작아야 한다 — 두 숫자는 따로 노는 값이 아니다.
+          # 300초 x 2회 시도 + 30초 x 1회 대기 = 630초(10.5분)이고, 이 값은 위
+          # timeout-minutes(14)보다 작아야 한다 — 두 숫자는 따로 노는 값이 아니다.
           #
           # set -e 아래에서 명령 치환 대입은 그 종료 코드를 그대로 물려받는다. curl은 HTTP
           # 응답만 오면 4xx/5xx라도 0으로 끝나지만 전송 계층 실패(7 연결거부 / 28 타임아웃 /
@@ -132,9 +138,9 @@ jobs:
           HTTP_CODE=$(curl -sS -X POST \
             "${BACKEND_URL}/api/internal/scheduler/index/domestic?slot=${SLOT}" \
             -H "X-Scheduler-Token: ${SCHEDULER_TOKEN}" \
-            --max-time 120 \
-            --retry 3 \
-            --retry-delay 20 \
+            --max-time 300 \
+            --retry 1 \
+            --retry-delay 30 \
             --retry-all-errors \
             -o response.json \
             -w '%{http_code}') || HTTP_CODE="000"
