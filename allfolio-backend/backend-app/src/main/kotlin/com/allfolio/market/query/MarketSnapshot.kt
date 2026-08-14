@@ -2,6 +2,7 @@ package com.allfolio.market.query
 
 import java.math.BigDecimal
 import java.time.LocalDate
+import java.time.LocalDateTime
 
 /**
  * 시장 화면 한 번의 응답 (AF-104).
@@ -23,6 +24,8 @@ import java.time.LocalDate
 data class MarketSnapshot(
     val domestic: List<IndexQuoteView>?,
     val overseas: List<IndexQuoteView>?,
+    /** 수집이 한 번도 안 됐으면 null. 지수와 달리 끌 플래그가 없다 — AF-108 재배포 검토 대상은 지수다 */
+    val fx: FxSnapshot?,
     val flags: MarketFlags,
 )
 
@@ -46,6 +49,40 @@ data class IndexQuoteView(
     val tradeDate: LocalDate,
     /** OPEN | MID | CLOSE. 화면이 "언제 기준인지"를 말할 때 쓴다 */
     val slot: String,
+)
+
+/**
+ * 환율 한 회차 전체.
+ *
+ * 고시 회차를 응답에 싣는다 — 화면 우측 상단의 `하나은행 고시 / 32회차 / 2026.08.13` 도장이
+ * 사용자가 은행 화면과 직접 대조할 수 있게 하는 신뢰 장치다.
+ *
+ * [collectedAt]은 **UTC다.** `LocalDateTime`이라 직렬화에 오프셋이 안 붙으므로,
+ * 프런트가 `new Date(...)`로 읽으면 로컬 시각으로 해석해 KST 사용자에게 9시간 이르게 보인다.
+ * 화면에 그대로 찍지 말고 KST로 옮기고 나서 쓸 것.
+ * (지수 쪽은 `tradeDate`+`slot`+`marketStatus`가 "언제 기준인지"를 더 정확히 말해서 이 필드를 뺐다.
+ *  환율은 회차 안에서의 신선도를 이것 말고 말할 방법이 없어 남긴다.)
+ */
+data class FxSnapshot(
+    val baseDate: LocalDate,
+    val roundNo: Int,
+    val collectedAt: LocalDateTime,
+    val quotes: List<FxQuoteView>,
+)
+
+/**
+ * 통화 한 종. [change]가 null이면 직전 기준일에 그 통화가 없었다는 뜻이다 —
+ * 0으로 채우면 "안 움직였다"는 거짓말이 된다.
+ */
+data class FxQuoteView(
+    val currency: String,
+    val baseRate: BigDecimal,
+    val cashBuy: BigDecimal?,
+    val cashSell: BigDecimal?,
+    val remitSend: BigDecimal?,
+    val remitReceive: BigDecimal?,
+    val change: BigDecimal?,
+    val changeRate: BigDecimal?,
 )
 
 data class MarketFlags(

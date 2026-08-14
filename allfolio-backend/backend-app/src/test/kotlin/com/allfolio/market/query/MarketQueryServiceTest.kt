@@ -1,12 +1,16 @@
 package com.allfolio.market.query
 
 import com.allfolio.market.index.MarketIndexProperties
+import com.allfolio.unifiedasset.infrastructure.entity.HanaFxQuoteEntity
 import com.allfolio.unifiedasset.infrastructure.entity.MarketIndexQuoteEntity
+import com.allfolio.unifiedasset.infrastructure.jpa.HanaFxQuoteJpaRepository
 import com.allfolio.unifiedasset.infrastructure.jpa.MarketIndexQuoteJpaRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.anyCollection
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoMoreInteractions
 import org.mockito.Mockito.`when`
 import java.math.BigDecimal
 import java.time.LocalDate
@@ -17,8 +21,13 @@ class MarketQueryServiceTest {
 
     private val indexRepo: MarketIndexQuoteJpaRepository = mock(MarketIndexQuoteJpaRepository::class.java)
 
+    private val fxRepo: HanaFxQuoteJpaRepository = mock(HanaFxQuoteJpaRepository::class.java)
+
     /** 묶음 조회에 넘어간 코드들 — 호출 한 번당 한 줄 */
     private val requestedCodes = mutableListOf<List<String>>()
+
+    private val today = LocalDate.of(2026, 8, 13)
+    private val yesterday = LocalDate.of(2026, 8, 12)
 
     @Test
     fun `설정에 있는 지수를 국내와 해외로 나눠 싣는다`() {
@@ -76,6 +85,103 @@ class MarketQueryServiceTest {
     }
 
     /**
+     * **직전 회차가 아니라 직전 기준일과 비교한다.** 하나은행은 하루에 회차가 여러 번 나오므로,
+     * 직전 회차와 비교하면 전일대비가 아니라 장중 변동이 된다.
+     */
+    @Test
+    fun `전일대비는 직전 기준일의 마지막 회차와 비교한다`() {
+        `when`(fxRepo.findTopByOrderByBaseDateDescRoundNoDesc()).thenReturn(fxQuote("USD", today, 32, "1390.00"))
+        `when`(fxRepo.findAllByBaseDateAndRoundNo(today, 32)).thenReturn(listOf(fxQuote("USD", today, 32, "1390.00")))
+        `when`(fxRepo.findTopByBaseDateLessThanOrderByBaseDateDescRoundNoDesc(today))
+            .thenReturn(fxQuote("USD", yesterday, 40, "1380.00"))
+        `when`(fxRepo.findAllByBaseDateAndRoundNo(yesterday, 40))
+            .thenReturn(listOf(fxQuote("USD", yesterday, 40, "1380.00")))
+
+        val fx = service().snapshot().fx!!
+
+        assertThat(fx.baseDate).isEqualTo(today)
+        assertThat(fx.roundNo).isEqualTo(32)
+        assertThat(fx.quotes.single().change).isEqualByComparingTo("10.00")
+        assertThat(fx.quotes.single().changeRate).isEqualByComparingTo("0.72")
+    }
+
+    /** 어제 없던 통화가 오늘 생기면 전일대비를 만들어 낼 수 없다. 0이 아니라 null이다 */
+    @Test
+    fun `직전 기준일에 없던 통화는 전일대비가 null이다`() {
+        `when`(fxRepo.findTopByOrderByBaseDateDescRoundNoDesc()).thenReturn(fxQuote("XPF", today, 32, "12.00"))
+        `when`(fxRepo.findAllByBaseDateAndRoundNo(today, 32)).thenReturn(listOf(fxQuote("XPF", today, 32, "12.00")))
+        `when`(fxRepo.findTopByBaseDateLessThanOrderByBaseDateDescRoundNoDesc(today))
+            .thenReturn(fxQuote("USD", yesterday, 40, "1380.00"))
+        `when`(fxRepo.findAllByBaseDateAndRoundNo(yesterday, 40))
+            .thenReturn(listOf(fxQuote("USD", yesterday, 40, "1380.00")))
+
+        val quote = service().snapshot().fx!!.quotes.single()
+
+        assertThat(quote.change).isNull()
+        assertThat(quote.changeRate).isNull()
+    }
+
+    /** 수집이 한 번도 안 됐으면 환율 구간 자체가 null이다 */
+    @Test
+    fun `환율 데이터가 없으면 fx가 null이다`() {
+        `when`(fxRepo.findTopByOrderByBaseDateDescRoundNoDesc()).thenReturn(null)
+
+        assertThat(service().snapshot().fx).isNull()
+    }
+
+    /**
+     * 통화가 몇 종이든 왕복은 4번이다 — 최신 한 건 → 그 회차 전량 → 직전 기준일 한 건 → 그 회차 전량.
+     * 통화마다 최신을 따로 찾으면 운영에서 58번이 되고, 통화별로 회차가 갈려
+     * 한 화면에 서로 다른 회차가 섞인다.
+     */
+    @Test
+    fun `통화가 여럿이어도 환율 조회는 네 번으로 끝난다`() {
+        `when`(fxRepo.findTopByOrderByBaseDateDescRoundNoDesc()).thenReturn(fxQuote("USD", today, 32, "1390.00"))
+        `when`(fxRepo.findAllByBaseDateAndRoundNo(today, 32)).thenReturn(
+            listOf(
+                fxQuote("USD", today, 32, "1390.00"),
+                fxQuote("JPY", today, 32, "9.50"),
+                fxQuote("EUR", today, 32, "1500.00"),
+            ),
+        )
+        `when`(fxRepo.findTopByBaseDateLessThanOrderByBaseDateDescRoundNoDesc(today))
+            .thenReturn(fxQuote("USD", yesterday, 40, "1380.00"))
+        `when`(fxRepo.findAllByBaseDateAndRoundNo(yesterday, 40)).thenReturn(
+            listOf(
+                fxQuote("USD", yesterday, 40, "1380.00"),
+                fxQuote("JPY", yesterday, 40, "9.40"),
+                fxQuote("EUR", yesterday, 40, "1490.00"),
+            ),
+        )
+
+        service().snapshot()
+
+        verify(fxRepo).findTopByOrderByBaseDateDescRoundNoDesc()
+        verify(fxRepo).findAllByBaseDateAndRoundNo(today, 32)
+        verify(fxRepo).findTopByBaseDateLessThanOrderByBaseDateDescRoundNoDesc(today)
+        verify(fxRepo).findAllByBaseDateAndRoundNo(yesterday, 40)
+        // 위 넷 말고는 아무것도 안 불렀다는 뜻 — 통화별 조회가 끼어들면 여기서 깨진다
+        verifyNoMoreInteractions(fxRepo)
+    }
+
+    /** 리포지터리는 순서를 보장하지 않는다. 화면 줄 순서가 수집할 때마다 흔들리면 안 된다 */
+    @Test
+    fun `통화를 코드 순으로 정렬해 싣는다`() {
+        `when`(fxRepo.findTopByOrderByBaseDateDescRoundNoDesc()).thenReturn(fxQuote("USD", today, 32, "1390.00"))
+        `when`(fxRepo.findAllByBaseDateAndRoundNo(today, 32)).thenReturn(
+            listOf(
+                fxQuote("USD", today, 32, "1390.00"),
+                fxQuote("EUR", today, 32, "1500.00"),
+                fxQuote("JPY", today, 32, "9.50"),
+            ),
+        )
+
+        val fx = service().snapshot().fx!!
+
+        assertThat(fx.quotes.map { it.currency }).containsExactly("EUR", "JPY", "USD")
+    }
+
+    /**
      * 리포지터리가 준 것만 매핑한다 — 스텁에 없는 코드는 결과에서 그냥 빠진다.
      *
      * 넘어온 코드는 [requestedCodes]에 직접 받아 둔다. `ArgumentCaptor.capture()`는 null을
@@ -94,7 +200,7 @@ class MarketQueryServiceTest {
             domestic = listOf(MarketIndexProperties.DomesticIndex().apply { code = "KOSPI" })
             overseas = listOf(MarketIndexProperties.OverseasIndex().apply { code = "SPX" })
         }
-        return MarketQueryService(indexRepo, properties)
+        return MarketQueryService(indexRepo, properties, fxRepo)
     }
 
     private fun indexQuote(
@@ -118,5 +224,18 @@ class MarketQueryServiceTest {
         marketStatus = status,
         source = "KIS",
         collectedAt = LocalDateTime.of(2026, 8, 13, 15, 50),
+    )
+
+    private fun fxQuote(currency: String, baseDate: LocalDate, roundNo: Int, rate: String) = HanaFxQuoteEntity(
+        id = UUID.randomUUID(),
+        baseDate = baseDate,
+        roundNo = roundNo,
+        currency = currency,
+        baseRate = BigDecimal(rate),
+        cashBuy = null,
+        cashSell = null,
+        remitSend = null,
+        remitReceive = null,
+        collectedAt = LocalDateTime.of(2026, 8, 13, 18, 0),
     )
 }

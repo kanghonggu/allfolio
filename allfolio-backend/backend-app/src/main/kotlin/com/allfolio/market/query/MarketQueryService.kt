@@ -2,9 +2,12 @@ package com.allfolio.market.query
 
 import com.allfolio.market.index.MarketIndexProperties
 import com.allfolio.unifiedasset.infrastructure.entity.MarketIndexQuoteEntity
+import com.allfolio.unifiedasset.infrastructure.jpa.HanaFxQuoteJpaRepository
 import com.allfolio.unifiedasset.infrastructure.jpa.MarketIndexQuoteJpaRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.math.BigDecimal
+import java.math.RoundingMode
 
 /**
  * 시장 화면용 조회 (AF-104).
@@ -19,13 +22,15 @@ import org.springframework.transaction.annotation.Transactional
  */
 @Service
 // open-in-view가 꺼져 있고 커넥션 풀이 10이라, 트랜잭션이 없으면 리포지터리 호출마다
-// 커넥션을 따로 빌렸다 돌려준다. Task 2~3에서 환율 4번 + 금리 시리즈당 1번이 더 붙는다.
-// 스냅샷 조립 중간에 수집 크론이 커밋해도 한 시점으로 읽는 효과도 같이 얻는다.
+// 커넥션을 따로 빌렸다 돌려준다. 환율 4번이 여기 붙었고 금리 시리즈당 1번이 Task 3에서 더 붙는다.
+// 스냅샷 조립 중간에 수집 크론이 커밋해도 한 시점으로 읽는 효과도 같이 얻는다 —
+// 환율은 네 쿼리에 걸쳐 읽으므로 그사이 새 회차가 커밋되면 머리와 본문이 다른 회차가 될 수 있다.
 // (기존 관례: GetDashboardUseCase)
 @Transactional(readOnly = true)
 class MarketQueryService(
     private val indexRepository: MarketIndexQuoteJpaRepository,
     private val indexProperties: MarketIndexProperties,
+    private val fxRepository: HanaFxQuoteJpaRepository,
 ) {
     fun snapshot(): MarketSnapshot {
         val codes = indexProperties.domestic.map { it.code } + indexProperties.overseas.map { it.code }
@@ -36,7 +41,51 @@ class MarketQueryService(
         return MarketSnapshot(
             domestic = indexProperties.domestic.mapNotNull { latestByCode[it.code]?.toView() },
             overseas = indexProperties.overseas.mapNotNull { latestByCode[it.code]?.toView() },
+            fx = fxSnapshot(),
             flags = MarketFlags(indicesEnabled = true),
+        )
+    }
+
+    /**
+     * 최신 회차 전 통화 + 직전 기준일 대비.
+     *
+     * 쿼리 4회로 끝난다: 최신 한 건 → 그 회차 전량 → 직전 기준일 한 건 → 그 회차 전량.
+     * 통화가 58종이라 통화마다 최신을 찾으면 왕복이 58번이 되고,
+     * 통화별로 회차가 갈려 한 화면에 서로 다른 회차가 섞인다.
+     */
+    private fun fxSnapshot(): FxSnapshot? {
+        val latest = fxRepository.findTopByOrderByBaseDateDescRoundNoDesc() ?: return null
+        val current = fxRepository.findAllByBaseDateAndRoundNo(latest.baseDate, latest.roundNo)
+
+        // 직전 "기준일"이다. 직전 회차와 비교하면 전일대비가 아니라 장중 변동이 된다
+        val priorHead = fxRepository.findTopByBaseDateLessThanOrderByBaseDateDescRoundNoDesc(latest.baseDate)
+        val prior = priorHead
+            ?.let { fxRepository.findAllByBaseDateAndRoundNo(it.baseDate, it.roundNo) }
+            ?.associateBy { it.currency }
+            ?: emptyMap()
+
+        return FxSnapshot(
+            baseDate = latest.baseDate,
+            roundNo = latest.roundNo,
+            collectedAt = latest.collectedAt,
+            quotes = current.map { quote ->
+                val before = prior[quote.currency]?.baseRate
+                FxQuoteView(
+                    currency = quote.currency,
+                    baseRate = quote.baseRate,
+                    cashBuy = quote.cashBuy,
+                    cashSell = quote.cashSell,
+                    remitSend = quote.remitSend,
+                    remitReceive = quote.remitReceive,
+                    // 어제 없던 통화는 0이 아니라 null이다 — 0은 "안 움직였다"는 뜻이 된다
+                    change = before?.let { quote.baseRate - it },
+                    // 0으로 나누기를 막는다. 하나은행이 0을 고시할 일은 없지만 파싱이 어긋나면 들어올 수 있다
+                    changeRate = before?.takeIf { it.signum() != 0 }?.let {
+                        (quote.baseRate - it).divide(it, 6, RoundingMode.HALF_UP)
+                            .multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
+                    },
+                )
+            }.sortedBy { it.currency },
         )
     }
 
