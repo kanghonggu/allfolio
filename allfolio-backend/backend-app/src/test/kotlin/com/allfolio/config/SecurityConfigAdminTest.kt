@@ -3,10 +3,14 @@ package com.allfolio.config
 import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.api.admin.MarketRateAdminController
+import com.allfolio.api.market.MarketQueryController
 import com.allfolio.api.scheduler.SchedulerTriggerController
 import com.allfolio.market.index.IndexCollectService
 import com.allfolio.market.index.KisIndexClient
 import com.allfolio.market.index.OverseasIndexCollectService
+import com.allfolio.market.query.MarketFlags
+import com.allfolio.market.query.MarketQueryService
+import com.allfolio.market.query.MarketSnapshot
 import com.allfolio.market.rate.RateCollectService
 import com.allfolio.auth.JwtTokenService
 import com.allfolio.auth.UserEntity
@@ -18,6 +22,7 @@ import com.allfolio.fx.CashFlowRecomputeService
 import com.allfolio.fx.hana.HanaFxCollectService
 import org.springframework.boot.test.mock.mockito.MockBean
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.SpringBootConfiguration
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration
@@ -44,6 +49,9 @@ import java.math.BigDecimal
         MarketIndexAdminController::class,
         MarketRateAdminController::class,
         SchedulerTriggerController::class,
+        // AF-104. 어드민이 아니지만 이 컨텍스트에 함께 둔다 — 이 파일이 보는 건 SecurityConfig의
+        // 경로 규칙 전체이고(스케줄러 트리거도 여기 있다), 컨텍스트를 하나 더 띄우는 값이 안 된다.
+        MarketQueryController::class,
     ],
     properties = [
         "allfolio.auth.jwt-secret=test-secret-test-secret-test-secret-1234",
@@ -87,6 +95,11 @@ class SecurityConfigAdminTest {
 
     @MockBean
     private lateinit var ecosStatListClient: EcosStatListClient
+
+    // AF-104. MarketQueryController가 요구한다. 조회 내용은 이 파일의 관심사가 아니라
+    // 아래 200 테스트에서 빈 스냅샷 하나만 돌려주게 한다.
+    @MockBean
+    private lateinit var marketQueryService: MarketQueryService
 
     @Autowired
     private lateinit var mockMvc: MockMvc
@@ -226,6 +239,50 @@ class SecurityConfigAdminTest {
     fun `해외 지수 트리거도 Security를 통과해 컨트롤러까지 도달한다`() {
         mockMvc.post("/api/internal/scheduler/index/overseas?schedule=US")
             .andExpect { status { isServiceUnavailable() } }
+    }
+
+    /**
+     * AF-104: `GET /api/market`은 로그인해야 보인다.
+     *
+     * **경로와 기본 차단을 동시에 못 박는 유일한 테스트다.** 컨트롤러 테스트는 서비스를 목으로 두고
+     * 메서드를 직접 부르므로 Spring MVC도 Security도 안 돈다 — 매핑이 `/api/market`이라는 것도,
+     * `MarketQueryController` KDoc이 주장하는 "`.anyRequest().authenticated()`가 이미 잡는다"도
+     * 거기서는 검증되지 않는다.
+     *
+     * 지금은 catch-all이 자동으로 덮지만, 그 규칙이 경로 열거로 바뀌거나 이 경로를 permitAll 하는
+     * 한 줄이 위에 끼어드는 날 여기서 잡는다(matcher는 먼저 걸리는 쪽이 이긴다).
+     * 있을 법한 일이다 — `/api/sse/prices`가 이미 permitAll이라 "시세는 공개"라는 유추가 쉽다.
+     * 그런데 이 경로가 열리면 지수 데이터가 익명 제3자에게 나간다. 재배포 권한이 확인되지 않은
+     * 시세를 내보내지 않겠다는 것이 AF-108이고, 그게 정확히 이 플래그가 막으려는 상황이다.
+     */
+    @Test
+    fun `시장 조회는 토큰 없이 401로 차단된다`() {
+        mockMvc.get("/api/market")
+            .andExpect { status { isUnauthorized() } }
+    }
+
+    /**
+     * 위 401만으로는 **경로가 못 박히지 않는다.** Security 필터는 DispatcherServlet보다 먼저 돌아,
+     * `/api/market`에 매핑된 핸들러가 아예 없어도 catch-all이 똑같이 401을 준다 —
+     * `@RequestMapping`을 다른 경로로 바꾸는 변이가 그대로 통과한다.
+     * 로그인한 사용자로 200이 나오는 것까지 봐야 "이 경로에 핸들러가 있고, 그 핸들러가
+     * 인증만 통과하면 닿는다"가 둘 다 참이 된다.
+     */
+    @Test
+    fun `시장 조회는 USER 토큰이면 200으로 허용된다`() {
+        `when`(marketQueryService.snapshot()).thenReturn(
+            MarketSnapshot(
+                domestic = null,
+                overseas = null,
+                fx = null,
+                rates = emptyList(),
+                flags = MarketFlags(indicesEnabled = true),
+            ),
+        )
+
+        mockMvc.get("/api/market") {
+            header("Authorization", "Bearer ${tokenFor(UserRole.USER)}")
+        }.andExpect { status { isOk() } }
     }
 
     /**

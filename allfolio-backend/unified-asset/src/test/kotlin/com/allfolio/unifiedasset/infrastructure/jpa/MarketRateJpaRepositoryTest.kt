@@ -66,6 +66,43 @@ class MarketRateJpaRepositoryTest {
             .isEqualByComparingTo("3.1234")
     }
 
+    /**
+     * 시장 화면(AF-104)이 쓰는 묶음 조회. 지표마다 부르면 왕복이 지표 수만큼 나서 한 번으로 묶었다.
+     *
+     * 코드 필터와 날짜 필터가 **함께** 걸려야 한다 — 파생 쿼리 이름을 잘못 지어 한쪽이 빠지면
+     * 화면에 남의 지표가 섞이거나 구간 밖 행이 최신으로 잡힌다.
+     */
+    @Test
+    fun `묶음 구간 조회는 요청한 지표만 경계를 포함해 가져온다`() {
+        save(rate("KTB_3Y", LocalDate.of(2026, 8, 10), "3.10"))
+        save(rate("KTB_3Y", LocalDate.of(2026, 8, 12), "3.12"))
+        save(rate("BASE_RATE", LocalDate.of(2026, 8, 11), "2.50"))
+        // 구간 밖 — 날짜 필터가 빠지면 이게 딸려 온다
+        save(rate("KTB_3Y", LocalDate.of(2026, 8, 13), "3.20"))
+        // 요청 밖 지표 — 코드 필터가 빠지면 이게 딸려 온다
+        save(rate("CD_91D", LocalDate.of(2026, 8, 11), "3.00"))
+
+        val found = repository.findByRateCodeInAndQuoteDateBetween(
+            listOf("KTB_3Y", "BASE_RATE"), LocalDate.of(2026, 8, 10), LocalDate.of(2026, 8, 12),
+        )
+
+        assertThat(found).hasSize(3)
+        assertThat(found.map { it.rateCode }).containsOnly("KTB_3Y", "BASE_RATE")
+        assertThat(found.map { it.quoteDate }).doesNotContain(LocalDate.of(2026, 8, 13))
+    }
+
+    /** 수집된 적 없는 지표를 섞어 물어도 예외가 아니라 그냥 안 나온다 — 호출부가 빠진 것을 가려낸다 */
+    @Test
+    fun `묶음 조회에 없는 지표를 섞어도 있는 것만 나온다`() {
+        save(rate("KTB_3Y", LocalDate.of(2026, 8, 11), "3.12"))
+
+        val found = repository.findByRateCodeInAndQuoteDateBetween(
+            listOf("KTB_3Y", "NEVER_COLLECTED"), LocalDate.of(2026, 8, 10), LocalDate.of(2026, 8, 12),
+        )
+
+        assertThat(found.map { it.rateCode }).containsExactly("KTB_3Y")
+    }
+
     @Test
     fun `마이너스 금리도 저장된다`() {
         save(rate("CALL_ON", LocalDate.of(2026, 8, 12), "-0.25"))

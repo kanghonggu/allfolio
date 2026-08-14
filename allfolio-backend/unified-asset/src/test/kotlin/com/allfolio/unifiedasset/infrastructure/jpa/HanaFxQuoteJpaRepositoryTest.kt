@@ -30,6 +30,7 @@ class HanaFxQuoteJpaRepositoryTest {
 
     @Autowired private lateinit var entityManager: EntityManager
 
+    private val thursday = LocalDate.of(2026, 8, 6)
     private val friday = LocalDate.of(2026, 8, 7)
     private val monday = LocalDate.of(2026, 8, 10)
 
@@ -83,6 +84,52 @@ class HanaFxQuoteJpaRepositoryTest {
 
         assertThat(rows).hasSize(2)
         assertThat(rows.map { it.currency }).containsExactlyInAnyOrder("USD", "JPY")
+    }
+
+    /** 시장 화면(AF-104)은 통화를 안 가리고 "가장 최근 회차"를 먼저 찾은 뒤 그 회차 전량을 읽는다 */
+    @Test
+    fun `통화를 안 가리면 전체에서 가장 최근 회차를 준다`() {
+        save(friday, 32, "USD", "1390.5678")
+        save(monday, 1, "JPY", "9.5000")
+        save(monday, 12, "USD", "1400.0000")
+
+        val found = repository.findTopByOrderByBaseDateDescRoundNoDesc()
+
+        assertThat(found?.baseDate).isEqualTo(monday)
+        assertThat(found?.roundNo).isEqualTo(12)
+    }
+
+    /**
+     * 전일대비가 걸린 쿼리다. **직전 "회차"가 아니라 직전 "기준일"의 마지막 회차**를 줘야 한다 —
+     * 직전 회차(여기서는 월요일 1회차)를 주면 화면의 전일대비가 장중 변동으로 바뀌는데,
+     * 그 숫자는 그럴듯해 보여서 눈으로는 안 걸린다.
+     *
+     * 목요일 45회차는 **정렬 키의 순서**를 못 박으려고 있다. 목·금만 있으면 회차로 먼저 정렬하든
+     * 기준일로 먼저 정렬하든 답이 같아 `RoundNoDescBaseDateDesc`로 뒤바뀐 변이가 살아남는다.
+     * 회차 수는 날마다 다르므로(반휴일, 크론이 덜 돈 날) 목 45 > 금 40이 실제로 나올 수 있고,
+     * 그때 뒤바뀐 정렬은 금요일이 아니라 **목요일**과 비교한다 — 역시 그럴듯한 숫자라 눈엔 안 걸린다.
+     */
+    @Test
+    fun `직전 기준일 조회는 그날 안의 앞 회차를 건너뛰고 전날 마지막 회차를 준다`() {
+        // 회차 수가 금요일보다 많다 — 정렬 키 순서가 뒤바뀌면 여기로 잘못 간다
+        save(thursday, 45, "USD", "1360.0000")
+        save(friday, 1, "USD", "1370.0000")
+        save(friday, 40, "USD", "1380.0000")
+        save(monday, 1, "USD", "1395.0000")
+        save(monday, 12, "USD", "1400.0000")
+
+        val found = repository.findTopByBaseDateLessThanOrderByBaseDateDescRoundNoDesc(monday)
+
+        assertThat(found?.baseDate).isEqualTo(friday)
+        assertThat(found?.roundNo).isEqualTo(40)
+    }
+
+    /** 첫 수집일에는 앞선 기준일이 없다 — 그때 전일대비는 만들어 낼 수 없다 */
+    @Test
+    fun `앞선 기준일이 없으면 직전 기준일 조회는 null을 준다`() {
+        save(monday, 12, "USD", "1400.0000")
+
+        assertThat(repository.findTopByBaseDateLessThanOrderByBaseDateDescRoundNoDesc(monday)).isNull()
     }
 
     @Test

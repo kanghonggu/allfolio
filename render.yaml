@@ -37,3 +37,15 @@ services:
       # 수집이 3주기 연속 실패했을 때만 쓰이는 최후 상수
       - key: FX_USDT_KRW_FALLBACK
         value: "1400"
+      # 지수 노출 스위치 (AF-104). 미설정이면 application.yml의 기본값 true가 쓰인다.
+      #
+      # **위 항목들처럼 value: 로 적지 말 것 — 여기는 sync: false여야 한다.**
+      # blueprint에 value로 적은 변수는 Render가 소유한다. 대시보드에서 false로 뒤집어도
+      # 다음 blueprint sync 때 여기 적힌 "true"로 되돌아간다 — 커밋도 배포도 로그도 없이.
+      # 스케줄러 토글이면 어깨 한 번 으쓱할 일이지만, 이 스위치가 하는 일은 재배포 권한이
+      # 확인되지 않은 시세를 내보내는 걸 멈추는 것이라(KIS 개인용 오픈API, AF-108 미결)
+      # 조용한 "다시 켜짐"이 상상 가능한 최악의 실패다.
+      # sync: false는 키만 선언해 저장소에서 보이고 리뷰되게 두면서 **값은 대시보드가 갖는다** —
+      # 긴급 차단이 대시보드 수정 + 재시작으로 끝나고 재빌드가 필요 없다는 점은 그대로다.
+      - key: MARKET_INDICES_ENABLED
+        sync: false
