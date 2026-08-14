@@ -15,6 +15,7 @@ import org.mockito.ArgumentMatchers.anyCollection
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.verifyNoMoreInteractions
 import org.mockito.Mockito.`when`
 import java.math.BigDecimal
@@ -56,6 +57,8 @@ class MarketQueryServiceTest {
         assertThat(snapshot.domestic?.map { it.code }).containsExactly("KOSPI")
         assertThat(snapshot.overseas?.map { it.code }).containsExactly("SPX")
         assertThat(snapshot.domestic?.single()?.price).isEqualByComparingTo("2500.00")
+        // 플래그 on 쪽 값도 여기서 함께 못 박는다 — off 테스트만 있으면 `false` 상수 반환이 통과한다
+        assertThat(snapshot.flags.indicesEnabled).isTrue()
     }
 
     /**
@@ -100,6 +103,44 @@ class MarketQueryServiceTest {
 
         assertThat(requestedCodes).hasSize(1)
         assertThat(requestedCodes.single()).containsExactlyInAnyOrder("KOSPI", "SPX")
+    }
+
+    /**
+     * **플래그가 off면 서버가 지수를 아예 싣지 않는다 — 빈 리스트가 아니라 null이다.**
+     * 빈 리스트는 "조회는 했는데 데이터가 없다"는 뜻이라, 프런트가 실수로 렌더해도 이미 늦다.
+     * 재배포를 실제로 멈추는 것은 서버가 안 싣는 것이지 프런트가 안 그리는 것이 아니다(AF-108).
+     *
+     * **조회조차 안 하는 것까지 못 박는다.** 읽어 놓고 응답에서만 빼는 구현은 지금 당장은 같아 보여도,
+     * 조립부를 손대는 순간 다시 새어 나간다. 그래서 데이터가 **있는** 상태로 스텁해 두고 검증한다 —
+     * 스텁을 비워 두면 "안 불렀다"와 "불렀는데 없더라"가 구분되지 않는다.
+     */
+    @Test
+    fun `플래그가 off면 지수를 조회하지도 싣지도 않는다`() {
+        stubLatest(indexQuote("KOSPI", "2500.00"), indexQuote("SPX", "5600.00"))
+
+        val snapshot = service(indicesEnabled = false).snapshot()
+
+        assertThat(snapshot.domestic).isNull()
+        assertThat(snapshot.overseas).isNull()
+        assertThat(snapshot.flags.indicesEnabled).isFalse()
+        verifyNoInteractions(indexRepo)
+    }
+
+    /**
+     * 플래그가 지우는 건 지수뿐이다. 환율(하나은행)·금리(한국은행)는 AF-108 재배포 검토 대상이
+     * 아니라 같은 제약을 안 받는다. 플래그 확인을 `snapshot()` 맨 앞의 조기 반환으로 넣으면
+     * 지수 두 탭을 끄려다 네 탭이 다 사라진다 — 그 변이를 여기서 잡는다.
+     */
+    @Test
+    fun `플래그가 off여도 환율과 금리는 그대로 싣는다`() {
+        `when`(fxRepo.findTopByOrderByBaseDateDescRoundNoDesc()).thenReturn(fxQuote("USD", today, 32, "1390.00"))
+        `when`(fxRepo.findAllByBaseDateAndRoundNo(today, 32)).thenReturn(listOf(fxQuote("USD", today, 32, "1390.00")))
+        stubRates(marketRate("KTB_3Y", LocalDate.of(2026, 8, 13), "3.7810"))
+
+        val snapshot = service(indicesEnabled = false).snapshot()
+
+        assertThat(snapshot.fx?.quotes?.map { it.currency }).containsExactly("USD")
+        assertThat(snapshot.rates.map { it.code }).containsExactly("KTB_3Y")
     }
 
     /**
@@ -363,7 +404,7 @@ class MarketQueryServiceTest {
         rateRows += rows
     }
 
-    private fun service(): MarketQueryService {
+    private fun service(indicesEnabled: Boolean = true): MarketQueryService {
         val properties = MarketIndexProperties().apply {
             domestic = listOf(MarketIndexProperties.DomesticIndex().apply { code = "KOSPI" })
             overseas = listOf(MarketIndexProperties.OverseasIndex().apply { code = "SPX" })
@@ -378,7 +419,8 @@ class MarketQueryServiceTest {
                 MarketRateProperties.RateSeries().apply { code = seriesCode }
             }
         }
-        return MarketQueryService(indexRepo, properties, fxRepo, rateRepo, rateProperties)
+        val queryProperties = MarketQueryProperties().apply { this.indicesEnabled = indicesEnabled }
+        return MarketQueryService(indexRepo, properties, fxRepo, rateRepo, rateProperties, queryProperties)
     }
 
     private fun indexQuote(

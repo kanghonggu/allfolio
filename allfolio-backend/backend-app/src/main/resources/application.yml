@@ -221,6 +221,16 @@ kis:
   ws-enabled: ${KIS_WS_ENABLED:false}
   symbols: ${KIS_SYMBOLS:}          # 실시간 구독 종목 ex) 005930,000660
 
+# 시장 화면 노출 — AF-104
+#
+# indices-enabled는 AF-108 재배포 검토의 미결 때문에 있다. KIS 개인용 오픈API의 시세 재배포
+# 가능 여부가 확정되지 않았다(원문 미확보). 답이 "불가"로 오면 이 값을 false로 바꾸는 것만으로
+# 지수 두 탭이 화면에서 사라진다 — 서버가 응답에 아예 안 싣고, 조회조차 하지 않는다.
+# 아래 market-index(수집 대상)와는 다른 설정이다. 이건 노출만 끄는 스위치라 off로 둬도
+# 수집은 계속 돈다 — 수집까지 멈추려면 GitHub Actions cron 쪽을 따로 손봐야 한다.
+market:
+  indices-enabled: ${MARKET_INDICES_ENABLED:true}
+
 # 지수 수집 — AF-101
 # 코드를 소스에 박지 않는 이유: KIS 공식 샘플이 문서화한 FID_INPUT_ISCD는
 # 0001(코스피)·1001(코스닥)·2001(코스피200) 셋뿐이다. KOSDAQ150·KRX300은 확인되지 않았고,

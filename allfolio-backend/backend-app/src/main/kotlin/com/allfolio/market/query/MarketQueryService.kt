@@ -40,6 +40,7 @@ class MarketQueryService(
     private val fxRepository: HanaFxQuoteJpaRepository,
     private val rateRepository: MarketRateJpaRepository,
     private val rateProperties: MarketRateProperties,
+    private val queryProperties: MarketQueryProperties,
 ) {
     companion object {
         /**
@@ -59,18 +60,30 @@ class MarketQueryService(
     }
 
     fun snapshot(): MarketSnapshot {
-        val codes = indexProperties.domestic.map { it.code } + indexProperties.overseas.map { it.code }
-        val latestByCode = indexRepository.findLatestByCodes(codes).associateBy { it.indexCode }
+        // 플래그가 off면 **읽지도 않는다.** 읽어 두고 응답에서만 빼도 지금 당장의 결과는 같지만,
+        // 재배포를 막는 건 바이트가 프로세스를 안 떠나는 것이라 조립부를 손대는 순간 다시 새어 나간다.
+        // 이 확인을 함수 맨 앞의 조기 반환으로 옮기지 말 것 — 지수 두 탭을 끄려다 환율·금리까지
+        // 같이 사라진다. 플래그가 지우는 건 지수뿐이다([MarketQueryProperties]).
+        val indicesOn = queryProperties.indicesEnabled
+        val latestByCode = if (indicesOn) latestIndexQuotes() else emptyMap()
 
         // 국내·해외를 코드로 다시 가른다. 설정 순서를 그대로 유지해야 화면 줄 순서가 안 흔들린다.
         // 수집된 적 없는 지수는 맵에 없어 빠진다 — 0으로 채우면 화면이 그걸 진짜 값으로 보여준다.
+        // **off는 빈 리스트가 아니라 null이다.** 빈 리스트는 "조회했는데 데이터가 없다"는 뜻이라
+        // 뜻이 다르고, 프런트가 그걸 렌더해도 이미 늦다(MarketSnapshot KDoc).
         return MarketSnapshot(
-            domestic = indexProperties.domestic.mapNotNull { latestByCode[it.code]?.toView() },
-            overseas = indexProperties.overseas.mapNotNull { latestByCode[it.code]?.toView() },
+            domestic = if (indicesOn) indexProperties.domestic.mapNotNull { latestByCode[it.code]?.toView() } else null,
+            overseas = if (indicesOn) indexProperties.overseas.mapNotNull { latestByCode[it.code]?.toView() } else null,
             fx = fxSnapshot(),
             rates = rateViews(),
-            flags = MarketFlags(indicesEnabled = true),
+            flags = MarketFlags(indicesEnabled = indicesOn),
         )
+    }
+
+    /** 국내·해외를 합쳐 쿼리 한 번. 왜 종목마다 안 부르는지는 클래스 KDoc 참조 */
+    private fun latestIndexQuotes(): Map<String, MarketIndexQuoteEntity> {
+        val codes = indexProperties.domestic.map { it.code } + indexProperties.overseas.map { it.code }
+        return indexRepository.findLatestByCodes(codes).associateBy { it.indexCode }
     }
 
     /**
