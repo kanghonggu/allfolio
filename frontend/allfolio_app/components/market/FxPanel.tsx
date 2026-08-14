@@ -26,7 +26,7 @@ export default function FxPanel({ fx }: { fx: FxSnapshot | null }) {
   // 내 보유 통화 — 계좌 목록에서 뽑는다. 시장 데이터와 섞지 않는 이유는
   // /api/market이 사용자별 데이터를 안 싣기 때문이고, 그건 캐시 가능하게 두려는 판단이다.
   // 키는 다른 화면과 같은 ['unified','accounts']다 — 계좌 화면을 거쳐 왔으면 재요청이 없다.
-  const { data: accounts } = useQuery({
+  const { data: accounts, isPending: accountsPending } = useQuery({
     queryKey: ['unified', 'accounts'],
     queryFn: () => unified!.accounts.list(),
     enabled: !!unified,
@@ -73,7 +73,11 @@ export default function FxPanel({ fx }: { fx: FxSnapshot | null }) {
 
       {/* 이 카드가 이 화면의 "내 숫자와의 연결"을 혼자 진다 — 지수 카드의 내 수익률 한 줄은
           데이터가 없어 뺐다(AF-106). 없애면 화면이 순수 시세 나열이 된다. */}
-      {mine.length === 0 ? (
+      {/* 계좌 조회가 아직 안 끝났는데 "없습니다"를 띄우면 짧게나마 거짓을 말한다 —
+          이 조회는 시장 스냅샷이 온 뒤에야 시작하므로 순간이 아니라 한 왕복만큼 보인다 */}
+      {accountsPending ? (
+        <p className="text-[13px] text-fg-faint">보유 통화를 불러오는 중…</p>
+      ) : mine.length === 0 ? (
         <p className="text-[13px] text-fg-2">외화 계좌가 없습니다.</p>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
