@@ -79,6 +79,62 @@ class MarketIndexQuoteJpaRepositoryTest {
         assertThat(found?.price).isEqualByComparingTo("2650")
     }
 
+    // 시장 화면(AF-104)이 쓰는 조회. 지수 14종을 종목마다 부르면 원격 Postgres 왕복이 14번이라
+    // 한 번으로 묶었다 — 그 대신 "지수마다 최신 한 건"을 상관 서브쿼리로 골라야 한다.
+    @Test
+    fun `여러 지수의 최신 한 건씩을 한 번에 준다`() {
+        save(quote("KOSPI", yesterday, "CLOSE", "2500"))
+        save(quote("KOSPI", today, "OPEN", "2600"))
+        save(quote("KOSDAQ", today, "CLOSE", "900"))
+        save(quote("SPX", today, "CLOSE", "5600"))
+
+        val found = repository.findLatestByCodes(listOf("KOSPI", "KOSDAQ", "SPX"))
+            .associateBy { it.indexCode }
+
+        assertThat(found.keys).containsExactlyInAnyOrder("KOSPI", "KOSDAQ", "SPX")
+        assertThat(found.getValue("KOSPI").price).isEqualByComparingTo("2600")
+        assertThat(found.getValue("KOSDAQ").price).isEqualByComparingTo("900")
+        assertThat(found.getValue("SPX").price).isEqualByComparingTo("5600")
+    }
+
+    // 묶음 조회도 슬롯 순서를 지켜야 한다. 사전순(CLOSE < MID < OPEN)으로 새면
+    // 같은 날 시가가 종가보다 최신으로 잡혀 화면이 종가 대신 시가를 보여준다.
+    // findLatest에는 이 검증이 있고 묶음 조회에는 없으면, 규칙이 갈려도 아무도 모른다.
+    @Test
+    fun `묶음 조회도 같은 날에는 종가가 장중과 시가보다 최신이다`() {
+        save(quote("KOSPI", today, "OPEN", "2600"))
+        save(quote("KOSPI", today, "CLOSE", "2650"))
+        save(quote("KOSPI", today, "MID", "2620"))
+
+        val found = repository.findLatestByCodes(listOf("KOSPI")).single()
+
+        assertThat(found.slot).isEqualTo("CLOSE")
+        assertThat(found.price).isEqualByComparingTo("2650")
+    }
+
+    // 날짜가 슬롯보다 우선한다. 슬롯만 보면 어제 종가가 오늘 시가를 이긴다.
+    @Test
+    fun `묶음 조회는 어제 종가보다 오늘 시가를 준다`() {
+        save(quote("KOSPI", yesterday, "CLOSE", "2500"))
+        save(quote("KOSPI", today, "OPEN", "2600"))
+
+        val found = repository.findLatestByCodes(listOf("KOSPI")).single()
+
+        assertThat(found.tradeDate).isEqualTo(today)
+        assertThat(found.price).isEqualByComparingTo("2600")
+    }
+
+    // 수집된 적 없는 코드는 결과에 그냥 없다 — null 행을 만들어 끼우지 않는다.
+    // 호출부(MarketQueryService)가 코드로 매핑해 빠진 것을 가려내는 규약이 여기에 달려 있다.
+    @Test
+    fun `수집된 적 없는 코드는 결과에서 빠진다`() {
+        save(quote("KOSPI", today, "CLOSE", "2650"))
+
+        val found = repository.findLatestByCodes(listOf("KOSPI", "없는지수"))
+
+        assertThat(found.map { it.indexCode }).containsExactly("KOSPI")
+    }
+
     /**
      * flush + clear로 영속성 컨텍스트를 비운다.
      * 이게 없으면 조회가 1차 캐시에서 방금 만든 인스턴스를 그대로 돌려주고,
