@@ -840,12 +840,52 @@ fred:
     }
 ```
 
-- [ ] **Step 6: 테스트**
+- [ ] **Step 6: 조회 API가 미국 코드도 싣게 한다 — 이게 없으면 수집만 되고 화면에 안 나온다**
 
-Run: `cd allfolio-backend && ./gradlew :backend-app:test --tests '*Fred*' --tests '*MarketRateProperties*' --no-daemon`
+**계획이 원래 여기를 틀리게 적었다.** "조회 API는 `rates`를 그대로 싣고 있어서 아무것도 안 고쳐도
+미국 금리가 실린다"고 썼는데, `MarketQueryService.rateViews()`는 **설정 목록에서 코드를 열거한다** —
+`properties.ecos`만 읽으므로 FRED 코드는 조회 대상에 아예 안 들어간다. 수집은 되고 DB에도 쌓이는데
+화면에는 안 나오는, 조용한 종류의 실패다.
+
+`MarketRateProperties`에 계산 프로퍼티를 하나 둔다:
+
+```kotlin
+    /**
+     * 수집·조회 양쪽이 쓰는 전체 코드 목록. **순서가 한국 → 미국이고, 그게 화면 순서가 된다.**
+     *
+     * 이 프로퍼티가 있는 이유: 코드 목록을 필요로 하는 곳이 둘(수집 서비스는 소스를 통해,
+     * 조회 서비스는 여기를 통해)인데, 양쪽이 각자 `ecos + fred`를 더하면 소스가 셋이 되는 날
+     * 한쪽만 고쳐진다. 그때 증상은 "수집은 되는데 화면에 없다"이고, 오류도 로그도 안 난다.
+     */
+    val allCodes: List<String>
+        get() = ecos.map { it.code } + fred.map { it.code }
+```
+
+`MarketQueryService.rateViews()`가 `rateProperties.ecos` 대신 `rateProperties.allCodes`를 돌게 하고,
+`validate()`의 중복 검사도 이 프로퍼티를 쓰게 정리한다.
+
+**테스트**: 조회 서비스 테스트에 미국 코드가 섞인 설정을 주고 두 나라 코드가 다 실리는지 단언한다.
+`MarketQueryServiceTest`의 기존 설정 픽스처가 `ecos`만 채우고 있을 것이므로 `fred`도 채운다.
+
+- [ ] **Step 7: 죽은 설정 키를 가리키는 운영 문구를 고친다**
+
+Task 2에서 `market-rate.series` → `market-rate.ecos`로 바꿨는데, **운영자에게 그 키를 알려주는
+문구 네 곳이 아직 옛 이름을 말한다.** Task 2는 단언 수정이 금지돼 있어 남겨 뒀다.
+
+- `MarketRateAdminController` — "수집 대상 금리가 설정에 없습니다 — application.yml의 `market-rate.series`를 확인하세요"
+- `MarketRateAdminControllerTest` — 위 문구를 단언한다
+- `.github/workflows/collect-rate.yml` — 오류 범례에서 세 곳
+
+이제 `fred`가 실제로 yml에 들어왔으므로 **두 목록을 다 가리키게** 고친다
+(예: "`market-rate.ecos`·`market-rate.fred`를 확인하세요"). 없는 키를 가리키는 안내는
+운영자를 엉뚱한 곳으로 보낸다 — 특히 `requested == 0`은 설정을 보라는 뜻인데 그 설정 이름이 틀렸다.
+
+- [ ] **Step 8: 테스트**
+
+Run: `cd allfolio-backend && ./gradlew :backend-app:test --tests '*Fred*' --tests '*MarketRate*' --tests '*MarketQuery*' --no-daemon`
 Expected: BUILD SUCCESSFUL
 
-- [ ] **Step 7: 커밋**
+- [ ] **Step 9: 커밋**
 
 ```bash
 git add allfolio-backend/backend-app/src allfolio-backend/backend-app/src/main/resources/application.yml
@@ -869,8 +909,12 @@ Expected: BUILD SUCCESSFUL
 git diff --stat origin/main...HEAD
 ```
 
-`MarketQueryService`·`MarketSnapshot`이 diff에 있으면 범위가 샌 것이다 —
-조회 API는 `rates`를 그대로 싣고 있어서 **아무것도 안 고쳐도 미국 금리가 화면에 실린다.**
+**`MarketQueryService`는 diff에 있는 것이 맞다** — Task 4 Step 6에서 `allCodes`를 쓰게 고쳤다.
+계획이 원래 "조회 API는 아무것도 안 고쳐도 미국 금리가 실린다"고 적었는데 그건 틀렸다:
+조회 서비스가 설정 목록에서 코드를 열거하므로 고치지 않으면 수집만 되고 화면에는 안 나온다.
+
+범위가 샌 신호는 이쪽이다 — `MarketRateEntity`·`MarketRateJpaRepository`·마이그레이션이
+diff에 있으면 저장 계층을 건드린 것이고, 이 계획은 소스만 추가한다.
 
 - [ ] **Step 3: 푸시하고 PR**
 
