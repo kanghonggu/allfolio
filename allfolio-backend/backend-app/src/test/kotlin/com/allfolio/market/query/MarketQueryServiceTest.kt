@@ -1,13 +1,18 @@
 package com.allfolio.market.query
 
 import com.allfolio.market.index.MarketIndexProperties
+import com.allfolio.market.rate.MarketRateProperties
 import com.allfolio.unifiedasset.infrastructure.entity.HanaFxQuoteEntity
 import com.allfolio.unifiedasset.infrastructure.entity.MarketIndexQuoteEntity
+import com.allfolio.unifiedasset.infrastructure.entity.MarketRateEntity
 import com.allfolio.unifiedasset.infrastructure.jpa.HanaFxQuoteJpaRepository
 import com.allfolio.unifiedasset.infrastructure.jpa.MarketIndexQuoteJpaRepository
+import com.allfolio.unifiedasset.infrastructure.jpa.MarketRateJpaRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyCollection
+import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoMoreInteractions
@@ -22,6 +27,8 @@ class MarketQueryServiceTest {
     private val indexRepo: MarketIndexQuoteJpaRepository = mock(MarketIndexQuoteJpaRepository::class.java)
 
     private val fxRepo: HanaFxQuoteJpaRepository = mock(HanaFxQuoteJpaRepository::class.java)
+
+    private val rateRepo: MarketRateJpaRepository = mock(MarketRateJpaRepository::class.java)
 
     /** 묶음 조회에 넘어간 코드들 — 호출 한 번당 한 줄 */
     private val requestedCodes = mutableListOf<List<String>>()
@@ -182,6 +189,65 @@ class MarketQueryServiceTest {
     }
 
     /**
+     * bp 변동은 직전 기준일과 비교한다. **%p가 아니라 bp다 — 1%p = 100bp.**
+     * 국고채가 하루에 0.01%p 움직이면 `1.00`이어야 한다. 100을 안 곱하면 `-0.01`이 나오는데
+     * 그것도 금리처럼 생긴 숫자라 눈으로는 안 걸린다.
+     *
+     * 행을 **기준일 순서가 뒤섞인 채로** 넘긴다. 리포지터리는 순서를 보장하지 않으므로
+     * 정렬 없이 `last()`/`first()`를 쓰면 8/11 행이 최신이나 직전으로 잡힌다.
+     */
+    @Test
+    fun `금리의 bp 변동은 직전 기준일과 비교한다`() {
+        stubRates(
+            "KTB_3Y",
+            marketRate("KTB_3Y", LocalDate.of(2026, 8, 13), "3.7810"),
+            marketRate("KTB_3Y", LocalDate.of(2026, 8, 11), "3.5000"),
+            marketRate("KTB_3Y", LocalDate.of(2026, 8, 12), "3.7910"),
+        )
+
+        val view = service().snapshot().rates.single()
+
+        assertThat(view.code).isEqualTo("KTB_3Y")
+        assertThat(view.value).isEqualByComparingTo("3.7810")
+        assertThat(view.quoteDate).isEqualTo(LocalDate.of(2026, 8, 13))
+        assertThat(view.changeBp).isEqualByComparingTo("-1.00")
+    }
+
+    /** 수집 첫날처럼 비교할 직전 행이 없으면 0이 아니라 null이다 — 0은 "안 움직였다"는 뜻이 된다 */
+    @Test
+    fun `행이 하나뿐이면 bp 변동이 null이다`() {
+        stubRates("KTB_3Y", marketRate("KTB_3Y", LocalDate.of(2026, 8, 13), "3.7810"))
+
+        val view = service().snapshot().rates.single()
+
+        assertThat(view.value).isEqualByComparingTo("3.7810")
+        assertThat(view.changeBp).isNull()
+    }
+
+    /** 수집이 한 번도 안 된 지표는 행이 없다. 0으로 채우면 화면이 그걸 진짜 금리로 보여준다 */
+    @Test
+    fun `행이 없는 금리는 응답에서 빠진다`() {
+        assertThat(service().snapshot().rates).isEmpty()
+    }
+
+    /**
+     * **같은 응답 안에서 항목마다 기준일이 다르다.** 실측으로 기준금리 공표가 시장금리보다
+     * 이틀 늦은 것이 확인됐다. 헤더에 기준일 하나를 두고 뭉뚱그리면 화면이 거짓말을 한다.
+     */
+    @Test
+    fun `항목마다 자기 기준일을 단다`() {
+        stubRates("BASE_RATE", marketRate("BASE_RATE", LocalDate.of(2026, 8, 11), "2.5000"))
+        stubRates("KTB_3Y", marketRate("KTB_3Y", LocalDate.of(2026, 8, 13), "3.7810"))
+
+        val rates = service().snapshot().rates
+
+        // 설정 순서 그대로 싣는다(운영 설정도 기준금리가 앞이다)
+        assertThat(rates.map { it.code }).containsExactly("BASE_RATE", "KTB_3Y")
+        assertThat(rates.map { it.quoteDate })
+            .containsExactly(LocalDate.of(2026, 8, 11), LocalDate.of(2026, 8, 13))
+    }
+
+    /**
      * 리포지터리가 준 것만 매핑한다 — 스텁에 없는 코드는 결과에서 그냥 빠진다.
      *
      * 넘어온 코드는 [requestedCodes]에 직접 받아 둔다. `ArgumentCaptor.capture()`는 null을
@@ -195,12 +261,36 @@ class MarketQueryServiceTest {
         }
     }
 
+    /**
+     * 조회 창(from·to)은 `LocalDate.now(KST)`에 걸려 있어 날마다 달라진다 — 값으로 스텁할 수 없다.
+     *
+     * `?: `가 붙은 이유: 매처는 null을 돌려주는데 인자가 코틀린 non-null이라 코틀린이 호출 지점에
+     * 널 검사를 넣는다. 그대로 두면 스텁 지점에서 NPE가 나고, 매처가 큐에 남아 **다음 테스트가**
+     * `InvalidUseOfMatchersException`으로 깨진다 — 무엇이 틀렸는지가 아니라 엉뚱한 테스트가 붉어진다.
+     * 뒤의 값은 쓰이지 않는다(매처가 이미 등록됐다).
+     */
+    private fun stubRates(code: String, vararg rows: MarketRateEntity) {
+        `when`(
+            rateRepo.findByRateCodeAndQuoteDateBetween(
+                eq(code) ?: code,
+                any(LocalDate::class.java) ?: LocalDate.EPOCH,
+                any(LocalDate::class.java) ?: LocalDate.EPOCH,
+            ),
+        ).thenReturn(rows.toList())
+    }
+
     private fun service(): MarketQueryService {
         val properties = MarketIndexProperties().apply {
             domestic = listOf(MarketIndexProperties.DomesticIndex().apply { code = "KOSPI" })
             overseas = listOf(MarketIndexProperties.OverseasIndex().apply { code = "SPX" })
         }
-        return MarketQueryService(indexRepo, properties, fxRepo)
+        // 운영 설정 순서와 같게 기준금리를 앞에 둔다 — 공표가 늦는 쪽이 앞줄이라 순서 회귀가 눈에 띈다
+        val rateProperties = MarketRateProperties().apply {
+            series = listOf("BASE_RATE", "KTB_3Y").map { seriesCode ->
+                MarketRateProperties.RateSeries().apply { code = seriesCode }
+            }
+        }
+        return MarketQueryService(indexRepo, properties, fxRepo, rateRepo, rateProperties)
     }
 
     private fun indexQuote(
@@ -224,6 +314,15 @@ class MarketQueryServiceTest {
         marketStatus = status,
         source = "KIS",
         collectedAt = LocalDateTime.of(2026, 8, 13, 15, 50),
+    )
+
+    private fun marketRate(code: String, date: LocalDate, value: String) = MarketRateEntity(
+        id = UUID.randomUUID(),
+        rateCode = code,
+        quoteDate = date,
+        rateValue = BigDecimal(value),
+        source = "ECOS",
+        collectedAt = LocalDateTime.of(2026, 8, 13, 18, 10),
     )
 
     private fun fxQuote(currency: String, baseDate: LocalDate, roundNo: Int, rate: String) = HanaFxQuoteEntity(

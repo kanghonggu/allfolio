@@ -19,7 +19,7 @@ import java.time.LocalDateTime
  *   `[]` = 켜져 있으나 데이터가 없는 것.
  * - [fx]: `null` = 데이터 없음. 빈 표현이 따로 없다 — 기준일·회차가 데이터 없이는 존재할 수 없어
  *   구간 전체가 nullable인 게 맞다.
- * - `rates`(Task 3): `[]` = 데이터 없음. 머리에 해당하는 값이 없어 리스트 하나로 끝난다.
+ * - [rates]: `[]` = 데이터 없음. 머리에 해당하는 값이 없어 리스트 하나로 끝난다.
  *
  * **소비자는 null과 `[]`를 직접 비교하지 말 것.** 탭을 띄울지는 [MarketFlags.indicesEnabled]로
  * 갈라야 하고, 탭을 띄운 뒤 리스트는 "비어 있을 수 있는 것"으로 다뤄 "데이터 없음"을 보여준다.
@@ -31,6 +31,8 @@ data class MarketSnapshot(
     val overseas: List<IndexQuoteView>?,
     /** 수집이 한 번도 안 됐으면 null. 지수와 달리 끌 플래그가 없다 — AF-108 재배포 검토 대상은 지수다 */
     val fx: FxSnapshot?,
+    /** 설정(`market-rate.series`) 순서 그대로다. 수집된 적 없는 지표는 빠져 6종보다 짧을 수 있다 */
+    val rates: List<RateView>,
     val flags: MarketFlags,
 )
 
@@ -96,6 +98,24 @@ data class FxQuoteView(
     val remitReceive: BigDecimal?,
     val change: BigDecimal?,
     val changeRate: BigDecimal?,
+)
+
+/**
+ * 금리 한 종.
+ *
+ * [quoteDate]를 항목마다 싣는다 — **같은 탭 안에서도 기준일이 다르다.**
+ * 실측: 기준금리 공표가 시장금리보다 이틀 늦다. 공통 헤더에 기준일 하나를 두면 화면이 거짓말을 한다.
+ *
+ * [changeBp]는 %p가 아니라 **bp**다(1%p = 100bp). 국고채가 하루에 0.01%p 움직이면 `1.00`이다 —
+ * 화면에서 다시 100을 곱하지 말 것. null이면 비교할 직전 값이 없다는 뜻이고, 0은 "안 움직였다"는 뜻이라
+ * 둘을 같게 만들면 안 된다.
+ */
+data class RateView(
+    val code: String,
+    /** 연 %. 마이너스 금리가 실재하므로 부호를 제한하지 않는다 */
+    val value: BigDecimal,
+    val quoteDate: LocalDate,
+    val changeBp: BigDecimal?,
 )
 
 data class MarketFlags(

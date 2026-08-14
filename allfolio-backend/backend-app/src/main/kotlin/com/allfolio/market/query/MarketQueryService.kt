@@ -1,13 +1,17 @@
 package com.allfolio.market.query
 
 import com.allfolio.market.index.MarketIndexProperties
+import com.allfolio.market.rate.MarketRateProperties
 import com.allfolio.unifiedasset.infrastructure.entity.MarketIndexQuoteEntity
 import com.allfolio.unifiedasset.infrastructure.jpa.HanaFxQuoteJpaRepository
 import com.allfolio.unifiedasset.infrastructure.jpa.MarketIndexQuoteJpaRepository
+import com.allfolio.unifiedasset.infrastructure.jpa.MarketRateJpaRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.LocalDate
+import java.time.ZoneId
 
 /**
  * 시장 화면용 조회 (AF-104).
@@ -22,7 +26,7 @@ import java.math.RoundingMode
  */
 @Service
 // open-in-view가 꺼져 있고 커넥션 풀이 10이라, 트랜잭션이 없으면 리포지터리 호출마다
-// 커넥션을 따로 빌렸다 돌려준다. 환율 4번이 여기 붙었고 금리 시리즈당 1번이 Task 3에서 더 붙는다.
+// 커넥션을 따로 빌렸다 돌려준다. 환율 4번에 금리가 시리즈당 1번(운영 설정 6종)씩 더 붙는다.
 // **이 커넥션 절약이 이 애너테이션의 이유 전부다. 시점 일관성은 여기서 얻지 못한다** —
 // 격리 수준은 READ COMMITTED 그대로다(readOnly는 격리를 안 바꾼다). 쿼리마다 스냅샷이 새로 잡힌다.
 // 환율은 2·4번째 쿼리를 1·3번째가 준 (기준일, 회차)로 걸기 때문에 머리와 본문은 항상 같은 회차다.
@@ -33,7 +37,26 @@ class MarketQueryService(
     private val indexRepository: MarketIndexQuoteJpaRepository,
     private val indexProperties: MarketIndexProperties,
     private val fxRepository: HanaFxQuoteJpaRepository,
+    private val rateRepository: MarketRateJpaRepository,
+    private val rateProperties: MarketRateProperties,
 ) {
+    companion object {
+        /**
+         * 금리 조회 창. 직전 값 하나만 있으면 되지만 넉넉히 잡는다 —
+         * 연휴가 길면 직전 영업일이 2주 밖일 수 있고, 6종 x 30일이면 180행이라 비용이 없다.
+         */
+        private const val RATE_LOOKBACK_DAYS = 30L
+
+        /** 1%p = 100bp */
+        private val BP_PER_PERCENT = BigDecimal(100)
+
+        /**
+         * **`LocalDate.now()`를 그냥 쓰지 않는다.** Render 컨테이너는 UTC라 KST 새벽에 하루 전으로
+         * 밀린다 — 조회 창의 상한이 오늘을 놓쳐 그날 수집분이 통째로 안 보인다.
+         */
+        private val KST: ZoneId = ZoneId.of("Asia/Seoul")
+    }
+
     fun snapshot(): MarketSnapshot {
         val codes = indexProperties.domestic.map { it.code } + indexProperties.overseas.map { it.code }
         val latestByCode = indexRepository.findLatestByCodes(codes).associateBy { it.indexCode }
@@ -44,8 +67,38 @@ class MarketQueryService(
             domestic = indexProperties.domestic.mapNotNull { latestByCode[it.code]?.toView() },
             overseas = indexProperties.overseas.mapNotNull { latestByCode[it.code]?.toView() },
             fx = fxSnapshot(),
+            rates = rateViews(),
             flags = MarketFlags(indicesEnabled = true),
         )
+    }
+
+    /**
+     * 종목마다 최근 [RATE_LOOKBACK_DAYS]일을 한 번에 읽어 마지막 둘로 값과 bp 변동을 만든다.
+     * 종목당 쿼리 하나이고 운영 설정이 6종이라 6회다.
+     *
+     * 설정 순서를 그대로 유지한다 — 기준일 순으로 정렬하면 공표가 늦는 기준금리 때문에
+     * 화면 줄 순서가 날마다 뒤바뀐다.
+     */
+    private fun rateViews(): List<RateView> {
+        val to = LocalDate.now(KST)
+        val from = to.minusDays(RATE_LOOKBACK_DAYS)
+        return rateProperties.series.mapNotNull { series ->
+            // 리포지터리는 순서를 보장하지 않는다. 정렬 없이 마지막 둘을 집으면 최신도 직전도 아닐 수 있다
+            val rows = rateRepository
+                .findByRateCodeAndQuoteDateBetween(series.code, from, to)
+                .sortedBy { it.quoteDate }
+            // 수집된 적 없는 지표는 빠진다 — 0으로 채우면 화면이 그걸 진짜 금리로 보여준다
+            val latest = rows.lastOrNull() ?: return@mapNotNull null
+            val prior = rows.getOrNull(rows.size - 2)
+            RateView(
+                code = latest.rateCode,
+                value = latest.rateValue,
+                quoteDate = latest.quoteDate,
+                // %p가 아니라 bp로 낸다(1%p = 100bp). 화면이 다시 100을 곱하지 않는다.
+                // 비교할 직전 값이 없으면 0이 아니라 null이다 — 0은 "안 움직였다"는 뜻이 된다
+                changeBp = prior?.let { (latest.rateValue - it.rateValue) * BP_PER_PERCENT },
+            )
+        }
     }
 
     /**
