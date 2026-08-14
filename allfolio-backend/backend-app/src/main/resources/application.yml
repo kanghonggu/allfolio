@@ -328,7 +328,7 @@ market-index:
 #   콜금리   → 010101000 전체거래 (중개회사거래 010102000 / 은행증권금융차입 010103000 아님)
 #   회사채   → 010300000 AA- 3년  (민평 010310000 / BBB- 010320000 아님)
 market-rate:
-  series:
+  ecos:
     - code: BASE_RATE          # 한국은행 기준금리
       stat-code: "722Y001"
       item-code: "0101000"
@@ -353,6 +353,21 @@ market-rate:
       stat-code: "817Y002"
       item-code: "010300000"
       cycle: D
+
+  # 미국 금리 — FRED(세인트루이스 연은). 시리즈 ID는 FRED 문서 기준이며 배포 후 실호출로 확인한다.
+  #
+  # T10Y2Y(10년-2년 스프레드)는 **일부러 안 받는다** — UST_10Y - UST_2Y로 조회 시 계산한다.
+  # 저장해 두면 어느 날 둘이 어긋났을 때 어느 쪽이 맞는지 가릴 방법이 없다.
+  # 한·미 기준금리차(BASE_RATE - US_FFR)도 같은 이유로 저장하지 않는다.
+  #
+  # **미국 값은 한국 시각으로 하루 늦다.** 크론이 평일 KST 18:10 한 번 돌아 두 나라를 함께 긁는데,
+  # 그 시각의 최신 미국 관측은 직전 미국 영업일이다. 항목마다 자기 quoteDate를 달고 나가므로
+  # 화면이 거짓말을 하지는 않는다 — 이걸 고치려고 크론을 늘리지 말 것.
+  fred:
+    - { code: US_FFR,  series-id: DFF }
+    - { code: UST_2Y,  series-id: DGS2 }
+    - { code: UST_10Y, series-id: DGS10 }
+    - { code: UST_30Y, series-id: DGS30 }
 
 # 암호화폐 거래소 WebSocket (국내)
 upbit:
@@ -417,6 +432,14 @@ ecos:
       stat-code: ${ECOS_USD_STAT_CODE:}
       item-code: ${ECOS_USD_ITEM_CODE:}
       unit-divisor: 1
+
+# FRED(세인트루이스 연은) 미국 금리 — 수집 대상은 위 market-rate.fred에 있다.
+# **인증키가 쿼리 파라미터(api_key=)에 실린다.** ECOS는 경로 첫 세그먼트인데 FRED는 쿼리라,
+# 위치만 다르고 노출 위험은 같다 — 전체 URL을 로그에 찍지 말 것(FredApiClient가 그 방어를 한다).
+# 비어 있으면 미국 금리만 NO_KEY로 실패하고 나머지 수집·조회는 정상이다.
+fred:
+  api-key: ${FRED_API_KEY:}
+  base-url: ${FRED_BASE_URL:https://api.stlouisfed.org}
 
 logging:
   level:

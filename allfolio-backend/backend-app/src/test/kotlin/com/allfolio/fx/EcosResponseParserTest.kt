@@ -36,7 +36,7 @@ class EcosResponseParserTest {
             ]}}
         """.trimIndent()
 
-        val result = parser.parse(json, EcosValuePolicy.POSITIVE)
+        val result = parser.parse(json, RateValuePolicy.POSITIVE)
 
         assertThat(result.rates).hasSize(2)
         assertThat(result.rates[0].baseDate).isEqualTo(LocalDate.of(2025, 8, 8))
@@ -55,7 +55,7 @@ class EcosResponseParserTest {
             ]}}
         """.trimIndent()
 
-        val result = parser.parse(json, EcosValuePolicy.POSITIVE)
+        val result = parser.parse(json, RateValuePolicy.POSITIVE)
 
         assertThat(result.rates).hasSize(1)
         assertThat(result.skipped).isEqualTo(3)
@@ -78,7 +78,7 @@ class EcosResponseParserTest {
             ]}}
         """.trimIndent()
 
-        val result = parser.parse(json, EcosValuePolicy.PERCENT)
+        val result = parser.parse(json, RateValuePolicy.PERCENT)
 
         // "100.0000"이 통과해야 한다: BigDecimal의 <=는 compareTo로 풀리고, compareTo는
         // 스케일을 무시한다. 언젠가 이 경계를 toDouble()이나 equals류 비교로 "정리"하면
@@ -103,7 +103,7 @@ class EcosResponseParserTest {
             ]}}
         """.trimIndent()
 
-        val (result, logs) = captureLogs { parser.parse(json, EcosValuePolicy.POSITIVE) }
+        val (result, logs) = captureLogs { parser.parse(json, RateValuePolicy.POSITIVE) }
 
         assertThat(result.rates).hasSize(1)
         assertThat(result.skipped).isEqualTo(1)
@@ -117,7 +117,7 @@ class EcosResponseParserTest {
     fun `ECOS 에러 응답은 예외로 올린다`() {
         val json = """{"RESULT":{"CODE":"INFO-200","MESSAGE":"해당하는 데이터가 없습니다."}}"""
 
-        assertThatThrownBy { parser.parse(json, EcosValuePolicy.POSITIVE) }
+        assertThatThrownBy { parser.parse(json, RateValuePolicy.POSITIVE) }
             .isInstanceOf(EcosApiException::class.java)
             .hasMessageContaining("INFO-200")
             .satisfies({ ex -> assertThat((ex as EcosApiException).code).isEqualTo("INFO-200") })
@@ -127,20 +127,20 @@ class EcosResponseParserTest {
     fun `RESULT에 CODE가 없으면 빈 code로 예외를 올린다`() {
         val json = """{"RESULT":{"MESSAGE":"코드 없는 오류"}}"""
 
-        assertThatThrownBy { parser.parse(json, EcosValuePolicy.POSITIVE) }
+        assertThatThrownBy { parser.parse(json, RateValuePolicy.POSITIVE) }
             .isInstanceOf(EcosApiException::class.java)
             .satisfies({ ex -> assertThat((ex as EcosApiException).code).isEmpty() })
     }
 
     @Test
     fun `예상 밖 형식은 예외로 올린다`() {
-        assertThatThrownBy { parser.parse("""{"something":"else"}""", EcosValuePolicy.POSITIVE) }
+        assertThatThrownBy { parser.parse("""{"something":"else"}""", RateValuePolicy.POSITIVE) }
             .isInstanceOf(EcosApiException::class.java)
     }
 
     @Test
     fun `행이 0건이면 빈 결과를 준다`() {
-        val result = parser.parse("""{"StatisticSearch":{"list_total_count":0,"row":[]}}""", EcosValuePolicy.POSITIVE)
+        val result = parser.parse("""{"StatisticSearch":{"list_total_count":0,"row":[]}}""", RateValuePolicy.POSITIVE)
 
         assertThat(result.rates).isEmpty()
     }
@@ -154,7 +154,7 @@ class EcosResponseParserTest {
             ]}}
         """.trimIndent()
 
-        val result = parser.parse(json, EcosValuePolicy.POSITIVE)
+        val result = parser.parse(json, RateValuePolicy.POSITIVE)
 
         assertThat(result.rates).isEmpty()
         assertThat(result.skipped).isEqualTo(2)
@@ -169,7 +169,7 @@ class EcosResponseParserTest {
             ]}}
         """.trimIndent()
 
-        val result = parser.parse(json, EcosValuePolicy.POSITIVE)
+        val result = parser.parse(json, RateValuePolicy.POSITIVE)
 
         assertThat(result.rates).hasSize(2)
         assertThat(result.rates.map { it.baseDate }).containsExactly(

@@ -74,7 +74,7 @@ class EcosStatListClient(
     }
 
     /**
-     * 통계표 하나의 항목 목록. 여기 나오는 ITEM_CODE가 `market-rate.series[].item-code`가 된다.
+     * 통계표 하나의 항목 목록. 여기 나오는 ITEM_CODE가 `market-rate.ecos[].item-code`가 된다.
      *
      * 응답의 `list_total_count`가 10000을 넘으면 목록이 잘린 것이다(단발 조회, [MAX_ROWS]).
      */

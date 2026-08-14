@@ -1,11 +1,6 @@
 package com.allfolio.market.rate
 
-import com.allfolio.fx.EcosApiClient
 import com.allfolio.fx.EcosApiException
-import com.allfolio.fx.EcosObservation
-import com.allfolio.fx.EcosParseResult
-import com.allfolio.fx.EcosQuery
-import com.allfolio.fx.EcosValuePolicy
 import com.allfolio.unifiedasset.infrastructure.entity.MarketRateEntity
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -22,14 +17,15 @@ class RateCollectServiceTest {
     @Test
     fun `종목별로 조회해 저장하고 건수를 보고한다`() {
         val repo = FakeRepo()
-        val client = FakeClient(
-            mapOf(
-                "S1" to listOf(obs("2026-08-11", "3.10"), obs("2026-08-12", "3.15")),
-                "S2" to listOf(obs("2026-08-12", "3.40")),
+        val source = FakeSource(
+            codes = listOf("KTB_3Y", "KTB_10Y"),
+            rows = mapOf(
+                "KTB_3Y" to listOf(obs("2026-08-11", "3.10"), obs("2026-08-12", "3.15")),
+                "KTB_10Y" to listOf(obs("2026-08-12", "3.40")),
             ),
         )
 
-        val summary = service(client, repo, series("KTB_3Y", "S1"), series("KTB_10Y", "S2")).collect(from, to, now)
+        val summary = service(source, repo).collect(from, to, now)
 
         assertThat(summary.requested).isEqualTo(2)
         assertThat(summary.inserted).isEqualTo(3)
@@ -44,12 +40,13 @@ class RateCollectServiceTest {
     @Test
     fun `한 종목이 실패해도 나머지는 저장한다`() {
         val repo = FakeRepo()
-        val client = FakeClient(
-            mapOf("S2" to listOf(obs("2026-08-12", "3.40"))),
-            failing = mapOf("S1" to EcosApiException("HTTP-500", "ECOS가 HTTP 500 을 반환했습니다")),
+        val source = FakeSource(
+            codes = listOf("KTB_3Y", "KTB_10Y"),
+            rows = mapOf("KTB_10Y" to listOf(obs("2026-08-12", "3.40"))),
+            failing = mapOf("KTB_3Y" to EcosApiException("HTTP-500", "ECOS가 HTTP 500 을 반환했습니다")),
         )
 
-        val summary = service(client, repo, series("KTB_3Y", "S1"), series("KTB_10Y", "S2")).collect(from, to, now)
+        val summary = service(source, repo).collect(from, to, now)
 
         assertThat(summary.requested).isEqualTo(2)
         assertThat(summary.collected).isEqualTo(1)
@@ -69,9 +66,9 @@ class RateCollectServiceTest {
     fun `같은 구간을 다시 수집하면 덮어쓴다`() {
         val repo = FakeRepo()
         repo.saved += entity("KTB_3Y", LocalDate.of(2026, 8, 12), "3.10")
-        val client = FakeClient(mapOf("S1" to listOf(obs("2026-08-12", "3.15"))))
+        val source = FakeSource(codes = listOf("KTB_3Y"), rows = mapOf("KTB_3Y" to listOf(obs("2026-08-12", "3.15"))))
 
-        val summary = service(client, repo, series("KTB_3Y", "S1")).collect(from, to, now)
+        val summary = service(source, repo).collect(from, to, now)
 
         assertThat(summary.inserted).isZero()
         assertThat(summary.updated).isEqualTo(1)
@@ -92,9 +89,9 @@ class RateCollectServiceTest {
     fun `저장이 터지면 갱신분도 수집 건수에 넣지 않는다`() {
         val repo = FakeRepo(saveFailure = IllegalStateException("커넥션이 끊겼습니다"))
         repo.saved += entity("KTB_3Y", LocalDate.of(2026, 8, 12), "3.10")
-        val client = FakeClient(mapOf("S1" to listOf(obs("2026-08-12", "3.15"))))
+        val source = FakeSource(codes = listOf("KTB_3Y"), rows = mapOf("KTB_3Y" to listOf(obs("2026-08-12", "3.15"))))
 
-        val summary = service(client, repo, series("KTB_3Y", "S1")).collect(from, to, now)
+        val summary = service(source, repo).collect(from, to, now)
 
         assertThat(summary.collected).isZero()
         assertThat(summary.updated).isZero()
@@ -112,11 +109,12 @@ class RateCollectServiceTest {
     fun `기존 행에 같은 날짜가 두 번 와도 갱신은 한 건이다`() {
         val repo = FakeRepo()
         repo.saved += entity("KTB_3Y", LocalDate.of(2026, 8, 12), "3.10")
-        val client = FakeClient(
-            mapOf("S1" to listOf(obs("2026-08-12", "3.15"), obs("2026-08-12", "3.20"))),
+        val source = FakeSource(
+            codes = listOf("KTB_3Y"),
+            rows = mapOf("KTB_3Y" to listOf(obs("2026-08-12", "3.15"), obs("2026-08-12", "3.20"))),
         )
 
-        val summary = service(client, repo, series("KTB_3Y", "S1")).collect(from, to, now)
+        val summary = service(source, repo).collect(from, to, now)
 
         assertThat(summary.updated).isEqualTo(1)
         assertThat(summary.unchanged).isZero()
@@ -134,11 +132,37 @@ class RateCollectServiceTest {
     fun `다른 출처로 들어와 있던 행의 출처를 ECOS로 덮는다`() {
         val repo = FakeRepo()
         repo.saved += entity("KTB_3Y", LocalDate.of(2026, 8, 12), "3.10", source = "FRED")
-        val client = FakeClient(mapOf("S1" to listOf(obs("2026-08-12", "3.15"))))
+        val source = FakeSource(codes = listOf("KTB_3Y"), rows = mapOf("KTB_3Y" to listOf(obs("2026-08-12", "3.15"))))
 
-        service(client, repo, series("KTB_3Y", "S1")).collect(from, to, now)
+        service(source, repo).collect(from, to, now)
 
         assertThat(repo.submitted.single().source).isEqualTo("ECOS")
+    }
+
+    /**
+     * 출처는 소스가 말한 이름으로 쓴다 (AF-FRED).
+     *
+     * 위 `출처를 ECOS로 덮는다`가 이걸 못 지킨다 — 그 테스트의 페이크 소스 이름도 "ECOS"라서
+     * 상수를 다시 박아도 초록이다. 여기서는 소스 둘이 서로 다른 이름을 쓰므로, 한쪽 이름으로
+     * 굳히는 변이가 반드시 깨진다. 대상 수가 소스별 코드 수의 합이 되는 것도 같이 못 박는다 —
+     * `requested`는 어드민이 "설정이 빈 실행"을 가르는 축이다.
+     */
+    @Test
+    fun `소스가 여럿이면 대상이 합쳐지고 출처는 소스 이름으로 남는다`() {
+        val repo = FakeRepo()
+        val ecos = FakeSource(codes = listOf("KTB_3Y"), rows = mapOf("KTB_3Y" to listOf(obs("2026-08-12", "3.15"))))
+        val fred = FakeSource(
+            sourceName = "FRED",
+            codes = listOf("US_DGS10"),
+            rows = mapOf("US_DGS10" to listOf(obs("2026-08-12", "4.25"))),
+        )
+
+        val summary = RateCollectService(listOf(ecos, fred), repo).collect(from, to, now)
+
+        assertThat(summary.requested).isEqualTo(2)
+        assertThat(summary.inserted).isEqualTo(2)
+        assertThat(repo.saved.map { it.rateCode to it.source })
+            .containsExactlyInAnyOrder("KTB_3Y" to "ECOS", "US_DGS10" to "FRED")
     }
 
     /**
@@ -153,11 +177,12 @@ class RateCollectServiceTest {
         val repo = FakeRepo()
         repo.saved += entity("KTB_3Y", LocalDate.of(2026, 8, 11), "3.10")
         repo.saved += entity("KTB_3Y", LocalDate.of(2026, 8, 12), "3.15")
-        val client = FakeClient(
-            mapOf("S1" to listOf(obs("2026-08-11", "3.1000"), obs("2026-08-12", "3.20"))),
+        val source = FakeSource(
+            codes = listOf("KTB_3Y"),
+            rows = mapOf("KTB_3Y" to listOf(obs("2026-08-11", "3.1000"), obs("2026-08-12", "3.20"))),
         )
 
-        val summary = service(client, repo, series("KTB_3Y", "S1")).collect(from, to, now)
+        val summary = service(source, repo).collect(from, to, now)
 
         assertThat(summary.unchanged).isEqualTo(1)
         assertThat(summary.updated).isEqualTo(1)
@@ -173,12 +198,12 @@ class RateCollectServiceTest {
      */
     @Test
     fun `실패 사유가 길면 잘라서 싣는다`() {
-        val client = FakeClient(
-            emptyMap(),
-            failing = mapOf("S1" to IllegalStateException("가".repeat(500))),
+        val source = FakeSource(
+            codes = listOf("KTB_3Y"),
+            failing = mapOf("KTB_3Y" to IllegalStateException("가".repeat(500))),
         )
 
-        val summary = service(client, FakeRepo(), series("KTB_3Y", "S1")).collect(from, to, now)
+        val summary = service(source, FakeRepo()).collect(from, to, now)
 
         assertThat(summary.failures.single()).hasSize("KTB_3Y: ".length + 200 + 1) // 200자 + 말줄임표
     }
@@ -190,17 +215,17 @@ class RateCollectServiceTest {
      */
     @Test
     fun `인터럽트가 걸리면 남은 종목을 돌지 않는다`() {
-        val client = FakeClient(
-            mapOf("S2" to listOf(obs("2026-08-12", "3.40"))),
-            failing = mapOf("S1" to EcosApiException("IO", "ECOS 호출에 실패했습니다")),
-            interrupting = setOf("S1"),
+        val source = FakeSource(
+            codes = listOf("KTB_3Y", "KTB_10Y"),
+            rows = mapOf("KTB_10Y" to listOf(obs("2026-08-12", "3.40"))),
+            failing = mapOf("KTB_3Y" to EcosApiException("IO", "ECOS 호출에 실패했습니다")),
+            interrupting = setOf("KTB_3Y"),
         )
 
         try {
-            val summary = service(client, FakeRepo(), series("KTB_3Y", "S1"), series("KTB_10Y", "S2"))
-                .collect(from, to, now)
+            val summary = service(source, FakeRepo()).collect(from, to, now)
 
-            assertThat(client.queries).hasSize(1)
+            assertThat(source.fetched).hasSize(1)
             assertThat(summary.failed).isEqualTo(1)
             assertThat(summary.collected).isZero()
         } finally {
@@ -216,9 +241,9 @@ class RateCollectServiceTest {
     fun `값이 안 온 날의 기존 행은 다시 저장하지 않는다`() {
         val repo = FakeRepo()
         repo.saved += entity("KTB_3Y", LocalDate.of(2026, 8, 11), "3.05")
-        val client = FakeClient(mapOf("S1" to listOf(obs("2026-08-12", "3.15"))))
+        val source = FakeSource(codes = listOf("KTB_3Y"), rows = mapOf("KTB_3Y" to listOf(obs("2026-08-12", "3.15"))))
 
-        service(client, repo, series("KTB_3Y", "S1")).collect(from, to, now)
+        service(source, repo).collect(from, to, now)
 
         assertThat(repo.submitted).extracting<LocalDate> { it.quoteDate }
             .containsExactly(LocalDate.of(2026, 8, 12))
@@ -227,12 +252,13 @@ class RateCollectServiceTest {
     @Test
     fun `버려진 행 수를 보고한다`() {
         val repo = FakeRepo()
-        val client = FakeClient(
-            mapOf("S1" to listOf(obs("2026-08-12", "3.15"))),
-            skipped = mapOf("S1" to 2),
+        val source = FakeSource(
+            codes = listOf("KTB_3Y"),
+            rows = mapOf("KTB_3Y" to listOf(obs("2026-08-12", "3.15"))),
+            skipped = mapOf("KTB_3Y" to 2),
         )
 
-        val summary = service(client, repo, series("KTB_3Y", "S1")).collect(from, to, now)
+        val summary = service(source, repo).collect(from, to, now)
 
         assertThat(summary.skippedRows).isEqualTo(2)
     }
@@ -244,9 +270,10 @@ class RateCollectServiceTest {
     @Test
     fun `요청 구간 밖 날짜는 걷어내고 센다`() {
         val repo = FakeRepo()
-        val client = FakeClient(
-            mapOf(
-                "S1" to listOf(
+        val source = FakeSource(
+            codes = listOf("KTB_3Y"),
+            rows = mapOf(
+                "KTB_3Y" to listOf(
                     obs("2026-08-11", "3.10"),
                     obs("2026-08-20", "3.30"), // to(8/12) 이후
                     obs("2026-08-01", "3.05"), // from(8/10) 이전
@@ -254,7 +281,7 @@ class RateCollectServiceTest {
             ),
         )
 
-        val summary = service(client, repo, series("KTB_3Y", "S1")).collect(from, to, now)
+        val summary = service(source, repo).collect(from, to, now)
 
         assertThat(summary.outOfRange).isEqualTo(2)
         assertThat(summary.inserted).isEqualTo(1)
@@ -268,11 +295,12 @@ class RateCollectServiceTest {
     @Test
     fun `같은 날짜가 중복으로 오면 마지막 값만 남긴다`() {
         val repo = FakeRepo()
-        val client = FakeClient(
-            mapOf("S1" to listOf(obs("2026-08-12", "3.10"), obs("2026-08-12", "3.15"))),
+        val source = FakeSource(
+            codes = listOf("KTB_3Y"),
+            rows = mapOf("KTB_3Y" to listOf(obs("2026-08-12", "3.10"), obs("2026-08-12", "3.15"))),
         )
 
-        val summary = service(client, repo, series("KTB_3Y", "S1")).collect(from, to, now)
+        val summary = service(source, repo).collect(from, to, now)
 
         assertThat(summary.inserted).isEqualTo(1)
         assertThat(repo.saved.single().rateValue).isEqualByComparingTo("3.15")
@@ -285,9 +313,12 @@ class RateCollectServiceTest {
     @Test
     fun `0건으로 돌아온 종목은 실패가 아니라 이름으로 남는다`() {
         val repo = FakeRepo()
-        val client = FakeClient(mapOf("S1" to emptyList(), "S2" to listOf(obs("2026-08-12", "3.40"))))
+        val source = FakeSource(
+            codes = listOf("BASE_RATE", "KTB_10Y"),
+            rows = mapOf("BASE_RATE" to emptyList(), "KTB_10Y" to listOf(obs("2026-08-12", "3.40"))),
+        )
 
-        val summary = service(client, repo, series("BASE_RATE", "S1"), series("KTB_10Y", "S2")).collect(from, to, now)
+        val summary = service(source, repo).collect(from, to, now)
 
         assertThat(summary.emptySeries).containsExactly("BASE_RATE")
         assertThat(summary.failed).isZero()
@@ -298,40 +329,15 @@ class RateCollectServiceTest {
 
     @Test
     fun `대상이 없으면 요청 0건으로 끝난다`() {
-        val summary = service(FakeClient(emptyMap()), FakeRepo()).collect(from, to, now)
+        val summary = service(FakeSource(codes = emptyList()), FakeRepo()).collect(from, to, now)
 
         assertThat(summary.requested).isZero()
         assertThat(summary.collected).isZero()
     }
 
-    @Test
-    fun `금리 정책으로 조회한다`() {
-        val client = FakeClient(mapOf("S1" to emptyList()))
+    private fun service(source: RateSource, repo: FakeRepo) = RateCollectService(listOf(source), repo)
 
-        service(client, FakeRepo(), series("KTB_3Y", "S1")).collect(from, to, now)
-
-        // 환율 정책으로 부르면 0.00% 공표일이 조용히 사라진다
-        assertThat(client.queries.single().valuePolicy).isEqualTo(EcosValuePolicy.PERCENT)
-        assertThat(client.queries.single().cycle).isEqualTo("D")
-    }
-
-    private fun service(
-        client: EcosApiClient,
-        repo: FakeRepo,
-        vararg series: MarketRateProperties.RateSeries,
-    ): RateCollectService {
-        val properties = MarketRateProperties().apply { this.series = series.toList() }
-        return RateCollectService(client, repo, properties)
-    }
-
-    private fun series(code: String, statCode: String) = MarketRateProperties.RateSeries().apply {
-        this.code = code
-        this.statCode = statCode
-        this.itemCode = "ITEM"
-        this.cycle = "D"
-    }
-
-    private fun obs(date: String, value: String) = EcosObservation(LocalDate.parse(date), BigDecimal(value))
+    private fun obs(date: String, value: String) = RateObservation(LocalDate.parse(date), BigDecimal(value))
 
     private fun entity(code: String, date: LocalDate, value: String, source: String = "ECOS") = MarketRateEntity(
         id = java.util.UUID.randomUUID(),
@@ -343,24 +349,29 @@ class RateCollectServiceTest {
     )
 
     /**
-     * statCode로 응답을 가른다 — 종목마다 다른 결과를 주려면 그 축이 필요하다.
+     * 코드로 응답을 가른다 — 종목마다 다른 결과를 주려면 그 축이 필요하다.
      *
-     * [interrupting]은 실 클라이언트가 종료 시 하는 짓을 흉내 낸다: 인터럽트 플래그를 되살린 채
-     * EcosApiException으로 바꿔 던진다.
+     * [interrupting]은 실 소스가 종료 시 하는 짓을 흉내 낸다: 인터럽트 플래그를 되살린 채
+     * 예외로 바꿔 던진다 (`EcosStatisticSearchClient`가 그렇게 한다).
+     *
+     * [fetched]는 호출된 (코드, from, to)를 순서대로 모은다 — "인터럽트 뒤 남은 종목을 안 돈다"는
+     * 저장 흔적으로는 볼 수 없고 호출 자체를 세야 보인다.
      */
-    private class FakeClient(
-        private val rows: Map<String, List<EcosObservation>>,
+    private class FakeSource(
+        override val sourceName: String = "ECOS",
+        override val codes: List<String>,
+        private val rows: Map<String, List<RateObservation>> = emptyMap(),
         private val failing: Map<String, RuntimeException> = emptyMap(),
         private val skipped: Map<String, Int> = emptyMap(),
         private val interrupting: Set<String> = emptySet(),
-    ) : EcosApiClient {
-        val queries = mutableListOf<EcosQuery>()
+    ) : RateSource {
+        val fetched = mutableListOf<Triple<String, LocalDate, LocalDate>>()
 
-        override fun fetch(query: EcosQuery, from: LocalDate, to: LocalDate): EcosParseResult {
-            queries += query
-            if (query.statCode in interrupting) Thread.currentThread().interrupt()
-            failing[query.statCode]?.let { throw it }
-            return EcosParseResult(rows[query.statCode] ?: emptyList(), skipped[query.statCode] ?: 0)
+        override fun fetch(code: String, from: LocalDate, to: LocalDate): RateFetch {
+            fetched += Triple(code, from, to)
+            if (code in interrupting) Thread.currentThread().interrupt()
+            failing[code]?.let { throw it }
+            return RateFetch(rows[code] ?: emptyList(), skipped[code] ?: 0)
         }
     }
 

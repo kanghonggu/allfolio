@@ -3,13 +3,17 @@ package com.allfolio.fx
 import java.math.BigDecimal
 
 /**
- * ECOS가 준 값을 받아들일지 판정한다.
+ * 외부 소스가 준 값을 받아들일지 판정한다.
  *
  * 파서가 판정을 들고 있으면 첫 호출자(환율)의 가정이 모든 호출자에게 강요된다 —
  * 실제로 `rate <= 0` 가드가 그랬고, 금리에 그대로 쓰면 0.00% 공표일이 조용히 사라진다.
  * 그래서 무엇이 말이 되는 값인지는 도메인을 아는 호출자가 정한다.
+ *
+ * **이름에서 `Ecos`를 뺀 이유**: FRED도 [PERCENT]를 그대로 쓴다. 소스가 둘이 된 시점에
+ * `EcosValuePolicy`는 거짓말이 됐다. 패키지가 아직 `fx`인 것은 유일한 사용처인
+ * `EcosResponseParser`가 여기 있어서다 — 세 번째 소스가 붙으면 중립 패키지로 옮길 것.
  */
-enum class EcosValuePolicy {
+enum class RateValuePolicy {
     /** 환율 — 0원짜리 환율은 없다. 0 이하는 파싱 사고이지 값이 아니다 */
     POSITIVE {
         override fun accepts(value: BigDecimal): Boolean = value > BigDecimal.ZERO
