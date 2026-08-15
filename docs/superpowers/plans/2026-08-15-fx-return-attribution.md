@@ -934,8 +934,10 @@ class NavFxAssemblyTest {
     }
 
     @Test
-    fun `통화별 행이 없는 날은 목록에서 뺀다`() {
-        // 쓰기가 실패한 날. 억지로 이으면 환율 차이가 0으로 잡혀 자산 쪽에 흡수된다.
+    fun `통화별 행이 없는 날은 빼지 않고 navAtPriorFx를 null로 둔다`() {
+        // 쓰기가 실패한 날. **날짜를 빼면 안 된다** — 빼면 attribute()가 calculate()와
+        // 다른 구간 집합을 돌게 되고, 입출금이 있는 계정에서만 조용히 10%p씩 틀린다.
+        // null로 두면 attribute()의 기존 가드가 분해 전체를 포기시킨다.
         val result = JdbcNavFxHistorySource.assemble(
             navByDate = mapOf(d(1) to bd("1000"), d(2) to bd("1100"), d(3) to bd("1200")),
             rowsByDate = mapOf(
@@ -943,8 +945,22 @@ class NavFxAssemblyTest {
                 d(3) to listOf(CurrencyRow("USD", bd("1"), bd("1200"))),
             ),
         )
-        assertEquals(2, result.size)
-        assertTrue(result.none { it.date == d(2) })
+        assertEquals(3, result.size)
+        assertEquals(listOf(d(1), d(2), d(3)), result.map { it.date })
+        assertNull(result[1].navAtPriorFx)   // 그날 통화 행이 없다
+        assertNull(result[2].navAtPriorFx)   // 전일 통화 행이 없다
+    }
+
+    @Test
+    fun `계열 길이가 performance_daily 날짜 수와 항상 같다`() {
+        // §4의 항등식은 attribute()와 calculate()가 같은 계열을 볼 때만 성립한다.
+        // 이 테스트가 그 전제를 지킨다.
+        val result = JdbcNavFxHistorySource.assemble(
+            navByDate = mapOf(d(1) to bd("1"), d(2) to bd("2"), d(3) to bd("3"), d(4) to bd("4")),
+            rowsByDate = emptyMap(),
+        )
+        assertEquals(4, result.size)
+        assertTrue(result.all { it.navAtPriorFx == null })
     }
 
     @Test
@@ -1021,22 +1037,31 @@ class JdbcNavFxHistorySource(private val jdbc: JdbcTemplate) : NavFxHistorySourc
          * 되고, 250구간을 곱하면 눈에 보일 만큼 쌓인다. 권위 있는 nav에 환율 차이만
          * 얹으면 그 항이 상쇄된다.
          *
-         * **두 테이블 중 한쪽에만 있는 날짜는 뺀다.** 쓰기가 실패한 날을 억지로 이으면
-         * 환율 차이가 0으로 잡혀 자산 쪽에 조용히 흡수된다.
+         * **날짜를 빼지 않는다.** `performance_daily`의 모든 날에 점을 만들고, 통화 행이
+         * 없는 날은 `navAtPriorFx = null`로 둔다. 빼면 `attribute()`가 `calculate()`와
+         * 다른 구간 집합을 돌게 되어 항등식이 입력 단계에서 깨지고, 입출금이 없으면
+         * 체인링킹이 접혀 안 보인다 — **입금 있는 계정에서만 틀린다.**
          */
         fun assemble(
             navByDate: Map<LocalDate, BigDecimal>,
             rowsByDate: Map<LocalDate, List<CurrencyRow>>,
         ): List<NavFxPoint> {
-            val dates = navByDate.keys.filter { rowsByDate.containsKey(it) }.sorted()
+            val dates = navByDate.keys.sorted()
             return dates.mapIndexed { idx, date ->
                 val nav = navByDate.getValue(date)
                 if (idx == 0) return@mapIndexed NavFxPoint(date, nav, null)
 
+                val rows = rowsByDate[date]
+                val priorRows = rowsByDate[dates[idx - 1]]
+                // 어느 한쪽이라도 통화 행이 없으면 환율 차이를 구할 수 없다.
+                // **날짜를 빼지 않고 null로 둔다** — 빼면 attribute()가 calculate()와
+                // 다른 구간 집합을 돌게 되어, 입출금이 있는 계정에서만 조용히 틀린다.
+                if (rows == null || priorRows == null) return@mapIndexed NavFxPoint(date, nav, null)
+
                 // 전일에 없던 통화는 당일 환율을 쓴다 — 차이가 0이 되어 환율 기여가 없다.
                 // 전일에 보유가 없었으므로 그게 맞다.
-                val priorRates = rowsByDate.getValue(dates[idx - 1]).associate { it.currency to it.fxRate }
-                val delta = rowsByDate.getValue(date).fold(BigDecimal.ZERO) { acc, row ->
+                val priorRates = priorRows.associate { it.currency to it.fxRate }
+                val delta = rows.fold(BigDecimal.ZERO) { acc, row ->
                     val prior = priorRates[row.currency] ?: row.fxRate
                     acc + row.valueNative * (prior - row.fxRate)
                 }
@@ -1061,7 +1086,7 @@ Expected: 전부 PASS.
 
 | # | 변이 | 실패해야 하는 테스트 |
 |---|---|---|
-| 1 | `navByDate.keys.filter { rowsByDate.containsKey(it) }`에서 `filter`를 지운다 | `통화별 행이 없는 날은...` |
+| 1 | `if (rows == null \|\| priorRows == null)` 가드를 지운다 | `통화별 행이 없는 날은 빼지 않고...` |
 | 2 | `NavFxPoint(date, nav, nav + delta)`를 `NavFxPoint(date, nav, delta)`로 바꾼다 | `환율이 안 변하면...` |
 | 3 | `priorRates[row.currency] ?: row.fxRate`를 `?: BigDecimal.ONE`로 바꾼다 | `전일에 없던 통화는...` |
 
@@ -1093,14 +1118,12 @@ git commit -m "feat(af-106): 통화별 행을 읽어 환율 얼린 계열을 만
  *
  * 도메인은 ratio(0~1) 유지 — percent 변환은 [com.allfolio.unifiedasset.api.ReportController] 한 곳뿐.
  *
- * @param currencies        기간 중 보유한 비-KRW 통화
- * @param approximatedDays  통화별 행이 없어 분해에서 빠진 관측일 수. 0이 아니면 화면에 밝힌다
+ * @param currencies 기간 중 보유한 비-KRW 통화
  */
 data class CurrencyAttribution(
     val assetContribution: BigDecimal,
     val fxContribution: BigDecimal,
     val currencies: List<String>,
-    val approximatedDays: Int,
 )
 ```
 
@@ -1126,7 +1149,7 @@ data class CurrencyAttribution(
             summary = summary,
             navSeries = sorted,
             benchmark = benchmarkComparison(userId, from, to, summary),
-            currencyAttribution = attribution(userId, from, to, flows, sorted.size),
+            currencyAttribution = attribution(userId, from, to, flows),
         )
     }
 
@@ -1145,7 +1168,6 @@ data class CurrencyAttribution(
         from: LocalDate,
         to: LocalDate,
         flows: List<Flow>,
-        navDayCount: Int,
     ): CurrencyAttribution? {
         val series = navFxSource.navFxSeries(userId, from, to)
         if (series.size < 2) return null
@@ -1158,8 +1180,6 @@ data class CurrencyAttribution(
             assetContribution = result.assetContribution,
             fxContribution = result.fxContribution,
             currencies = currencies,
-            // navSource를 다시 부르지 않는다 — analyze()가 이미 읽은 건수를 넘겨받는다
-            approximatedDays = navDayCount - series.size,
         )
     }
 ```
@@ -1315,8 +1335,6 @@ export interface CurrencyAttribution {
   assetContribution: number
   fxContribution: number
   currencies: string[]
-  /** 통화별 행이 없어 분해에서 빠진 관측일 수 */
-  approximatedDays: number
 }
 ```
 
@@ -1368,12 +1386,6 @@ export interface CurrencyAttribution {
             <p className="mt-3 border-t border-line pt-3 text-[12px] leading-relaxed text-fg-3">
               보유 외화: {analysis.currencyAttribution.currencies.join(' · ')}. 두 기여를 곱하면 기간
               수익이 됩니다 — 더하기가 아닙니다.
-              {analysis.currencyAttribution.approximatedDays > 0 && (
-                <>
-                  {' '}통화 내역이 없는 {analysis.currencyAttribution.approximatedDays}일은 분해에서
-                  제외했습니다.
-                </>
-              )}
             </p>
           </section>
         )}
