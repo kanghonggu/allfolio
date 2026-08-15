@@ -134,6 +134,53 @@ class SnapshotTriggerNavCurrencyTest {
         )
     }
 
+    /**
+     * 자산 둘: [assetId]는 USD $200에 10주, [otherAssetId]는 USD $50에 4주.
+     * 둘 다 거래이력이 있고 통화도 같다 — 갈라지는 건 오직 `currentPrices` 덮임 여부다.
+     */
+    private fun serviceWithTwoAssets(otherAssetId: UUID): SnapshotTriggerService {
+        fun trade(asset: UUID, qty: String, price: String, at: Int) = TradeRawEntity(
+            id = UUID.randomUUID(),
+            portfolioId = portfolioId,
+            assetId = asset,
+            tradeType = TradeType.BUY,
+            quantity = BigDecimal(qty),
+            price = BigDecimal(price),
+            fee = BigDecimal.ZERO,
+            tradeCurrency = "USD",
+            executedAt = date.atTime(at, 0),
+            createdAt = LocalDateTime.now(),
+        )
+        `when`(
+            tradeRepository.findByPortfolioIdAndExecutedAtLessThanEqualOrderByExecutedAtAsc(
+                portfolioId, date.atTime(23, 59, 59),
+            )
+        ).thenReturn(listOf(trade(assetId, "10", "200", 10), trade(otherAssetId, "4", "50", 11)))
+
+        fun position(asset: UUID, qty: String) = PositionDailyEntity(
+            id = PositionDailyId(tenantId, portfolioId, asset, date),
+            quantity = BigDecimal(qty),
+            averageCost = BigDecimal.ZERO,
+            realizedPnl = BigDecimal.ZERO,
+            unrealizedPnl = BigDecimal.ZERO,
+        )
+        `when`(positionRepository.findByIdPortfolioIdAndIdDate(portfolioId, date))
+            .thenReturn(listOf(position(assetId, "10"), position(otherAssetId, "4")))
+
+        `when`(useCase.generate(anyArg())).thenReturn(performance() to risk())
+
+        return SnapshotTriggerService(
+            tradeRepository,
+            performanceRepository,
+            useCase,
+            cache,
+            metrics,
+            CurrencyConverter(fxRates),
+            positionRepository,
+            navCurrencyStore,
+        )
+    }
+
     @Test
     fun `환산 전 원통화 평가액이 통화별로 기록된다`() {
         val result = service().trigger(tenantId, portfolioId, date)
@@ -149,6 +196,42 @@ class SnapshotTriggerNavCurrencyTest {
         // 10주 × $200 — KRW 280만이 아니라 원통화 2000달러로 남아야 한다
         assertEquals(0, BigDecimal("2000").compareTo(values[0].valueNative))
         assertEquals(0, BigDecimal("1400").compareTo(values[0].fxRate))
+    }
+
+    /**
+     * AF-106 — 스냅샷 NAV는 `historicalPrices + currentPrices`로 계산되는데 통화별 행이
+     * 거래이력만 보면, `currentPrices`로 덮인 자산은 **오래된 거래가**로 기록되어
+     * `SUM(value_native * fx_rate) ≈ nav` 불변식이 조용히 깨진다.
+     *
+     * **`nativePrices`에서 `+ currentPrices...` 를 지우면 이 테스트가 깨져야 한다.**
+     */
+    @Test
+    fun `currentPrices로 덮인 자산은 그 KRW 가격으로 계상되고 나머지는 원통화를 지킨다`() {
+        val krwCoveredAsset = assetId          // USD 200에 산 자산 — 이벤트가 KRW 300,000을 준다
+        val foreignOnlyAsset = UUID.randomUUID() // 거래이력만 있는 USD 자산 — 덮이지 않는다
+
+        val svc = serviceWithTwoAssets(foreignOnlyAsset)
+        svc.trigger(tenantId, portfolioId, date, mapOf(krwCoveredAsset to BigDecimal("300000")))
+
+        @Suppress("UNCHECKED_CAST")
+        val captor = ArgumentCaptor.forClass(List::class.java) as ArgumentCaptor<List<CurrencyValue>>
+        verify(navCurrencyStore).replace(eqArg(portfolioId), eqArg(date), captureArg(captor, emptyList()))
+        val byCurrency = captor.value.associateBy { it.currency }
+
+        // 덮인 자산: 10주 × 300,000 KRW = 3,000,000. 오래된 거래가($200)를 쓰면 이 행 자체가 없다
+        val krw = byCurrency["KRW"]
+        assertNotNull(krw, "currentPrices 자산이 KRW로 계상되지 않았다: $byCurrency")
+        assertEquals(0, BigDecimal("3000000").compareTo(krw!!.valueNative))
+        assertEquals(0, BigDecimal.ONE.compareTo(krw.fxRate))
+
+        // 안 덮인 자산: 4주 × $50 = $200 — 원통화 그대로, 환율 1400
+        val usd = byCurrency["USD"]
+        assertNotNull(usd, "거래이력만 있는 자산이 USD로 남지 않았다: $byCurrency")
+        assertEquals(0, BigDecimal("200").compareTo(usd!!.valueNative))
+        assertEquals(0, BigDecimal("1400").compareTo(usd.fxRate))
+
+        // 덮인 자산이 USD 쪽에 겹쳐 계상되지도 않아야 한다 (2000달러가 섞이면 $2200이 된다)
+        assertEquals(2, captor.value.size)
     }
 
     @Test

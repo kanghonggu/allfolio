@@ -61,7 +61,12 @@ class SnapshotTriggerService(
             .groupBy { it.assetId }
             .mapValues { (_, trades) -> trades.last() }
 
-        val nativePrices = lastTrades.mapValues { (_, t) -> NativePrice(t.price, t.tradeCurrency) }
+        // AF-106: currentPrices는 이미 KRW라 원통화를 복원할 수 없다. 빠뜨리지 말고
+        // KRW로 계상한다 — 빠뜨리면 SUM(value_native * fx_rate)가 nav와 안 맞고,
+        // 오래된 거래가로 기록하면 조용히 틀린 값이 쌓인다. 우선순위는 marketPrices와
+        // 똑같이 currentPrices가 이긴다.
+        val nativePrices = lastTrades.mapValues { (_, t) -> NativePrice(t.price, t.tradeCurrency) } +
+            currentPrices.mapValues { (_, krwPrice) -> NativePrice(krwPrice, "KRW") }
         val historicalPrices = lastTrades.mapValues { (_, t) -> currencyConverter.toKrw(t.price, t.tradeCurrency) }
 
         val marketPrices = historicalPrices + currentPrices  // currentPrices 우선 (이미 KRW 기준)
@@ -99,9 +104,11 @@ class SnapshotTriggerService(
         // generate()는 이미 커밋됐으므로(클래스 KDoc) position_daily를 읽는 건 안전하다.
         // 행이 없는 날은 조회 쪽 노출 조건이 알아서 블록을 숨긴다.
         //
-        // currentPrices로 덮인 자산은 이미 KRW라 원통화를 복원할 수 없어 여기서 빠진다.
-        // 그 수를 세어 로그로 남긴다 — 조용히 넘기면 "환율 기여가 왜 이렇게 작냐"에
-        // 답할 근거가 없어진다.
+        // currentPrices로 덮인 자산은 원통화를 잃고 KRW(rate=1)로 계상된다 — 합계는 맞지만
+        // 그 다리는 환율 정보를 못 싣는다. 그 수를 세어 로그로 남긴다. 이 수가 크면 분해가
+        // 환율 기여를 **과소평가**하고 있다는 뜻이고, 후속 작업은 currentPrices 공급자가
+        // 원통화를 같이 들고 오게 만드는 것이다. 조용히 넘기면 "환율 기여가 왜 이렇게
+        // 작냐"에 답할 근거가 없어진다.
         try {
             val quantities = positionRepository
                 .findByIdPortfolioIdAndIdDate(portfolioId, tradeDate)
@@ -110,10 +117,10 @@ class SnapshotTriggerService(
                 currencyConverter.sourceOf(code)?.rate ?: BigDecimal.ONE
             }
             navCurrencyStore.replace(portfolioId, tradeDate, values)
-            val approximated = quantities.keys.count { it !in nativePrices }
+            val approximated = quantities.keys.count { it in currentPrices }
             if (approximated > 0) {
                 log.info(
-                    "[NavCurrency] {} assets had no native price (KRW-only path) portfolio={} date={}",
+                    "[NavCurrency] {} assets lost native currency (KRW-only path) portfolio={} date={}",
                     approximated, portfolioId, tradeDate,
                 )
             }
