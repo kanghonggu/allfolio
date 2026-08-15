@@ -140,6 +140,62 @@ class AttributionTest {
         assertNull(ReturnsCalculator.attribute(series, emptyList(), d(1), d(2)))
     }
 
+    // 아래 네 건은 임계값 자체를 고정한다. 위의 `근접` 테스트는 1+r_asset이 **정확히 0**인
+    // 입력이라, 가드를 `signum() == 0`으로 바꿔도 통과한다 — 임계값의 크기도 부호 처리도
+    // 아무것도 안 지키고 있었다.
+    //
+    // 값을 정확히 놓을 수 있는 근거: 플로우가 없으면 분모 = 전일 NAV, 출금 = 0이므로
+    // `1 + r_asset = navAtPriorFx / 전일 NAV`.
+
+    @Test
+    fun `자산 다리가 작아도 임계값 위면 분해한다`() {
+        // 1 + r_asset = 2 / 1_000_000 = 2E-6 — 임계값(1E-6) 바로 위.
+        // 가드가 과하게 커지면(예: 1E-5) 이 테스트가 먼저 깨진다.
+        val series = listOf(
+            NavFxPoint(d(1), nav = bd("1000000"), navAtPriorFx = null),
+            NavFxPoint(d(2), nav = bd("3"), navAtPriorFx = bd("2")),
+        )
+        val result = requireNotNull(ReturnsCalculator.attribute(series, emptyList(), d(1), d(2)))
+        assertClose("-0.999998", result.assetContribution)
+        assertClose("0.5", result.fxContribution)
+        assertMatchesTwr(series, emptyList())
+    }
+
+    @Test
+    fun `자산 다리가 임계값과 정확히 같으면 null이다`() {
+        // 1 + r_asset = 1 / 1_000_000 = 1E-6. 경계는 닫혀 있어야 한다 —
+        // `< 임계값`이면 이 값이 통과해 버린다.
+        val series = listOf(
+            NavFxPoint(d(1), nav = bd("1000000"), navAtPriorFx = null),
+            NavFxPoint(d(2), nav = bd("2"), navAtPriorFx = bd("1")),
+        )
+        assertNull(ReturnsCalculator.attribute(series, emptyList(), d(1), d(2)))
+    }
+
+    @Test
+    fun `자산 다리가 원화 정수 한 칸이면 null이다`() {
+        // 10억 원 기저에서 navAtPriorFx가 1원 — NAV가 원 단위 정수라 이게 0 아닌 최소값이고,
+        // 그 값이 하필 정확히 1E-9이다. 임계값을 1E-9에 두면 격자 위에 앉아 통과하고
+        // 환율 다리가 +99,999,900%로 나온다.
+        val series = listOf(
+            NavFxPoint(d(1), nav = bd("1000000000"), navAtPriorFx = null),
+            NavFxPoint(d(2), nav = bd("1000000"), navAtPriorFx = bd("1")),
+        )
+        assertNull(ReturnsCalculator.attribute(series, emptyList(), d(1), d(2)))
+    }
+
+    @Test
+    fun `navAtPriorFx가 음수면 null이다`() {
+        // 1 + r_asset = (frozen − 출금)/분모 이고 분모 > 0, 출금 ≤ 0이므로
+        // 이 값이 음수인 경우는 navAtPriorFx < 0뿐 — 정상 데이터가 아니라 상류 부호 오류다.
+        // abs()로 재던 시절엔 −5가 임계값을 여유롭게 통과해 환율 −120.2%를 뱉었다.
+        val series = listOf(
+            NavFxPoint(d(1), nav = bd("1000000"), navAtPriorFx = null),
+            NavFxPoint(d(2), nav = bd("1010000"), navAtPriorFx = bd("-5000000")),
+        )
+        assertNull(ReturnsCalculator.attribute(series, emptyList(), d(1), d(2)))
+    }
+
     @Test
     fun `기간 밖 관측은 제외한다`() {
         val series = listOf(

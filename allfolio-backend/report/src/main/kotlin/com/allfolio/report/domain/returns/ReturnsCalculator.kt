@@ -26,7 +26,8 @@ data class Flow(val date: LocalDate, val amountKrw: BigDecimal)
  */
 data class NavFxPoint(val date: LocalDate, val nav: BigDecimal, val navAtPriorFx: BigDecimal?)
 
-/** 기간 수익의 분해 — ratio(0~1). `(1+asset)(1+fx)−1 == TWR` */
+/** 기간 수익의 분해 — ratio(0~1 스케일). 두 다리 모두 음수일 수 있고 1을 넘을 수도 있다.
+ *  `(1+asset)(1+fx)−1 == TWR` */
 data class Attribution(val assetContribution: BigDecimal, val fxContribution: BigDecimal)
 
 data class PeriodReturns(
@@ -97,8 +98,16 @@ object ReturnsCalculator {
             ?.setScale(2, RoundingMode.HALF_UP)
     }
 
-    /** 자산 다리가 −100%에 붙으면 환율 다리가 발산한다 */
-    private val ATTRIBUTION_EPSILON = BigDecimal("1E-9")
+    /**
+     * 자산 다리가 −100%에 붙으면 환율 다리가 발산한다.
+     *
+     * 크기를 `1E-6`으로 잡은 이유: NAV는 원 단위 정수라 `1+r_asset = (frozen − outflow)/denominator`가
+     * 가질 수 있는 0 아닌 최소값이 `1/denominator`다. 10억 원 기저에서 그 값이 **정확히 `1E-9`**이라
+     * 예전 임계값은 원화 정수 격자 위에 그대로 앉아 있었고, 그 한 칸이 환율 다리를 +1e8% 로 튀게 했다.
+     * `1E-6`은 그 격자에서 세 자리(1000조 원 기저까지) 여유를 둔다. 반대로 이 임계값이 걸러내는
+     * 구간 — 전일 기저의 100만분의 1만 남은 장부 — 은 사실상 전액 소멸이라 분해 자체가 해석 불가다.
+     */
+    private val ATTRIBUTION_EPSILON = BigDecimal("1E-6")
 
     /**
      * 기간 수익률을 자산 기여와 환율 기여로 쪼갠다 (AF-106).
@@ -111,7 +120,14 @@ object ReturnsCalculator {
      * [twr]과 **같은 [segments] 호출**을 쓴다 — 구간 집합이 갈라지면 위 항등식이 깨진다.
      *
      * @return 분해 불가면 null — 관측 2건 미만 / 유효 구간 없음 / [NavFxPoint.navAtPriorFx] 결측 /
-     *         자산 다리가 −100%에 근접
+     *         자산 다리가 −100%에 근접하거나 그 아래(음수 [NavFxPoint.navAtPriorFx] 포함).
+     *
+     *         null이 **아닌** 경계 두 가지:
+     *         - 건너뛴 구간(분모 ≤ 0)에 걸린 관측의 [NavFxPoint.navAtPriorFx] 결측은 null을 유발하지 않는다.
+     *           그 구간은 아예 읽히지 않는다.
+     *         - 살아남은 첫 관측의 [NavFxPoint.navAtPriorFx]는 절대 읽지 않는다(구간은 i−1 → i이고
+     *           frozen은 i에서만 온다). `from..to` 필터가 안전한 이유가 이것이다 — 창을 좁혀
+     *           첫 관측이 바뀌어도 그 관측의 결측이 결과를 바꾸지 않는다.
      */
     fun attribute(
         series: List<NavFxPoint>,
@@ -139,7 +155,10 @@ object ReturnsCalculator {
             val rAsset = (frozen - prevNav - seg.net).divide(seg.denominator, MC)
 
             val onePlusAsset = BigDecimal.ONE + rAsset
-            if (onePlusAsset.abs() < ATTRIBUTION_EPSILON) return null
+            // 부호 있는 비교다. `1+r_asset = (frozen − outflow)/denominator`이고 분모는 항상 > 0,
+            // 출금은 ≤ 0이므로 이 값이 음수인 경우는 navAtPriorFx < 0뿐 — 정상 데이터가 아니라
+            // 상류의 부호 오류다. abs()로 재면 그게 그대로 통과해 "환율 −120%" 같은 값이 나온다.
+            if (onePlusAsset <= ATTRIBUTION_EPSILON) return null
             val onePlusFx = (BigDecimal.ONE + r).divide(onePlusAsset, MC)
 
             assetProduct = assetProduct.multiply(onePlusAsset, MC)
@@ -161,11 +180,14 @@ object ReturnsCalculator {
     /**
      * 구간 분할·분모 계산·건너뜀 규약을 여기 한 곳에만 둔다.
      *
-     * **[twr]과 attribute()가 반드시 이 함수를 같이 써야 한다.** 두 계열이 서로 다른 구간
+     * **[twr]과 [attribute]가 반드시 이 함수를 같이 써야 한다.** 두 계열이 서로 다른 구간
      * 집합을 돌면 `(1+자산기여)(1+환율기여) = 1+TWR` 항등식이 깨지는데, 증상이 "분해 합이
      * TWR과 미묘하게 다름"이라 눈으로 못 잡는다. 규약을 복제하면 어느 날 한쪽만 고쳐진다.
      *
      * 분모 ≤ 0인 구간(전액 출금 후 재개 등)은 수익률 판단이 불가능하므로 통째로 뺀다.
+     *
+     * 플로우는 `(dates.first, dates.last]`로 창을 내므로, 호출자가 미리 같은 범위로 거른 것은
+     * no-op이다 — [calculate]의 `effectiveFlows`는 netFlow·MWR용이지 TWR용이 아니다.
      */
     private fun segments(
         dates: List<LocalDate>,
