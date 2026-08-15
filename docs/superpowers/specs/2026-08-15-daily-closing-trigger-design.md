@@ -120,11 +120,28 @@ cron: "30 16 * * *"   # UTC 16:30 = KST 01:30 — 게이트 스킵 재시도
 
 | 호출자 | 넘길 값 |
 |---|---|
-| `DailyNavScheduler` (마감 워크플로우) | `ctx.ymd` — 워크플로우가 정한 날 |
+| `DailyNavScheduler` (마감 워크플로우) | **`ctx.ymd − 1일`** — 아래 참조 |
 | `SyncAccountUseCase` | KST 오늘 |
 | `AccountController` ×2 | KST 오늘 |
 
-`DailyNavScheduler.recordDailySnapshots()`도 `ymd`를 받고, `NavSnapshotAction`이 `ctx.ymd`를 흘려보낸다.
+`DailyNavScheduler.recordDailySnapshots()`도 `ymd`를 받고, `NavSnapshotAction`이 값을 정해 넘긴다.
+
+### NAV는 실행일이 아니라 직전일로 라벨한다
+
+`ctx.ymd`는 워크플로우 전체에서 **실행일**이다(`ClosingScheduler`가 `LocalDate.now(KST)`로 구한다). KST 자정에 뜨므로 그 시점 자산은 아직 시작도 안 한 실행일이 아니라 **직전 영업일이 끝난 값**이다. 실행일로 라벨하면 D 행에 D−1의 값이 앉는다.
+
+**어긋나도 화면에 신호가 안 뜬다 — 그래서 "두고 보자"가 성립하지 않는다:**
+
+- `ReportService.buildBenchmarkSeries`는 exact join이 아니라 **as-of 조회**다 (`rows.lastOrNull { it.first <= date }`). null도 구멍도 안 생기고 D의 지수 종가와 D−1의 포트폴리오 값이 조용히 짝지어져, 포트폴리오가 지수를 하루 늦게 따라가는 것처럼 그려진다
+- `GetReturnsAnalysisUseCase`는 `[from, to]` 양 끝 종가를 쓴다. NAV가 하루 밀리면 포트폴리오의 실제 측정 구간이 `[from−1, to−1]`이 되어 초과수익이 하루치 시장 움직임만큼 틀린다
+
+UPSERT 키가 `(tenant, portfolio, date)`인 것도 같은 방향을 가리킨다. 실행일로 라벨하면 자정이 쓴 행을 그날 낮 동기화가 덮어써서 **D 행의 의미가 "그날 사용자가 동기화했는지"에 따라 달라진다.** 직전일로 라벨하면 자정 실행이 그 날짜의 마지막 기록자가 되어 확정값이 된다. `daily_return`이 직전 행 대비라 그 비결정성은 수익률까지 간다.
+
+**`ctx.ymd`의 의미는 안 건드린다.** `S060`이 `ReportPeriod.monthly(ctx.ymd.year, ctx.ymd.monthValue)`로 그 의미에 의존한다. 고치는 것은 NAV 행의 라벨 하나뿐이다.
+
+**검토하고 버린 대안**: 크론을 KST 23:50으로 옮기면 실행일과 데이터일이 같아지고 UTC 요일 함정까지 사라진다. 버린 이유는 폭발 반경이다 — `wf_job_log.ymd`·게이트·`S060`의 월 판정까지 워크플로우 전체의 시계를 옮기게 된다. 시드가 `S010`의 cutoff를 `00:05~00:30`으로 정해 둔 것과도 어긋난다.
+
+**선례로 인용하면 안 되는 것**: AF-101 #147이 "장 시간이 옮겨진 날은 감수한다"고 결정했지만, 그 문서의 감수 근거가 *"평가금액·수익률·리포트는 전부 `benchmark_daily`라는 별개 테이블을 쓰므로 이 값이 틀려도 닿지 않는다"*였다. 지금 문제는 그 문서가 안전하다고 지목한 바로 그 경로다.
 
 **기본값을 두지 않는다.** `date: LocalDate = LocalDate.now()` 같은 기본 인자를 두면 호출자가 빠뜨렸을 때 지금과 똑같이 조용히 UTC로 돌아가고, 증상은 "하루 밀림"이라 눈에 안 띈다. 넷 다 명시적으로 넘긴다.
 

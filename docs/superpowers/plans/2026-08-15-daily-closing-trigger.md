@@ -130,7 +130,7 @@ class NavSnapshotAction(
     // ctx.ymd를 흘려보낸다 — 여기서 LocalDate.now()를 쓰면 워크플로우가 정한 날과
     // 데이터가 갈라진다(컨테이너 UTC, 자정 KST = UTC 전날 15:00)
     override fun execute(ctx: WfContext): WfActionResult =
-        WfActionResult("snapshots=${dailyNavScheduler.recordDailySnapshots(ctx.ymd)}")
+        WfActionResult("snapshots=${dailyNavScheduler.recordDailySnapshots(ctx.ymd.minusDays(1))}")
 }
 ```
 
@@ -545,7 +545,7 @@ FROM wf_job_log ORDER BY ymd DESC, step_cd;
 SELECT portfolio_id, date, nav FROM performance_daily ORDER BY date DESC LIMIT 10;
 ```
 
-**오늘(KST) 날짜 행이 있어야 한다.** 어제 날짜면 Task 1이 안 먹은 것이다.
+**전날(KST) 날짜 행이 있어야 한다** — 자정 실행이 직전 영업일을 닫는다. 실행일 행이 나오면 `NavSnapshotAction`의 `minusDays(1)`이 빠진 것이다.
 
 - [ ] **Step 5: AF-106 연결 확인**
 
