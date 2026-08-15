@@ -47,6 +47,12 @@ class CostReportGeneratorTest {
         override fun upsert(type: BenchmarkType, rows: List<Pair<LocalDate, BigDecimal>>) {}
         override fun series(type: BenchmarkType, from: LocalDate, to: LocalDate) = emptyList<Pair<LocalDate, BigDecimal>>()
     }
+    /** AF-106 분해는 비용 리포트와 무관 — 빈 시계열이라 currencyAttribution은 null */
+    private class FakeNavFxSource : NavFxHistorySource {
+        override fun navFxSeries(userId: UUID, from: LocalDate, to: LocalDate) =
+            emptyList<com.allfolio.report.domain.returns.NavFxPoint>()
+        override fun currenciesIn(userId: UUID, from: LocalDate, to: LocalDate) = emptyList<String>()
+    }
 
     private fun cost(day: Int, provider: String, fee: String, tax: String, type: String = "BUY", name: String = "삼성전자") =
         CostRecord(LocalDate.of(2026, 6, day), name, "005930", "$provider 계좌", provider, type, BigDecimal(fee), BigDecimal(tax))
@@ -54,7 +60,9 @@ class CostReportGeneratorTest {
     private fun nav(day: Int, v: String) = NavPoint(LocalDate.of(2026, 6, day), BigDecimal(v))
 
     private fun generator(costs: List<CostRecord>, navs: List<NavPoint> = emptyList()): CostReportGenerator {
-        val analysis = GetReturnsAnalysisUseCase(FakeNavSource(navs), FakeCashFlowRepo(), FakeUserBm(), FakeBmStore())
+        val analysis = GetReturnsAnalysisUseCase(
+            FakeNavSource(navs), FakeCashFlowRepo(), FakeUserBm(), FakeBmStore(), FakeNavFxSource(),
+        )
         return CostReportGenerator(FakeCostLedger(costs), analysis)
     }
 
