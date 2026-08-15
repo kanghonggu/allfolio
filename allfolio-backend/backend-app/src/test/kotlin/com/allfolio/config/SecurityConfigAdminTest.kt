@@ -20,6 +20,7 @@ import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
 import com.allfolio.fx.CashFlowRecomputeService
 import com.allfolio.fx.hana.HanaFxCollectService
+import com.allfolio.workflow.application.WfStepExecutor
 import org.springframework.boot.test.mock.mockito.MockBean
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.`when`
@@ -95,6 +96,12 @@ class SecurityConfigAdminTest {
 
     @MockBean
     private lateinit var ecosStatListClient: EcosStatListClient
+
+    // 마감 트리거는 어드민에 위임하지 않고 WfStepExecutor를 직접 요구한다.
+    // 위 overseasIndexCollectService와 같은 함정이다 — 빠뜨리면 이 파일의 테스트가 실패하는 게
+    // 아니라 컨텍스트가 아예 안 떠서, 무관해 보이는 실패 메시지가 전 테스트에 걸린다.
+    @MockBean
+    private lateinit var wfStepExecutor: WfStepExecutor
 
     // AF-104. MarketQueryController가 요구한다. 조회 내용은 이 파일의 관심사가 아니라
     // 아래 200 테스트에서 빈 스냅샷 하나만 돌려주게 한다.
@@ -238,6 +245,19 @@ class SecurityConfigAdminTest {
     @Test
     fun `해외 지수 트리거도 Security를 통과해 컨트롤러까지 도달한다`() {
         mockMvc.post("/api/internal/scheduler/index/overseas?schedule=US")
+            .andExpect { status { isServiceUnavailable() } }
+    }
+
+    /**
+     * 마감 트리거도 같은 규칙 아래 있는지. 위 둘과 같은 이유로 503이 곧 "컨트롤러까지 닿았다"다.
+     *
+     * 이 경로만 Security에 막히면 크론은 401을 받고 마감이 한 번도 안 돈다 — 그게 정확히
+     * `performance_daily`가 안 쌓이던 원래 증상이라, 같은 실패를 다른 원인으로 다시 겪게 된다.
+     * 컨트롤러 테스트는 standaloneSetup이라 Security가 아예 안 돌아 여기서만 잡힌다.
+     */
+    @Test
+    fun `마감 트리거도 Security를 통과해 컨트롤러까지 도달한다`() {
+        mockMvc.post("/api/internal/scheduler/closing")
             .andExpect { status { isServiceUnavailable() } }
     }
 

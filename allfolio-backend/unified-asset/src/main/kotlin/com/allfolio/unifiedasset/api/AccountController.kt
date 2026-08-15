@@ -264,7 +264,7 @@ class AccountController(
         )
         val saved = assetRepository.save(asset)
         val nav = assetRepository.findByUserId(userId).navInKrw(fx)
-        snapshotService.record(userId, nav)
+        snapshotService.record(userId, nav, LocalDate.now(java.time.ZoneId.of("Asia/Seoul")))
         return saved.toResponse()
     }
 
@@ -280,7 +280,7 @@ class AccountController(
         val content = file.inputStream.bufferedReader().readText()
         val result = importCsvUseCase.execute(userId, id, content)
         val nav = assetRepository.findByUserId(userId).navInKrw(fx)
-        snapshotService.record(userId, nav)
+        snapshotService.record(userId, nav, LocalDate.now(java.time.ZoneId.of("Asia/Seoul")))
         return result
     }
 

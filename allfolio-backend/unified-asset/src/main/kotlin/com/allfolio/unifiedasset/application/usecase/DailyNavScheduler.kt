@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 import java.math.BigDecimal
+import java.time.LocalDate
 import java.util.UUID
 
 /**
@@ -15,9 +16,13 @@ import java.util.UUID
  *
  * SyncAccountUseCase가 sync 성공 시 이미 스냅샷을 UPSERT하지만, 이 명시적 패스는 syncable
  * 계좌가 없는 사용자·전부 실패한 사용자까지 마지막 값으로라도 스냅샷을 보장하는 안전망이다.
- * 같은 날은 (tenant,portfolio,date) UPSERT라 이 패스가 값을 확정한다. (sync 부수효과의
- * 자산별 환산 합과 여기 통화별 환산 합은 KRW 라운딩 방식 차이로 수 원 다를 수 있으나,
- * 통화별 1회 환산인 이 패스 값이 더 정확하고 최종값이 된다.)
+ *
+ * **이 패스가 남기는 건 그 날의 첫 값이지 최종값이 아니다.** 자정 KST 실행이 쓰는 일자는
+ * 그날 자신(ctx.ymd)이라, 이후 같은 날 도는 sync가 (tenant,portfolio,date) UPSERT로 계속
+ * 덮어쓴다. 그래서 하루가 끝난 뒤 performance_daily에 남는 값은 그날 마지막 sync의 것이다.
+ * (sync 부수효과의 자산별 환산 합과 여기 통화별 환산 합은 KRW 라운딩 방식 차이로 수 원 다를
+ * 수 있다. 통화별 1회 환산인 이 패스 쪽이 더 정확하지만, 덮이는 쪽이라 그 이점은 첫 값에만
+ * 남는다 — syncable 계좌가 없어 덮일 일이 없는 사용자에게는 그대로 남는다.)
  */
 @Component
 class DailyNavScheduler(
@@ -27,8 +32,12 @@ class DailyNavScheduler(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    /** @return 스냅샷 기록 사용자 수 */
-    fun recordDailySnapshots(): Int {
+    /**
+     * @param ymd 마감 워크플로우가 정한 일자. **`LocalDate.now()`로 대체하지 말 것** —
+     *            자정 KST 실행은 UTC로 전날이라 스냅샷이 하루 밀린다.
+     * @return 스냅샷 기록 사용자 수
+     */
+    fun recordDailySnapshots(ymd: LocalDate): Int {
         // 통화별로 합산한 뒤 KRW로 환산해야 통화가 섞인 사용자의 NAV가 올바르다.
         val perCurrency = jdbc.query(
             "SELECT user_id, currency, SUM(current_value) AS v FROM ua_assets GROUP BY user_id, currency"
@@ -53,7 +62,7 @@ class DailyNavScheduler(
 
         log.info("[DailyNavScheduler] recording snapshots for {} users", navByUser.size)
         navByUser.forEach { (userId, nav) ->
-            runCatching { snapshotService.record(userId, nav) }
+            runCatching { snapshotService.record(userId, nav, ymd) }
                 .onFailure { e -> log.error("[DailyNavScheduler] failed userId={}", userId, e) }
         }
         log.info("[DailyNavScheduler] done")

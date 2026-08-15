@@ -17,10 +17,12 @@ import com.allfolio.unifiedasset.domain.sync.SyncLog
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
+import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
 import java.math.BigDecimal
+import java.time.LocalDate
 import java.util.UUID
 
 class SyncAccountUseCaseNavTest {
@@ -63,7 +65,8 @@ class SyncAccountUseCaseNavTest {
         service.execute(account.id)
 
         val navCaptor = ArgumentCaptor.forClass(BigDecimal::class.java)
-        verify(snapshot).record(eqUuid(userId), captureBd(navCaptor))
+        // 날짜는 이 테스트의 관심사가 아니다(PerformanceSnapshotDateTest가 못 박는다) — 매처만 채운다
+        verify(snapshot).record(eqUuid(userId), captureBd(navCaptor), anyDate())
         // 1,000,000 + 1,000 * 1,300 = 2,300,000 (raw sum would be a meaningless 1,001,000)
         assertEquals(0, BigDecimal("2300000").compareTo(navCaptor.value)) {
             "expected KRW-converted NAV 2,300,000 but was ${navCaptor.value}"
@@ -73,6 +76,7 @@ class SyncAccountUseCaseNavTest {
     // Kotlin non-null 파라미터에 Mockito matcher를 쓰기 위한 null-safe 래퍼.
     private fun eqUuid(v: UUID): UUID = eq(v) ?: v
     private fun captureBd(c: ArgumentCaptor<BigDecimal>): BigDecimal = c.capture() ?: BigDecimal.ZERO
+    private fun anyDate(): LocalDate = any(LocalDate::class.java) ?: LocalDate.EPOCH
 
     private fun asset(userId: UUID, accountId: UUID, value: BigDecimal, currency: String): Asset =
         Asset.create(
