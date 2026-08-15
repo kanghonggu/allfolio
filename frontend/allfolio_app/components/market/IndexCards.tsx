@@ -7,6 +7,7 @@ import Num from '@/components/ui/Num'
 import Badge from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/states'
 import { dirTone } from '@/lib/format'
+import { fixed } from '@/lib/market-format'
 
 /**
  * 지수 카드 목록 (국내·해외 공용).
@@ -27,12 +28,15 @@ export default function IndexCards({ quotes }: { quotes: IndexQuoteView[] }) {
             {/* 장 상태가 없으면 한국 낮에 미국 지수가 안 움직이는 걸 보고 고장으로 오해한다 */}
             <Badge>{q.marketStatus}</Badge>
           </div>
+          {/* **지수 값만 자릿수를 안 고정한다.** 환율·금리와 달리 지수엔 의미 있는 하위 단위가
+              없어서(7785.76에 `.7600`을 붙일 이유가 없다) 백엔드가 보내는 대로 둔다.
+              카드 배치라 표처럼 세로로 훑을 일도 없다. 변화율만 2자리로 맞춘다 */}
           <div className="mt-2">
             <Num className="text-[20px]">{q.price}</Num>
           </div>
           <div className="mt-1">
-            <Num tone={dirTone(Number(q.change))} className="text-[12px]">
-              {q.change} ({q.changeRate}%)
+            <Num tone={dirTone(q.change)} className="text-[12px]">
+              {q.change} ({fixed(q.changeRate, 2)}%)
             </Num>
           </div>
           {/* 기준 시각 — 장마감이면 언제 종가인지까지 말한다 */}
