@@ -210,7 +210,17 @@ fun attribute(
 - `nav` — `performance_daily`에서 읽은 값을 그대로 쓴다. `Σ v_c·r_c`로 **재계산하지 않는다.** 화면의 TWR이 이 값으로 계산되므로 같은 값을 써야 항등식이 성립한다.
 - `navAtPriorFx` — `nav + Σ_c v_c(i)·(r_c(i−1) − r_c(i))`. 통화별 행을 날짜로 묶고 연속한 두 날짜의 환율 차이만 얹는다. 첫 관측일은 `null`.
 
-두 테이블 중 한쪽에만 있는 날짜는 `NavFxPoint`를 만들 수 없다 — **`performance_daily`에 있고 `nav_currency_daily`에 없는 날은 목록에서 뺀다.** §3의 실패 처리가 그런 날을 만들 수 있고, 그 구간을 억지로 이으면 환율 차이가 0으로 잡혀 자산 쪽에 흡수된다. 빼면 §5의 "관측 2건" 조건이 알아서 처리한다.
+### 날짜를 빼지 않는다 — 빼면 §4의 항등식이 입력 단계에서 깨진다
+
+**`performance_daily`의 모든 날짜에 대해 점을 만든다.** 통화 행이 없는 날은 빼는 게 아니라 `navAtPriorFx = null`로 둔다.
+
+처음엔 그런 날을 목록에서 빼도록 설계했는데, 그러면 `attribute()`가 `calculate()`와 **다른 구간 집합**을 돌게 된다 — `segments()`를 공유해 막으려던 바로 그 문제를 입력 단계에서 다시 여는 것이다. 코드 리뷰가 재현했다: 하루 결측 + 입출금이 있으면 화면 TWR `25.45%`와 분해 합 `15.00%`가 **10.45%p** 어긋난다.
+
+특히 고약한 것은 **입출금이 없으면 안 보인다**는 점이다. 플로우가 없으면 체인링킹이 망원경처럼 접혀 중간 관측이 빠져도 결과가 같다. 그래서 수동 QA는 통과하고, **입금이 있는 계정에서만 틀린다.**
+
+`navAtPriorFx = null`로 두면 `attribute()`의 기존 `?: return null`이 분해 전체를 포기시키고, 계열이 TWR과 동일해진다. 실패는 닫히는 쪽으로.
+
+규칙: `dates[i]`와 `dates[i−1]` **둘 다** 통화 행이 있을 때만 `navAtPriorFx`를 채운다. 첫 관측일은 항상 `null`이고, 이 값은 어차피 읽히지 않는다.
 
 ## 7. 테스트 — 무엇을 못박는가
 
@@ -241,11 +251,10 @@ data class CurrencyAttribution(
     val assetContribution: BigDecimal,   // 퍼센트 (0~100 스케일, 컨트롤러 경계에서 변환)
     val fxContribution: BigDecimal,      // 퍼센트
     val currencies: List<String>,        // 기간 중 보유한 비-KRW 통화
-    val approximatedDays: Int,           // 통화별 행이 없어 분해에서 빠진 관측일 수
 )
 ```
 
-**`approximatedDays`이지 `approximatedAssets`가 아니다.** §3의 `currentPrices` 자산 수는 **쓰기 시점에만** 알 수 있고 저장하지 않으므로 조회 경로에서 복원할 수 없다. 그걸 응답에 실으려면 테이블에 열을 하나 더 만들어야 하는데, 그건 파생값 저장이다. 대신 §6이 이미 세고 있는 것 — `performance_daily`에는 있는데 `nav_currency_daily`에는 없어 목록에서 빠진 날 수 — 을 싣는다. 자산 수는 §3대로 로그로만 남긴다.
+**"빠진 날 수" 같은 필드를 싣지 않는다.** §6이 실패를 닫는 쪽으로 바뀌면서 그런 날이 하나라도 있으면 분해 자체가 `null`이 된다 — 셀 것이 남지 않는다. §3의 `currentPrices` 자산 수는 **쓰기 시점에만** 알 수 있고 저장하지 않으므로 조회 경로에서 복원할 수 없다. 그걸 실으려면 테이블에 열을 더해야 하는데 그건 파생값 저장이다. §3대로 로그로만 남긴다.
 
 비율→퍼센트 변환은 **컨트롤러 경계에서만** 한다 — `ReportController`가 이미 twr/mwr에 그렇게 하고 있다.
 
@@ -261,7 +270,6 @@ data class CurrencyAttribution(
 
 - 자릿수는 페이지의 기존 `fmtPct`를 쓴다. 새 포맷터를 만들지 않는다.
 - 부호 색은 기존 `pctColor`(양수 빨강/음수 파랑)를 쓴다.
-- `approximatedDays > 0`이면 각주 한 줄로 밝힌다 — 숨기지 않는다.
 - `currencyAttribution == null`이면 섹션을 렌더하지 않는다.
 
 ## 9. 범위 밖
