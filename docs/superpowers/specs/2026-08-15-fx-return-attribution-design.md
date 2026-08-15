@@ -53,6 +53,8 @@ CREATE TABLE nav_currency_daily (
 
 **`value_krw`를 저장하지 않는다.** `value_native × fx_rate`로 나오고, 저장하면 셋이 어긋나는 날 무엇이 맞는지 가릴 수 없다.
 
+**미지원 통화는 `fx_rate = 1`로 기록한다.** `CurrencyConverter`가 실제로 환산하는 통화는 `KRW·USD·USDT·BTC·ETH` **다섯뿐**이고, 나머지는 경고 로그를 남기고 원금을 그대로 돌려준다. 예외를 던지지 않고 그 동작을 그대로 기록한다 — 그래야 §2의 합계 불변식이 성립하고, `currency='JPY'`인데 `fx_rate=1`인 행이 **미환산 자산의 진단 지표**가 된다.
+
 **PK가 곧 조회 인덱스다.** `(portfolio_id, date, ...)` 선두 두 열이 기간 조회를 그대로 받는다 — AF-102에서 중복 인덱스를 하나 지웠던 것과 같은 이유로 별도 인덱스를 만들지 않는다.
 
 `performance_daily`는 손대지 않는다. 옆에 세운다.
@@ -63,7 +65,9 @@ CREATE TABLE nav_currency_daily (
 Σ_c (value_native(c) × fx_rate(c))  ==  performance_daily.nav      (같은 portfolio_id·date)
 ```
 
-이건 검증 장치이면서 동시에 §3 쓰기 지점 선택의 근거다. 같은 가격·같은 환율에서 파생시키면 구조적으로 성립한다. 반올림 때문에 정확히 같지는 않으므로 **원 단위 허용오차**를 둔다(§7).
+이건 검증 장치이면서 동시에 §3 쓰기 지점 선택의 근거다. 같은 가격·같은 환율에서 파생시키므로 구조적으로 성립한다.
+
+**정확히 같지는 않다.** `toKrw`가 자산별 가격을 원 단위로 반올림한 뒤 수량을 곱하기 때문에, 자산마다 최대 `0.5 × quantity`만큼 벌어진다. 허용오차는 `0.5 × Σ|quantity| + 1`로 잡는다 — 고정 원 단위로 잡으면 수량이 큰 포트폴리오에서 거짓 경보가 난다. §4의 계산은 이 드리프트에 아예 닿지 않게 설계되어 있다.
 
 ## 3. 쓰기 지점 — `SnapshotTriggerService`
 
@@ -115,6 +119,14 @@ r_i = (NAV_i − NAV_{i−1} − net_i) / (NAV_{i−1} + inflow_i)
 A_i = Σ_c v_c(i) · r_c(i−1)      당일 수량·가격, 환율만 전일로 고정
 NAV_i = Σ_c v_c(i) · r_c(i)      당일 원화 평가액 (= performance_daily.nav)
 ```
+
+**실제로는 이 형태로 계산한다** — 대수적으로 같지만 반올림에 강하다:
+
+```
+A_i = NAV_i + Σ_c v_c(i) · (r_c(i−1) − r_c(i))
+```
+
+`toKrw`가 자산별 가격을 **원 단위로 반올림한 뒤** 수량을 곱하므로 `Σ v_c·r_c`는 `performance_daily.nav`와 정확히 같지 않다. 위 식을 안 쓰면 **환율이 하나도 안 움직인 날에도 환율기여가 0이 아니게 되고**, 250구간을 곱하면 눈에 보일 만큼 쌓인다. 권위 있는 NAV에 얹고 환율 차이만 적용하면 그 항이 상쇄되어, 환율 불변 구간에서 `A_i == NAV_i`가 **정확히** 성립한다.
 
 그리고 같은 분모·같은 플로우로 자산 다리를 만든다:
 
@@ -193,9 +205,12 @@ fun attribute(
 
 `A_i`는 저장하지 않는다 — **당일 평가액과 전일 환율의 조합이라 읽을 때 만들어진다.** 둘 다 `nav_currency_daily`에 있다.
 
-기존 `JdbcNavHistorySource`(`SELECT date, nav FROM performance_daily`)는 그대로 두고, 옆에 `nav_currency_daily`를 읽어 `NavFxPoint` 목록을 만드는 어댑터를 하나 세운다. 통화별 행을 날짜로 묶고, 연속한 두 날짜에 대해 `Σ v_c(i)·r_c(i−1)`을 계산한다. 첫 관측일의 `navAtPriorFx`는 `null`이다.
+기존 `JdbcNavHistorySource`(`SELECT date, nav FROM performance_daily`)는 그대로 두고, 옆에 `nav_currency_daily`와 `performance_daily`를 **함께** 읽어 `NavFxPoint` 목록을 만드는 어댑터를 하나 세운다.
 
-`nav`는 `performance_daily`에서 읽은 값을 쓴다 — `Σ v_c(i)·r_c(i)`로 재계산하지 않는다. 화면의 TWR이 `performance_daily.nav`로 계산되므로 같은 값을 써야 항등식이 성립한다. 둘의 일치는 §2의 불변식이 별도로 지킨다.
+- `nav` — `performance_daily`에서 읽은 값을 그대로 쓴다. `Σ v_c·r_c`로 **재계산하지 않는다.** 화면의 TWR이 이 값으로 계산되므로 같은 값을 써야 항등식이 성립한다.
+- `navAtPriorFx` — `nav + Σ_c v_c(i)·(r_c(i−1) − r_c(i))`. 통화별 행을 날짜로 묶고 연속한 두 날짜의 환율 차이만 얹는다. 첫 관측일은 `null`.
+
+두 테이블 중 한쪽에만 있는 날짜는 `NavFxPoint`를 만들 수 없다 — **`performance_daily`에 있고 `nav_currency_daily`에 없는 날은 목록에서 뺀다.** §3의 실패 처리가 그런 날을 만들 수 있고, 그 구간을 억지로 이으면 환율 차이가 0으로 잡혀 자산 쪽에 흡수된다. 빼면 §5의 "관측 2건" 조건이 알아서 처리한다.
 
 ## 7. 테스트 — 무엇을 못박는가
 
@@ -226,9 +241,11 @@ data class CurrencyAttribution(
     val assetContribution: BigDecimal,   // 퍼센트 (0~100 스케일, 컨트롤러 경계에서 변환)
     val fxContribution: BigDecimal,      // 퍼센트
     val currencies: List<String>,        // 기간 중 보유한 비-KRW 통화
-    val approximatedAssets: Int,         // §3의 currentPrices 경로로 KRW 계상된 자산 수
+    val approximatedDays: Int,           // 통화별 행이 없어 분해에서 빠진 관측일 수
 )
 ```
+
+**`approximatedDays`이지 `approximatedAssets`가 아니다.** §3의 `currentPrices` 자산 수는 **쓰기 시점에만** 알 수 있고 저장하지 않으므로 조회 경로에서 복원할 수 없다. 그걸 응답에 실으려면 테이블에 열을 하나 더 만들어야 하는데, 그건 파생값 저장이다. 대신 §6이 이미 세고 있는 것 — `performance_daily`에는 있는데 `nav_currency_daily`에는 없어 목록에서 빠진 날 수 — 을 싣는다. 자산 수는 §3대로 로그로만 남긴다.
 
 비율→퍼센트 변환은 **컨트롤러 경계에서만** 한다 — `ReportController`가 이미 twr/mwr에 그렇게 하고 있다.
 
@@ -244,7 +261,7 @@ data class CurrencyAttribution(
 
 - 자릿수는 페이지의 기존 `fmtPct`를 쓴다. 새 포맷터를 만들지 않는다.
 - 부호 색은 기존 `pctColor`(양수 빨강/음수 파랑)를 쓴다.
-- `approximatedAssets > 0`이면 각주 한 줄로 밝힌다 — 숨기지 않는다.
+- `approximatedDays > 0`이면 각주 한 줄로 밝힌다 — 숨기지 않는다.
 - `currencyAttribution == null`이면 섹션을 렌더하지 않는다.
 
 ## 9. 범위 밖
