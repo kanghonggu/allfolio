@@ -13,6 +13,22 @@ data class NavPoint(val date: LocalDate, val nav: BigDecimal)
 /** amountKrw: 입금 양수, 출금 음수 */
 data class Flow(val date: LocalDate, val amountKrw: BigDecimal)
 
+/**
+ * 통화 분해용 관측 한 건.
+ *
+ * 두 계열을 별도 리스트로 받으면 어긋날 수 있어 한 타입에 묶는다.
+ *
+ * @param nav          그날의 원화 평가액 — `performance_daily.nav` 그대로. 재계산하지 말 것
+ * @param navAtPriorFx 그날 보유를 **전일 환율**로 평가한 값. 첫 관측일은 null(직전 구간이 없다).
+ *                     실제 산출식은 `nav + Σ_c v_c·(r_c(전일) − r_c(당일))` — 권위 있는 nav에
+ *                     환율 차이만 얹는다. `Σ v_c·r_c(전일)`로 직접 구하면 toKrw의 원 단위
+ *                     반올림 때문에 환율이 안 움직인 날에도 환율 기여가 0이 아니게 된다.
+ */
+data class NavFxPoint(val date: LocalDate, val nav: BigDecimal, val navAtPriorFx: BigDecimal?)
+
+/** 기간 수익의 분해 — ratio(0~1). `(1+asset)(1+fx)−1 == TWR` */
+data class Attribution(val assetContribution: BigDecimal, val fxContribution: BigDecimal)
+
 data class PeriodReturns(
     val twr: BigDecimal?,
     val mwr: BigDecimal?,
@@ -79,6 +95,58 @@ object ReturnsCalculator {
         return calculate(sorted, flows, anchor, asOf).twr
             ?.multiply(BigDecimal(100))
             ?.setScale(2, RoundingMode.HALF_UP)
+    }
+
+    /** 자산 다리가 −100%에 붙으면 환율 다리가 발산한다 */
+    private val ATTRIBUTION_EPSILON = BigDecimal("1E-9")
+
+    /**
+     * 기간 수익률을 자산 기여와 환율 기여로 쪼갠다 (AF-106).
+     *
+     * 구간마다 환율을 전일로 얼린 평행 수익률을 만들고, 환율 다리는 나머지가 아니라
+     * `(1+r)/(1+r_asset) − 1`로 **명시**한다. 나머지로 두면 교차항이 자산 쪽에 조용히
+     * 흡수된다. 이 정의 덕분에 구간마다 `(1+r) = (1+r_asset)(1+r_fx)`가 정의상 성립하고,
+     * 곱을 재배열하면 `(1+자산기여)(1+환율기여) = 1 + TWR`이 된다.
+     *
+     * [twr]과 **같은 [segments] 호출**을 쓴다 — 구간 집합이 갈라지면 위 항등식이 깨진다.
+     *
+     * @return 분해 불가면 null — 관측 2건 미만 / 유효 구간 없음 / [NavFxPoint.navAtPriorFx] 결측 /
+     *         자산 다리가 −100%에 근접
+     */
+    fun attribute(
+        series: List<NavFxPoint>,
+        flows: List<Flow>,
+        from: LocalDate,
+        to: LocalDate,
+    ): Attribution? {
+        val s = series.filter { it.date in from..to }.sortedBy { it.date }
+        if (s.size < 2) return null
+
+        val navs = s.map { it.nav }
+        val segs = segments(s.map { it.date }, navs, flows)
+        if (segs.isEmpty()) return null
+
+        var assetProduct = BigDecimal.ONE
+        var fxProduct = BigDecimal.ONE
+
+        for (seg in segs) {
+            // 통화별 행이 그날 안 써졌다 — 억지로 이으면 환율 차이가 0으로 잡혀
+            // 자산 쪽에 흡수된다. 분해를 포기하는 편이 정직하다.
+            val frozen = s[seg.i].navAtPriorFx ?: return null
+            val prevNav = navs[seg.i - 1]
+
+            val r = (navs[seg.i] - prevNav - seg.net).divide(seg.denominator, MC)
+            val rAsset = (frozen - prevNav - seg.net).divide(seg.denominator, MC)
+
+            val onePlusAsset = BigDecimal.ONE + rAsset
+            if (onePlusAsset.abs() < ATTRIBUTION_EPSILON) return null
+            val onePlusFx = (BigDecimal.ONE + r).divide(onePlusAsset, MC)
+
+            assetProduct = assetProduct.multiply(onePlusAsset, MC)
+            fxProduct = fxProduct.multiply(onePlusFx, MC)
+        }
+
+        return Attribution(assetProduct - BigDecimal.ONE, fxProduct - BigDecimal.ONE)
     }
 
     /**
