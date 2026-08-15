@@ -21,9 +21,14 @@ import com.allfolio.market.index.OverseasIndexCollectSummary
 import com.allfolio.market.index.OverseasSchedule
 import com.allfolio.market.rate.RateCollectService
 import com.allfolio.market.rate.RateCollectSummary
+import com.allfolio.workflow.application.WfRunSummary
+import com.allfolio.workflow.application.WfStepExecutor
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyBoolean
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
@@ -37,6 +42,8 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneId
+import java.util.TimeZone
 
 class SchedulerTriggerControllerTest {
 
@@ -44,6 +51,7 @@ class SchedulerTriggerControllerTest {
     private val admin: FxRateAdminController = mock(FxRateAdminController::class.java)
     private val indexAdmin: MarketIndexAdminController = mock(MarketIndexAdminController::class.java)
     private val rateAdmin: MarketRateAdminController = mock(MarketRateAdminController::class.java)
+    private val stepExecutor: WfStepExecutor = mock(WfStepExecutor::class.java)
 
     private val summary = HanaCollectSummary(
         requestedDate = LocalDate.of(2026, 8, 12),
@@ -60,7 +68,7 @@ class SchedulerTriggerControllerTest {
     // 응답으로 풀려, 운영과 다른 경로를 테스트하게 된다. 워크플로가 --fail을 일부러 안 쓰는 이유가
     // 이 본문을 잡 요약에 남기기 위해서라, 본문까지 운영과 같아야 의미가 있다.
     private fun mvc(token: String) = MockMvcBuilders
-        .standaloneSetup(SchedulerTriggerController(admin, indexAdmin, rateAdmin, token))
+        .standaloneSetup(SchedulerTriggerController(admin, indexAdmin, rateAdmin, stepExecutor, token))
         .setControllerAdvice(GlobalExceptionHandler())
         .build()
 
@@ -168,7 +176,7 @@ class SchedulerTriggerControllerTest {
             mock(CashFlowRecomputeService::class.java),
         )
 
-        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, "secret"))
+        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -294,7 +302,7 @@ class SchedulerTriggerControllerTest {
             mock(OverseasIndexCollectService::class.java),
         )
 
-        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin, rateAdmin, "secret"))
+        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin, rateAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -339,6 +347,7 @@ class SchedulerTriggerControllerTest {
                         mock(OverseasIndexCollectService::class.java),
                     ),
                     rateAdmin,
+                    stepExecutor,
                     "secret",
                 )
             )
@@ -494,7 +503,7 @@ class SchedulerTriggerControllerTest {
         )
 
         MockMvcBuilders
-            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, "secret"))
+            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -522,7 +531,7 @@ class SchedulerTriggerControllerTest {
         )
 
         MockMvcBuilders
-            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, "secret"))
+            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -548,7 +557,7 @@ class SchedulerTriggerControllerTest {
         ).thenThrow(KisIndexException("KIS 해외 응답에 output2가 없습니다"))
 
         MockMvcBuilders
-            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, "secret"))
+            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -720,7 +729,7 @@ class SchedulerTriggerControllerTest {
             mock(CashFlowRecomputeService::class.java),
         )
 
-        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, "secret"))
+        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -860,6 +869,7 @@ class SchedulerTriggerControllerTest {
                 admin,
                 indexAdmin,
                 MarketRateAdminController(rateCollectServiceReturning(summary), mock(EcosStatListClient::class.java)),
+                stepExecutor,
                 "secret",
             )
         )
@@ -892,6 +902,123 @@ class SchedulerTriggerControllerTest {
             any(String::class.java) ?: "",
             any(LocalDate::class.java) ?: LocalDate.EPOCH,
             any(LocalDate::class.java) ?: LocalDate.EPOCH,
+        )
+    }
+
+    // ── 마감 트리거 (AF-107) ───────────────────────────────────────────────────
+    //
+    // 다른 트리거와 달리 어드민에 위임하지 않는다 — 어드민은 X-User-Id를 실행자로 찍는데
+    // 크론에는 어드민 신원이 없다. 그래서 WfStepExecutor를 직접 부르고, 실행자는 SYSTEM이다.
+
+    private val runSummary = WfRunSummary(
+        ymd = LocalDate.of(2026, 8, 15),
+        executedSteps = listOf("S010", "S030"),
+        gateSkippedSteps = listOf("S040"),
+        notScheduledSteps = emptyList(),
+    )
+
+    @Test
+    fun `마감 트리거는 워크플로우를 돌리고 요약을 돌려준다`() {
+        `when`(stepExecutor.runDaily(any(LocalDate::class.java) ?: LocalDate.EPOCH, anyString()))
+            .thenReturn(runSummary)
+
+        mvc("secret").perform(
+            post("/api/internal/scheduler/closing").header("X-Scheduler-Token", "secret")
+        )
+            .andExpect(status().isOk)
+            // 어느 단계가 게이트에서 스킵됐는지가 Actions 잡 요약에서 읽히는 유일한 관측 수단이다.
+            // executedSteps만 남고 gateSkippedSteps가 빠지면 "S030이 왜 안 돌았나"에 답할 길이 없다.
+            .andExpect(jsonPath("$.executedSteps[1]").value("S030"))
+            .andExpect(jsonPath("$.gateSkippedSteps[0]").value("S040"))
+    }
+
+    @Test
+    fun `토큰이 다르면 401이고 워크플로우를 안 돌린다`() {
+        mvc("secret").perform(
+            post("/api/internal/scheduler/closing").header("X-Scheduler-Token", "wrong")
+        )
+            .andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.error").exists())
+
+        verifyNoClosingRun()
+    }
+
+    // 다른 트리거와 같은 authorize를 **재사용**하는지 본다. 마감은 실제 금융 데이터를 쓰는
+    // 작업이라, 이 경로 하나만 fail-open이어도 나머지 테스트가 전부 통과해버린다.
+    @Test
+    fun `설정 토큰이 비면 503으로 닫는다`() {
+        mvc("").perform(
+            post("/api/internal/scheduler/closing").header("X-Scheduler-Token", "anything")
+        )
+            .andExpect(status().isServiceUnavailable)
+            .andExpect(jsonPath("$.error").exists())
+
+        verifyNoClosingRun()
+    }
+
+    // 크론은 UTC 15:00에 뛴다 — KST로는 다음 날 00:00이다. LocalDate.now()를 쓰면
+    // 컨테이너가 UTC라 정확히 그 하루를 잃고, 마감이 매번 어제 일자로 돈다.
+    // 크론 표현식 자체는 .github/ 아래 YAML이라 값으로 검증할 방법이 없어 여기서 못 박는다.
+    @Test
+    fun `UTC 15시는 KST로 다음 날이다`() {
+        assertThat(SchedulerTriggerController.closingDate(Instant.parse("2026-08-15T15:00:00Z")))
+            .isEqualTo(LocalDate.of(2026, 8, 16))
+
+        // 경계 바로 아래. 이게 없으면 "무조건 하루 더하기"도 위 단언을 통과한다.
+        assertThat(SchedulerTriggerController.closingDate(Instant.parse("2026-08-15T14:59:59Z")))
+            .isEqualTo(LocalDate.of(2026, 8, 15))
+    }
+
+    // 위 테스트는 순수 함수만 본다 — 엔드포인트가 그 함수를 **쓰는지**는 아직 아무도 안 봤다.
+    // runClosing을 closingDate(Instant.now()) 대신 LocalDate.now()로 바꿔도 위 네 테스트는
+    // 전부 통과한다(실제로 변이를 넣어 확인했다). 운영 컨테이너는 UTC라 거기서만 하루가 밀린다.
+    //
+    // **기본 시간대를 옮기지 않으면 이 테스트도 그 변이를 못 잡는다** — 개발 머신이 KST라
+    // LocalDate.now()가 마침 정답을 낸다. 그래서 오늘 날짜가 KST와 반드시 다른 지역으로
+    // 옮겨 두고 부른다. 되돌리기는 finally에 있다(기본 시간대는 JVM 전역이다).
+    @Test
+    fun `마감 트리거는 KST 오늘로 워크플로우를 돌린다`() {
+        `when`(stepExecutor.runDaily(any(LocalDate::class.java) ?: LocalDate.EPOCH, anyString()))
+            .thenReturn(runSummary)
+
+        val kstToday = SchedulerTriggerController.closingDate(Instant.now())
+        val original = TimeZone.getDefault()
+        TimeZone.setDefault(TimeZone.getTimeZone(zoneWhereTodayDiffersFromKst()))
+        try {
+            // 옮긴 시간대가 정말 다른 날짜인지 먼저 확인한다. 이 가드가 없으면 위 헬퍼가
+            // 틀렸을 때 테스트가 아무것도 안 보면서 초록으로 남는다.
+            assertThat(LocalDate.now()).isNotEqualTo(kstToday)
+
+            mvc("secret").perform(
+                post("/api/internal/scheduler/closing").header("X-Scheduler-Token", "secret")
+            ).andExpect(status().isOk)
+        } finally {
+            TimeZone.setDefault(original)
+        }
+
+        val ymd = ArgumentCaptor.forClass(LocalDate::class.java)
+        verify(stepExecutor).runDaily(ymd.capture() ?: LocalDate.EPOCH, anyString())
+        assertThat(ymd.value).isEqualTo(kstToday)
+    }
+
+    /**
+     * 지금 이 순간 KST와 날짜가 다른 지역. 하루 중 어느 시각에 돌려도 성립해야 한다.
+     *
+     * Niue(UTC-11)는 KST보다 20시간 늦어 KST 20시 전에는 항상 어제다.
+     * Kiritimati(UTC+14)는 5시간 빨라 KST 19시 이후에는 항상 내일이다.
+     * 20시를 경계로 갈라 쓰면 두 구간이 하루를 빈틈없이 덮는다.
+     */
+    private fun zoneWhereTodayDiffersFromKst(): ZoneId =
+        if (Instant.now().atZone(ZoneId.of("Asia/Seoul")).hour >= 20) {
+            ZoneId.of("Pacific/Kiritimati")
+        } else {
+            ZoneId.of("Pacific/Niue")
+        }
+
+    private fun verifyNoClosingRun() {
+        verify(stepExecutor, never()).runDaily(
+            any(LocalDate::class.java) ?: LocalDate.EPOCH,
+            anyString(),
         )
     }
 }

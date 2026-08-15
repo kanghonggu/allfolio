@@ -10,6 +10,8 @@ import com.allfolio.market.index.IndexSlot
 import com.allfolio.market.index.OverseasIndexCollectSummary
 import com.allfolio.market.index.OverseasSchedule
 import com.allfolio.market.rate.RateCollectSummary
+import com.allfolio.workflow.application.WfRunSummary
+import com.allfolio.workflow.application.WfStepExecutor
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.format.annotation.DateTimeFormat
@@ -23,7 +25,9 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 
 /**
  * 외부 스케줄러(GitHub Actions) 전용 트리거 (AF-103).
@@ -44,6 +48,7 @@ class SchedulerTriggerController(
     private val fxAdmin: FxRateAdminController,
     private val indexAdmin: MarketIndexAdminController,
     private val rateAdmin: MarketRateAdminController,
+    private val stepExecutor: WfStepExecutor,
     @Value("\${scheduler.trigger-token:}") private val configuredToken: String,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -185,6 +190,30 @@ class SchedulerTriggerController(
     }
 
     /**
+     * POST /api/internal/scheduler/closing — 일별 마감 워크플로우 트리거
+     *
+     * **어드민 컨트롤러에 위임하지 않는다 — 이 파일의 다른 트리거와 다른 유일한 자리다.**
+     * [com.allfolio.api.admin.ClosingAdminController.runDay]는 `X-User-Id`를 받아 그 값을
+     * 실행자로 `wf_job_log.executor`에 찍는다. 크론에는 어드민 신원이 없고, 실존 인물의 id를
+     * 자동 실행에 찍으면 "이 마감을 누가 돌렸나"에 거짓으로 답하게 된다. 위임해서 얻는 것은
+     * 409 매핑 한 줄뿐인데 그건 GlobalExceptionHandler가 이미 해 준다.
+     * 그래서 [WfStepExecutor.runDaily]를 직접 부른다 — 기본 실행자가 SYSTEM이다.
+     *
+     * **날짜를 노출하지 않는다.** 다른 트리거와 같은 이유다 — 컨테이너가 UTC라 클라이언트가
+     * 날짜를 정하면 하루씩 밀린다. [closingDate]가 KST로 옮겨 정한다.
+     *
+     * 응답으로 WfRunSummary를 그대로 싣는다. 어느 단계가 게이트에서 스킵됐는지가
+     * Actions 잡 요약에서 읽히는 것이 이 엔드포인트의 관측 수단 전부다.
+     */
+    @PostMapping("/closing")
+    fun runClosing(
+        @RequestHeader(name = TOKEN_HEADER, required = false) token: String?,
+    ): WfRunSummary {
+        authorize(token)
+        return stepExecutor.runDaily(closingDate(Instant.now()))
+    }
+
+    /**
      * 설정 토큰이 비어 있으면 503으로 닫는다 — 이 메서드에서 가장 중요한 분기다.
      * 빈 값을 "토큰 불필요"로 해석하면 SCHEDULER_TOKEN을 빠뜨린 순간 엔드포인트가 완전 공개된다.
      * 설정 누락의 기본값은 "열림"이 아니라 "닫힘"이어야 한다.
@@ -207,5 +236,17 @@ class SchedulerTriggerController(
 
     companion object {
         private const val TOKEN_HEADER = "X-Scheduler-Token"
+
+        private val KST: ZoneId = ZoneId.of("Asia/Seoul")
+
+        /**
+         * 마감 일자 — UTC 순간을 KST 날짜로 옮긴다.
+         *
+         * 크론이 UTC 15:00에 뛰면 KST로는 **다음 날** 00:00이다. 그 하루가 이 함수의 존재
+         * 이유이고, `LocalDate.now()`를 쓰면 정확히 그 하루를 잃는다.
+         * 함수로 뽑은 이유는 테스트가 시각을 고정할 수 있게 하려는 것이다 —
+         * 크론 표현식 자체는 `.github/` 아래 YAML이라 값으로 검증할 방법이 없다.
+         */
+        internal fun closingDate(now: Instant): LocalDate = now.atZone(KST).toLocalDate()
     }
 }
