@@ -403,7 +403,11 @@ scheduler:
 # 되면 그때 켜면 된다 — 그 전까지는 켜 봐야 안 뜨거나 외부 트리거와 겹쳐 돌 뿐이다.
 closing:
   scheduler:
-    enabled: false   # GitHub Actions 크론이 대신한다 — .github/workflows/closing.yml
+    # 기본 off — GitHub Actions 크론이 대신한다(.github/workflows/closing.yml).
+    # 무료 Render는 15분 유휴 시 잠들어 자정 @Scheduled가 안 뜬다(6일 중 4일 미실행 실측).
+    # 리터럴 false가 아니라 env 오버라이드인 이유: 유료 플랜으로 올라가면 인프로세스가 더
+    # 단순한데, 그때 코드 수정 + 재배포 없이 대시보드에서 뒤집을 수 있어야 한다.
+    enabled: ${CLOSING_SCHEDULER_ENABLED:false}
 
 # FX 환율 자동 수집
 fx:
