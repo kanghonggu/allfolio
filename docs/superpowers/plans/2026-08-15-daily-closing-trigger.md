@@ -14,7 +14,11 @@
 
 ## 사전 필독
 
-**1. 진단은 끝났다. 액션·시드·게이트를 고치지 말 것.** `wf_step`/`wf_sub_step` 시드에 `S030-1 'NAV 스냅샷(전 사용자)'`이 `action_ref = 'NAV_SNAPSHOT'`으로 등록돼 있고, `NavSnapshotAction` 빈도 있다. 안 도는 이유는 트리거 하나뿐이다.
+**1. 결함이 둘이다. 코드로 고치는 건 하나뿐이다.**
+- **A: 운영 DB에 `wf_` 테이블이 없다.** `2026-07-31-closing-workflow.sql`이 운영에 적용된 적이 없다(`ddl-auto: none`, Flyway 없음). `runDaily`가 `judgeFor` 첫 줄에서 `relation "wf_holiday" does not exist`로 죽는다. **코드 변경 아님 — 운영자가 SQL을 돌려야 한다**(Task 5).
+- **B: 무료 인스턴스가 자정에 잠들어 `@Scheduled`가 안 뜬다.** 6일 중 4일 미실행 확인. 이게 이 계획이 코드로 고치는 부분이다.
+
+**액션·시드 정의는 고치지 말 것.** `S030-1 'NAV 스냅샷(전 사용자)'`이 `action_ref = 'NAV_SNAPSHOT'`으로 시드에 있고 `NavSnapshotAction` 빈도 있다 — 다만 그 시드가 **운영 DB에 들어간 적이 없을 뿐**이다.
 
 **2. 컨테이너는 UTC다.** Dockerfile·application.yml·render.yaml 어디에도 TZ 설정이 없다. 이 저장소에는 "Render 컨테이너는 UTC라…" 경고 주석이 **세 군데** 따로 적혀 있다. 날짜를 다루는 모든 줄에서 이걸 기억할 것.
 
@@ -504,9 +508,22 @@ git push -u origin fix/daily-closing-trigger
 ```
 
 PR 본문에 반드시 적는다:
+- **⚠️ 머지 전 마이그레이션 필수**: `docs/superpowers/migrations/2026-07-31-closing-workflow.sql`을 운영 Neon에 적용할 것. **이게 없으면 크론이 매일 500으로 죽는다** — `wf_` 테이블이 운영에 없어서 `runDaily`가 첫 쿼리에서 터진다. 멱등이라 이미 있어도 안전하다
+- 적용 확인: `SELECT count(*) FROM wf_step;` → **6**
 - **`SCHEDULER_TOKEN`과 `BACKEND_URL` 시크릿은 이미 있다**(기존 수집 워크플로가 쓴다). 새로 만들 것 없음
-- **마이그레이션 없음**
 - 머지 후 **첫 크론은 다음 KST 자정**이다. 즉시 확인하려면 Actions에서 `workflow_dispatch`로 수동 실행
+
+- [ ] **Step 2.5: 마이그레이션 적용 (운영자)**
+
+`docs/superpowers/migrations/2026-07-31-closing-workflow.sql`을 Neon에서 실행한다. 확인:
+
+```sql
+SELECT (SELECT count(*) FROM wf_step) AS steps,
+       (SELECT count(*) FROM wf_sub_step) AS sub_steps,
+       (SELECT count(*) FROM wf_holiday) AS holidays;
+```
+
+Expected: `6 / 6 / 13`. **이 단계 없이 Step 3으로 가면 500만 본다.**
 
 - [ ] **Step 3: 배포 후 — 수동 실행 한 번**
 

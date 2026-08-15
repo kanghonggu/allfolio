@@ -24,7 +24,26 @@ ClosingScheduler  @Scheduled(cron "0 0 0 * * *", KST)
                       └→ PerformanceSnapshotService.record()  → performance_daily UPSERT
 ```
 
-**`wf_job_log`가 비어 있다 — 워크플로우가 한 번도 돈 적이 없다.** 액션·게이트·시드는 전부 무죄다.
+**결함이 둘이다. 둘 다 고쳐야 한다.**
+
+### 결함 A: 운영 DB에 `wf_` 테이블이 없다
+
+운영 로그(2026-08-14):
+
+```
+SQLState: 42P01  ERROR: relation "wf_holiday" does not exist
+[Closing] runDaily 실패 ymd=2026-08-15   at WfStepExecutor.judgeFor(:141) → doRun(:61)
+```
+
+`judgeFor`는 `doRun`의 **첫 줄**이라 `stepRepo` 조회까지 가지도 못한다. 즉 "NAV 단계가 시드에 등록됐나"는 질문 자체가 성립하지 않는다 — `wf_step`이 애초에 없다.
+
+`docs/superpowers/migrations/2026-07-31-closing-workflow.sql` 머리말이 **"운영 Neon 1회성 (백엔드 배포 '전' 실행)"**인데 실행된 적이 없고 백엔드만 배포됐다. `ddl-auto: none`이고 Flyway·Liquibase도 없으니 **아무것도 대신 만들어 주지 않는다.** 실패는 `ClosingScheduler`의 `runCatching`이 삼켜 자정 로그로만 남았다.
+
+> **처음 이 문서는 "`wf_job_log`가 비어 있으니 워크플로우가 한 번도 안 돌았다 = 트리거 문제"라고 적었다. 그 추론이 틀렸다.** 없는 테이블을 조회하면 0행이 아니라 오류가 난다 — 둘을 안 가른 것이 원인이다. 진단 질문은 "행이 몇 개냐"가 아니라 "테이블이 있느냐"였어야 했다.
+
+### 결함 B: 무료 인스턴스가 자정에 잠들어 있다 (독립)
+
+15:00Z·16:30Z 로그 확인 결과 **6일 중 4일은 두 트리거가 아예 안 떴다.** 스키마만 고치면 커버리지가 1/3에 그친다.
 
 ### 원인: Render 무료 플랜에서 `@Scheduled`는 성립하지 않는다
 
@@ -38,7 +57,13 @@ ClosingScheduler  @Scheduled(cron "0 0 0 * * *", KST)
 
 데이터도 이 설명과 맞는다. `PerformanceSnapshotService.record()`는 **sync 직후에도** 불린다(`SyncAccountUseCase`, `AccountController`). 그래서 사용자가 앱을 연 날만 행이 생긴다 — 15일에 4행이 정확히 그 모양이다.
 
-## 2. 트리거 — 외부에서 깨운다
+## 2. 선행 조건 — 마이그레이션을 먼저 돌린다
+
+`docs/superpowers/migrations/2026-07-31-closing-workflow.sql`을 운영 Neon에 적용한다. **이게 안 되면 아래 크론은 매일 500으로 죽는다.**
+
+**멱등이라 상태를 확인할 필요 없이 그냥 돌리면 된다** — `CREATE TABLE IF NOT EXISTS` 다섯, `ON CONFLICT DO NOTHING` 셋. 이미 있으면 아무 일도 안 일어난다.
+
+## 3. 트리거 — 외부에서 깨운다
 
 ### 엔드포인트
 
@@ -75,7 +100,7 @@ cron: "30 16 * * *"   # UTC 16:30 = KST 01:30 — 게이트 스킵 재시도
 
 콜드 스타트가 ~85초다(실측, 무료 0.1 vCPU). `collect-rate.yml`의 재시도 루프와 `timeout-minutes`를 그대로 따른다 — 그 파일이 "재시도 예산(최악 9분)보다 커야 한다"고 근거를 적어 뒀으므로 숫자를 새로 정하지 말고 복제한다. `concurrency` 그룹으로 겹침을 막되 `cancel-in-progress: false` — 진행 중인 마감을 죽이면 절반만 실행된 날이 남는다.
 
-## 3. 날짜 — `record()`가 날짜를 받는다
+## 4. 날짜 — `record()`가 날짜를 받는다
 
 `PerformanceSnapshotService.record()`가 `LocalDate.now()`를 **인자 없이** 쓴다. 컨테이너는 UTC다(Dockerfile·application.yml·render.yaml 어디에도 TZ 설정이 없다). 자정 KST는 UTC로 전날 15:00이므로:
 
@@ -103,13 +128,13 @@ cron: "30 16 * * *"   # UTC 16:30 = KST 01:30 — 게이트 스킵 재시도
 
 **기본값을 두지 않는다.** `date: LocalDate = LocalDate.now()` 같은 기본 인자를 두면 호출자가 빠뜨렸을 때 지금과 똑같이 조용히 UTC로 돌아가고, 증상은 "하루 밀림"이라 눈에 안 띈다. 넷 다 명시적으로 넘긴다.
 
-## 4. `ClosingScheduler` — 남기되 끈다
+## 5. `ClosingScheduler` — 남기되 끈다
 
 `@ConditionalOnProperty(name = ["closing.scheduler.enabled"], havingValue = "true")`를 걸고 기본 off.
 
 `FxRateScheduler`가 정확히 이 모양이다(`fx.scheduler.enabled`, 운영에서 `FX_SCHEDULER_ENABLED=true`). 코드를 지우지 않는 이유는 유료 플랜으로 올라가면 인프로세스가 더 단순하기 때문이고, 켜 두지 않는 이유는 인스턴스가 우연히 깨어 있을 때 외부 트리거와 겹쳐 도는 게 헷갈리기 때문이다. Redis 락(`WfLockPort`)이 있어 위험하지는 않다 — 순수하게 관측 가능성 문제다.
 
-## 5. 첫 실행에서 벌어질 일
+## 6. 첫 실행에서 벌어질 일
 
 여섯 단계가 **처음으로** 깨어난다. 예상되는 모양을 미리 적어 두어야 Actions 로그를 보고 놀라지 않는다.
 
@@ -119,15 +144,16 @@ cron: "30 16 * * *"   # UTC 16:30 = KST 01:30 — 게이트 스킵 재시도
 - **`S050` 수동 마감 확인** — `auto_manual = 'M'`이라 매일 PENDING으로 남는다. **설계 의도이지 실패가 아니다**
 - **`S060` 월마감 리포트** — `term_gb = M`, `date_term = -1`, `date_gb = 'B'` → 말일 영업일에만
 
-## 6. 검증
+## 7. 검증
 
 - **토큰 인증이 실패-닫힘인가** — **설정 토큰이 비면 503**(엔드포인트를 닫는다), **제시 토큰이 다르면 401**이다. 둘은 다른 사고를 가리키므로 섞으면 안 된다: 503은 서버에 `SCHEDULER_TOKEN`을 안 넣은 것이고, 401은 대시보드와 GitHub 시크릿 사이를 손으로 옮기다 개행이 붙은 것이다(수집 트리거가 이미 겪은 함정)
 - **`record()`가 넘겨받은 날짜를 쓰는가** — 변이: `LocalDate.now()`로 되돌리면 실패해야 한다
 - **`NavSnapshotAction`이 `ctx.ymd`를 흘려보내는가** — 변이: 상수 날짜로 바꾸면 실패해야 한다
 - **엔드포인트가 KST 오늘을 구하는가** — 크론 표현식 자체는 `.github/` 아래 YAML이라 클래스패스 밖이고 문자열 단언은 의미가 없다. 대신 **검증할 값이 있는 쪽**을 테스트한다: 트리거가 `runDaily`에 넘기는 날짜가 UTC 기준 오늘이 아니라 KST 기준 오늘인지. UTC 15:00~23:59 구간(= KST 익일)에서 갈리므로 그 시각을 고정해 확인한다. UTC↔KST 환산 근거는 워크플로 주석에 남긴다
+- **마이그레이션 적용 확인** — `SELECT count(*) FROM wf_step;`이 6을 돌려주는가. 0이나 오류면 크론은 무조건 실패한다
 - **배포 후**: 크론 한 번 → `wf_job_log`에 `S010~S040` 행 + `performance_daily`에 그날 행 + `nav_currency_daily`에 통화 행(AF-106). **이틀 뒤 수익률 화면의 분해 블록이 뜨는지**
 
-## 7. 범위 밖
+## 8. 범위 밖
 
 - **`S050` 자동화하지 않는다.** 운영자 확인 단계이고, 매일 PENDING으로 남는 것이 설계다
 - **`DailyNavScheduler`의 사용자 집합 불일치를 안 건드린다.** `ClosingUserSource`는 `ua_accounts` 기준인데 `DailyNavScheduler`는 `ua_assets`를 직접 group by 한다 — 계좌는 있고 자산이 없는 사용자는 NAV 행이 안 생긴다. 지금 증상의 원인이 아니므로 이번 범위에 넣지 않는다
