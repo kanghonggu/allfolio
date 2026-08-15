@@ -397,6 +397,14 @@ okx:
 scheduler:
   trigger-token: ${SCHEDULER_TOKEN:}
 
+# 마감 워크플로우 인프로세스 자정 스케줄러 — 기본 off
+# Render 무료 웹 서비스는 15분 유휴 시 잠들어 자정에는 인스턴스가 자고 있고, 잠든 인스턴스는
+# @Scheduled를 못 뛴다(운영 로그상 6일 중 4일 미실행). 유료 플랜으로 올려 인스턴스가 상주하게
+# 되면 그때 켜면 된다 — 그 전까지는 켜 봐야 안 뜨거나 외부 트리거와 겹쳐 돌 뿐이다.
+closing:
+  scheduler:
+    enabled: false   # GitHub Actions 크론이 대신한다 — .github/workflows/closing.yml
+
 # FX 환율 자동 수집
 fx:
   scheduler:
