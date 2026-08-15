@@ -9,7 +9,13 @@ import java.time.LocalDate
 import java.util.UUID
 
 /**
- * Sync 완료 직후 호출 — NAV 스냅샷을 performance_daily에 기록한다.
+ * NAV 스냅샷을 performance_daily에 기록한다.
+ *
+ * 호출자는 넷이고, sync 완료는 그중 하나다:
+ * - 마감 워크플로우 S030 (NavSnapshotAction → DailyNavScheduler) — 워크플로우가 정한 일자
+ * - 계좌 sync 성공 직후 (SyncAccountUseCase)
+ * - 수동 자산 등록 직후 (AccountController.createAsset)
+ * - CSV 임포트 직후 (AccountController.importCsv)
  */
 @Service
 class PerformanceSnapshotService(private val jdbc: JdbcTemplate) {
@@ -17,7 +23,7 @@ class PerformanceSnapshotService(private val jdbc: JdbcTemplate) {
     private val log = LoggerFactory.getLogger(javaClass)
 
     /**
-     * 오늘의 NAV 스냅샷을 performance_daily에 기록한다.
+     * NAV 스냅샷을 performance_daily에 기록한다.
      *
      * **[date]에 기본값을 두지 않는다.** `LocalDate.now()`를 기본 인자로 두면 호출자가
      * 빠뜨렸을 때 조용히 UTC 날짜로 돌아가는데, 컨테이너가 UTC라 자정 KST 실행이 전날에
