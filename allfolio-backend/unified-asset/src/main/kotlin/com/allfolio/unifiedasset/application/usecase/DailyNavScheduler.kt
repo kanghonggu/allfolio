@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 import java.math.BigDecimal
+import java.time.LocalDate
 import java.util.UUID
 
 /**
@@ -27,8 +28,12 @@ class DailyNavScheduler(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    /** @return 스냅샷 기록 사용자 수 */
-    fun recordDailySnapshots(): Int {
+    /**
+     * @param ymd 마감 워크플로우가 정한 일자. **`LocalDate.now()`로 대체하지 말 것** —
+     *            자정 KST 실행은 UTC로 전날이라 스냅샷이 하루 밀린다.
+     * @return 스냅샷 기록 사용자 수
+     */
+    fun recordDailySnapshots(ymd: LocalDate): Int {
         // 통화별로 합산한 뒤 KRW로 환산해야 통화가 섞인 사용자의 NAV가 올바르다.
         val perCurrency = jdbc.query(
             "SELECT user_id, currency, SUM(current_value) AS v FROM ua_assets GROUP BY user_id, currency"
@@ -53,7 +58,7 @@ class DailyNavScheduler(
 
         log.info("[DailyNavScheduler] recording snapshots for {} users", navByUser.size)
         navByUser.forEach { (userId, nav) ->
-            runCatching { snapshotService.record(userId, nav) }
+            runCatching { snapshotService.record(userId, nav, ymd) }
                 .onFailure { e -> log.error("[DailyNavScheduler] failed userId={}", userId, e) }
         }
         log.info("[DailyNavScheduler] done")

@@ -96,8 +96,10 @@ class NavSnapshotAction(
     private val dailyNavScheduler: DailyNavScheduler,
 ) : WfAction {
     override val ref = "NAV_SNAPSHOT"
+    // ctx.ymd를 흘려보낸다 — 여기서 LocalDate.now()를 쓰면 워크플로우가 정한 날과
+    // 데이터가 갈라진다(컨테이너 UTC, 자정 KST = UTC 전날 15:00)
     override fun execute(ctx: WfContext): WfActionResult =
-        WfActionResult("snapshots=${dailyNavScheduler.recordDailySnapshots()}")
+        WfActionResult("snapshots=${dailyNavScheduler.recordDailySnapshots(ctx.ymd)}")
 }
 
 /** S060 — 월간 리포트 아카이브 생성(전 사용자 × 전 유형, 실행일이 속한 달). */
