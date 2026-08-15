@@ -13,6 +13,23 @@ data class NavPoint(val date: LocalDate, val nav: BigDecimal)
 /** amountKrw: 입금 양수, 출금 음수 */
 data class Flow(val date: LocalDate, val amountKrw: BigDecimal)
 
+/**
+ * 통화 분해용 관측 한 건.
+ *
+ * 두 계열을 별도 리스트로 받으면 어긋날 수 있어 한 타입에 묶는다.
+ *
+ * @param nav          그날의 원화 평가액 — `performance_daily.nav` 그대로. 재계산하지 말 것
+ * @param navAtPriorFx 그날 보유를 **전일 환율**로 평가한 값. 첫 관측일은 null(직전 구간이 없다).
+ *                     실제 산출식은 `nav + Σ_c v_c·(r_c(전일) − r_c(당일))` — 권위 있는 nav에
+ *                     환율 차이만 얹는다. `Σ v_c·r_c(전일)`로 직접 구하면 toKrw의 원 단위
+ *                     반올림 때문에 환율이 안 움직인 날에도 환율 기여가 0이 아니게 된다.
+ */
+data class NavFxPoint(val date: LocalDate, val nav: BigDecimal, val navAtPriorFx: BigDecimal?)
+
+/** 기간 수익의 분해 — ratio(0~1 스케일). 두 다리 모두 음수일 수 있고 1을 넘을 수도 있다.
+ *  `(1+asset)(1+fx)−1 == TWR` */
+data class Attribution(val assetContribution: BigDecimal, val fxContribution: BigDecimal)
+
 data class PeriodReturns(
     val twr: BigDecimal?,
     val mwr: BigDecimal?,
@@ -81,20 +98,121 @@ object ReturnsCalculator {
             ?.setScale(2, RoundingMode.HALF_UP)
     }
 
-    /** 구간별 r_i = (NAV_i − NAV_{i−1} − 순플로우_i) / (NAV_{i−1} + 입금_i) 체인링킹 */
-    private fun twr(series: List<NavPoint>, flows: List<Flow>): BigDecimal {
-        var product = BigDecimal.ONE
-        for (i in 1 until series.size) {
-            val prev = series[i - 1]
-            val cur = series[i]
-            val window = flows.filter { it.date > prev.date && it.date <= cur.date }
+    /**
+     * 자산 다리가 −100%에 붙으면 환율 다리가 발산한다.
+     *
+     * 크기를 `1E-6`으로 잡은 이유: NAV는 원 단위 정수라 `1+r_asset = (frozen − outflow)/denominator`가
+     * 가질 수 있는 0 아닌 최소값이 `1/denominator`다. 10억 원 기저에서 그 값이 **정확히 `1E-9`**이라
+     * 예전 임계값은 원화 정수 격자 위에 그대로 앉아 있었고, 그 한 칸이 환율 다리를 +1e8% 로 튀게 했다.
+     * `1E-6`은 그 격자에서 세 자리(1000조 원 기저까지) 여유를 둔다. 반대로 이 임계값이 걸러내는
+     * 구간 — 전일 기저의 100만분의 1만 남은 장부 — 은 사실상 전액 소멸이라 분해 자체가 해석 불가다.
+     */
+    private val ATTRIBUTION_EPSILON = BigDecimal("1E-6")
+
+    /**
+     * 기간 수익률을 자산 기여와 환율 기여로 쪼갠다 (AF-106).
+     *
+     * 구간마다 환율을 전일로 얼린 평행 수익률을 만들고, 환율 다리는 나머지가 아니라
+     * `(1+r)/(1+r_asset) − 1`로 **명시**한다. 나머지로 두면 교차항이 자산 쪽에 조용히
+     * 흡수된다. 이 정의 덕분에 구간마다 `(1+r) = (1+r_asset)(1+r_fx)`가 정의상 성립하고,
+     * 곱을 재배열하면 `(1+자산기여)(1+환율기여) = 1 + TWR`이 된다.
+     *
+     * [twr]과 **같은 [segments] 호출**을 쓴다 — 구간 집합이 갈라지면 위 항등식이 깨진다.
+     *
+     * @return 분해 불가면 null — 관측 2건 미만 / 유효 구간 없음 / [NavFxPoint.navAtPriorFx] 결측 /
+     *         자산 다리가 −100%에 근접하거나 그 아래(음수 [NavFxPoint.navAtPriorFx] 포함).
+     *
+     *         null이 **아닌** 경계 두 가지:
+     *         - 건너뛴 구간(분모 ≤ 0)에 걸린 관측의 [NavFxPoint.navAtPriorFx] 결측은 null을 유발하지 않는다.
+     *           그 구간은 아예 읽히지 않는다.
+     *         - 살아남은 첫 관측의 [NavFxPoint.navAtPriorFx]는 절대 읽지 않는다(구간은 i−1 → i이고
+     *           frozen은 i에서만 온다). `from..to` 필터가 안전한 이유가 이것이다 — 창을 좁혀
+     *           첫 관측이 바뀌어도 그 관측의 결측이 결과를 바꾸지 않는다.
+     */
+    fun attribute(
+        series: List<NavFxPoint>,
+        flows: List<Flow>,
+        from: LocalDate,
+        to: LocalDate,
+    ): Attribution? {
+        val s = series.filter { it.date in from..to }.sortedBy { it.date }
+        if (s.size < 2) return null
+
+        val navs = s.map { it.nav }
+        val segs = segments(s.map { it.date }, navs, flows)
+        if (segs.isEmpty()) return null
+
+        var assetProduct = BigDecimal.ONE
+        var fxProduct = BigDecimal.ONE
+
+        for (seg in segs) {
+            // 통화별 행이 그날 안 써졌다 — 억지로 이으면 환율 차이가 0으로 잡혀
+            // 자산 쪽에 흡수된다. 분해를 포기하는 편이 정직하다.
+            val frozen = s[seg.i].navAtPriorFx ?: return null
+            val prevNav = navs[seg.i - 1]
+
+            val r = (navs[seg.i] - prevNav - seg.net).divide(seg.denominator, MC)
+            val rAsset = (frozen - prevNav - seg.net).divide(seg.denominator, MC)
+
+            val onePlusAsset = BigDecimal.ONE + rAsset
+            // 부호 있는 비교다. `1+r_asset = (frozen − outflow)/denominator`이고 분모는 항상 > 0,
+            // 출금은 ≤ 0이므로 이 값이 음수인 경우는 navAtPriorFx < 0뿐 — 정상 데이터가 아니라
+            // 상류의 부호 오류다. abs()로 재면 그게 그대로 통과해 "환율 −120%" 같은 값이 나온다.
+            if (onePlusAsset <= ATTRIBUTION_EPSILON) return null
+            val onePlusFx = (BigDecimal.ONE + r).divide(onePlusAsset, MC)
+
+            assetProduct = assetProduct.multiply(onePlusAsset, MC)
+            fxProduct = fxProduct.multiply(onePlusFx, MC)
+        }
+
+        return Attribution(assetProduct - BigDecimal.ONE, fxProduct - BigDecimal.ONE)
+    }
+
+    /**
+     * 구간 하나 — 관측일 i−1 → i.
+     *
+     * @param i          현재 관측의 인덱스 (직전은 i−1)
+     * @param net        구간 순플로우 (입금 양수, 출금 음수)
+     * @param denominator NAV_{i−1} + 입금. **항상 > 0** — 0 이하 구간은 [segments]가 이미 걸렀다
+     */
+    private data class Segment(val i: Int, val net: BigDecimal, val denominator: BigDecimal)
+
+    /**
+     * 구간 분할·분모 계산·건너뜀 규약을 여기 한 곳에만 둔다.
+     *
+     * **[twr]과 [attribute]가 반드시 이 함수를 같이 써야 한다.** 두 계열이 서로 다른 구간
+     * 집합을 돌면 `(1+자산기여)(1+환율기여) = 1+TWR` 항등식이 깨지는데, 증상이 "분해 합이
+     * TWR과 미묘하게 다름"이라 눈으로 못 잡는다. 규약을 복제하면 어느 날 한쪽만 고쳐진다.
+     *
+     * 분모 ≤ 0인 구간(전액 출금 후 재개 등)은 수익률 판단이 불가능하므로 통째로 뺀다.
+     *
+     * 플로우는 `(dates.first, dates.last]`로 창을 내므로, 호출자가 미리 같은 범위로 거른 것은
+     * no-op이다 — [calculate]의 `effectiveFlows`는 netFlow·MWR용이지 TWR용이 아니다.
+     */
+    private fun segments(
+        dates: List<LocalDate>,
+        navs: List<BigDecimal>,
+        flows: List<Flow>,
+    ): List<Segment> {
+        val out = mutableListOf<Segment>()
+        for (i in 1 until dates.size) {
+            val window = flows.filter { it.date > dates[i - 1] && it.date <= dates[i] }
             val net = window.fold(BigDecimal.ZERO) { acc, f -> acc + f.amountKrw }
             val inflow = window.filter { it.amountKrw > BigDecimal.ZERO }
                 .fold(BigDecimal.ZERO) { acc, f -> acc + f.amountKrw }
-            val denominator = prev.nav + inflow
-            // 전액 출금 후 재개 등 분모≤0 구간은 수익률 판단 불가 — r=0으로 건너뜀 (v1 단순화)
+            val denominator = navs[i - 1] + inflow
             if (denominator <= BigDecimal.ZERO) continue
-            val r = (cur.nav - prev.nav - net).divide(denominator, MC)
+            out += Segment(i, net, denominator)
+        }
+        return out
+    }
+
+    /** 구간별 r_i = (NAV_i − NAV_{i−1} − 순플로우_i) / (NAV_{i−1} + 입금_i) 체인링킹 */
+    private fun twr(series: List<NavPoint>, flows: List<Flow>): BigDecimal {
+        val navs = series.map { it.nav }
+        var product = BigDecimal.ONE
+        for (s in segments(series.map { it.date }, navs, flows)) {
+            val r = (navs[s.i] - navs[s.i - 1] - s.net).divide(s.denominator, MC)
             product = product.multiply(BigDecimal.ONE + r, MC)
         }
         return product - BigDecimal.ONE

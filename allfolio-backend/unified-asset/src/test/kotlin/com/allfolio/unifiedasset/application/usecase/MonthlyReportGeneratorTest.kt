@@ -62,6 +62,13 @@ class MonthlyReportGeneratorTest {
             rows.filter { it.first in from..to }
     }
 
+    /** AF-106 분해는 월간 리포트와 무관 — 빈 시계열이라 currencyAttribution은 null */
+    private class FakeNavFxSource : NavFxHistorySource {
+        override fun navFxSeries(userId: UUID, from: LocalDate, to: LocalDate) =
+            emptyList<com.allfolio.report.domain.returns.NavFxPoint>()
+        override fun currenciesIn(userId: UUID, from: LocalDate, to: LocalDate) = emptyList<String>()
+    }
+
     private class FakeAssetRepo(private val assets: List<Asset>) : AssetRepository {
         override fun save(asset: Asset) = asset
         override fun saveAll(assets: List<Asset>) = assets
@@ -112,7 +119,7 @@ class MonthlyReportGeneratorTest {
         bmRows: List<Pair<LocalDate, BigDecimal>> = emptyList(),
     ): MonthlyReportGenerator {
         val analysis = GetReturnsAnalysisUseCase(
-            FakeNavSource(navs), FakeCashFlowRepo(), FakeUserBm(bmType), FakeBmStore(bmRows),
+            FakeNavSource(navs), FakeCashFlowRepo(), FakeUserBm(bmType), FakeBmStore(bmRows), FakeNavFxSource(),
         )
         return MonthlyReportGenerator(analysis, FakeAssetRepo(assets), FakeAccountRepo(accounts), fx)
     }

@@ -3,6 +3,7 @@ package com.allfolio.unifiedasset.api
 import com.allfolio.report.domain.returns.NavPoint
 import com.allfolio.report.domain.returns.PeriodReturns
 import com.allfolio.unifiedasset.application.usecase.BenchmarkComparison
+import com.allfolio.unifiedasset.application.usecase.CurrencyAttribution
 import com.allfolio.unifiedasset.application.usecase.DividendReportService
 import com.allfolio.unifiedasset.application.usecase.EsgReportService
 import com.allfolio.unifiedasset.application.usecase.GetReturnsAnalysisUseCase
@@ -43,15 +44,11 @@ class ReportControllerReturnsPercentTest {
                 periodReturn = BigDecimal("0.05"), excessReturn = BigDecimal("0.05"),
                 series = emptyList(),
             ),
+            currencyAttribution = null,
         )
         `when`(analysisUseCase.analyze(any() ?: userId, any() ?: from, any() ?: to)).thenReturn(ratioAnalysis)
 
-        val controller = ReportController(
-            mock(ReportService::class.java),
-            mock(DividendReportService::class.java),
-            mock(EsgReportService::class.java),
-            analysisUseCase,
-        )
+        val controller = controllerWith(analysisUseCase)
 
         val response = controller.returns(userId, from, to)
 
@@ -63,4 +60,44 @@ class ReportControllerReturnsPercentTest {
         assertEquals(0, BigDecimal("1000").compareTo(response.summary.startNav))
         assertEquals(0, BigDecimal("100").compareTo(response.summary.investmentPnl))
     }
+
+    /**
+     * AF-106 — 분해도 같은 경계에서 percent로 바뀐다.
+     * 도메인 ratio 0.10이 응답에서 0.10으로 남으면 화면엔 "0.1%"로 찍힌다 (AF-104와 같은 스케일 사고).
+     */
+    @Test
+    fun `returns 응답은 자산-환율 기여도를 percent로 변환한다`() {
+        val analysisUseCase = mock(GetReturnsAnalysisUseCase::class.java)
+        val ratioAnalysis = ReturnsAnalysis(
+            from = from, to = to, asOfDate = to,
+            summary = PeriodReturns(
+                twr = BigDecimal("0.155"), mwr = null,
+                startNav = BigDecimal("1000"), endNav = BigDecimal("1155"),
+                netFlow = BigDecimal.ZERO, investmentPnl = BigDecimal("155"),
+            ),
+            navSeries = emptyList(),
+            benchmark = null,
+            currencyAttribution = CurrencyAttribution(
+                assetContribution = BigDecimal("0.10"),
+                fxContribution = BigDecimal("-0.05"),
+                currencies = listOf("USD"),
+            ),
+        )
+        `when`(analysisUseCase.analyze(any() ?: userId, any() ?: from, any() ?: to)).thenReturn(ratioAnalysis)
+
+        val response = controllerWith(analysisUseCase).returns(userId, from, to)
+
+        val attribution = response.currencyAttribution!!
+        assertEquals(0, BigDecimal("10.00").compareTo(attribution.assetContribution))
+        assertEquals(0, BigDecimal("-5.00").compareTo(attribution.fxContribution))
+        // 통화 목록은 변환 대상이 아니다
+        assertEquals(listOf("USD"), attribution.currencies)
+    }
+
+    private fun controllerWith(analysisUseCase: GetReturnsAnalysisUseCase) = ReportController(
+        mock(ReportService::class.java),
+        mock(DividendReportService::class.java),
+        mock(EsgReportService::class.java),
+        analysisUseCase,
+    )
 }

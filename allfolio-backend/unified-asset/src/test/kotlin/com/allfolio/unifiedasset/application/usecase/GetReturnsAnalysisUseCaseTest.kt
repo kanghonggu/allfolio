@@ -1,5 +1,6 @@
 package com.allfolio.unifiedasset.application.usecase
 
+import com.allfolio.report.domain.returns.NavFxPoint
 import com.allfolio.report.domain.returns.NavPoint
 import com.allfolio.unifiedasset.application.port.BenchmarkDailyStore
 import com.allfolio.unifiedasset.application.port.CashFlowRepository
@@ -7,6 +8,7 @@ import com.allfolio.unifiedasset.application.port.UserBenchmarkLookup
 import com.allfolio.unifiedasset.domain.benchmark.BenchmarkType
 import com.allfolio.unifiedasset.domain.cashflow.CashFlow
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -47,14 +49,31 @@ class GetReturnsAnalysisUseCaseTest {
         override fun get(userId: UUID): BenchmarkType? = type
     }
 
+    /** AF-106 자산/환율 분해용 시계열 — 기본값은 빈 시계열이라 currencyAttribution은 null */
+    private class FakeNavFxSource(
+        private val points: List<NavFxPoint> = emptyList(),
+        private val currencies: List<String> = emptyList(),
+    ) : NavFxHistorySource {
+        override fun navFxSeries(userId: UUID, from: LocalDate, to: LocalDate) =
+            points.filter { it.date in from..to }
+
+        override fun currenciesIn(userId: UUID, from: LocalDate, to: LocalDate) = currencies
+    }
+
     private fun nav(day: Int, v: String) = NavPoint(LocalDate.of(2026, 6, day), BigDecimal(v))
+
+    private fun navFx(day: Int, v: String, frozen: String?) =
+        NavFxPoint(LocalDate.of(2026, 6, day), BigDecimal(v), frozen?.let { BigDecimal(it) })
 
     private fun useCase(
         navs: List<NavPoint>,
         bmType: BenchmarkType? = null,
         bmRows: List<Pair<LocalDate, BigDecimal>> = emptyList(),
+        fxPoints: List<NavFxPoint> = emptyList(),
+        currencies: List<String> = emptyList(),
     ) = GetReturnsAnalysisUseCase(
         FakeNavSource(navs), FakeCashFlowRepo(), FakeUserBenchmark(bmType), FakeBenchmarkStore(bmRows),
+        FakeNavFxSource(fxPoints, currencies),
     )
 
     @Test
@@ -126,5 +145,72 @@ class GetReturnsAnalysisUseCaseTest {
         )
         val result = useCase.analyze(userId, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30))
         assertNull(result.benchmark)
+    }
+
+    // --- AF-106 자산/환율 분해 노출 규칙 ---
+
+    private val navs = listOf(nav(1, "1000"), nav(30, "1100"))
+
+    private fun analyzeJune(useCase: GetReturnsAnalysisUseCase) =
+        useCase.analyze(userId, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30))
+
+    @Test
+    fun `분해 관측이 1건이면 외화가 있어도 노출하지 않는다`() {
+        val result = analyzeJune(
+            useCase(navs, fxPoints = listOf(navFx(1, "1000", null)), currencies = listOf("KRW", "USD")),
+        )
+        assertNull(result.currencyAttribution)
+    }
+
+    @Test
+    fun `원화만 보유하면 관측이 충분해도 노출하지 않는다`() {
+        // 이 테스트가 노출 규칙의 `&&`를 붙잡는다 — `||`로 바꾸면 여기가 깨진다
+        val result = analyzeJune(
+            useCase(
+                navs,
+                fxPoints = listOf(navFx(1, "1000", null), navFx(30, "1100", "1050")),
+                currencies = listOf("KRW"),
+            ),
+        )
+        assertNull(result.currencyAttribution)
+    }
+
+    @Test
+    fun `관측 2건 이상 + 외화 보유면 자산-환율로 분해한다`() {
+        // 1000 → 1100 (+10%), 직전 환율 고정 시 1050 (자산 +5%) → 환율 기여 1.10/1.05 − 1
+        val result = analyzeJune(
+            useCase(
+                navs,
+                fxPoints = listOf(navFx(1, "1000", null), navFx(30, "1100", "1050")),
+                currencies = listOf("USD", "KRW"),
+            ),
+        )
+
+        val attribution = result.currencyAttribution
+        assertNotNull(attribution)
+        // 도메인은 ratio(0~1) — percent 변환은 ReportController 한 곳뿐
+        assertEquals(0, BigDecimal("0.05").compareTo(attribution!!.assetContribution.setScale(2, RoundingMode.HALF_UP)))
+        assertEquals(0, BigDecimal("0.05").compareTo(attribution.fxContribution.setScale(2, RoundingMode.HALF_UP)))
+        // 외화만 남고 KRW는 걸러진다 — "원화 대비" 분해라 KRW를 세면 항상 참인 값이 된다
+        assertTrue(attribution.currencies.contains("USD"))
+        assertFalse(attribution.currencies.contains("KRW"))
+    }
+
+    @Test
+    fun `분해가 불가능하면 노출하지 않는다`() {
+        // navAtPriorFx 결측 — 억지로 이으면 환율 차이가 자산 쪽에 흡수된다
+        val result = analyzeJune(
+            useCase(
+                navs,
+                fxPoints = listOf(navFx(1, "1000", null), navFx(30, "1100", null)),
+                currencies = listOf("USD"),
+            ),
+        )
+        assertNull(result.currencyAttribution)
+    }
+
+    @Test
+    fun `분해 시계열이 없으면 노출하지 않는다`() {
+        assertNull(analyzeJune(useCase(navs)).currencyAttribution)
     }
 }

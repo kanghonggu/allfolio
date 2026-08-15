@@ -365,6 +365,49 @@ export default function ReturnsReportPage() {
               </ResponsiveContainer>
             </section>
 
+            {/* AF-106 자산/환율 기여도 분해. 워터폴 바로 앞 — 둘 다 분해이고, 이쪽이
+                설명하는 TWR 숫자에 더 가까워야 한다.
+                null이면 섹션 자체를 안 그린다 — 외화 자산이 없거나 관측이 2건 미만이거나
+                정직하게 분해할 수 없다는 뜻이고, "수집 중입니다" 안내는 외화가 없는
+                사용자에게 영원히 오지 않을 것을 기다리게 한다.
+                불변식은 합이 아니라 곱이다: (1+자산)(1+환율)−1 == TWR. 두 다리를 더한
+                값이 위 TWR과 조금 어긋나 보이는 건 정상이고(교차항), 곱이 어긋나면 버그다. */}
+            {analysis.currencyAttribution && (
+              <section className="mt-8 border border-line-card bg-surface-muted p-5">
+                <SectionHeader label="수익 기여도 — 자산 vs 환율" />
+                <dl className="space-y-2">
+                  <div className="flex items-baseline justify-between border-b border-line pb-2">
+                    <dt className="text-[13px] text-fg-2">기간 수익 (TWR)</dt>
+                    <dd>
+                      <Num className={`text-[15px] font-medium ${pctColor(analysis.summary.twr)}`}>
+                        {fmtPct(analysis.summary.twr)}
+                      </Num>
+                    </dd>
+                  </div>
+                  <div className="flex items-baseline justify-between">
+                    <dt className="text-[13px] text-fg-3">├ 자산</dt>
+                    <dd>
+                      <Num className={`text-[13px] ${pctColor(analysis.currencyAttribution.assetContribution)}`}>
+                        {fmtPct(analysis.currencyAttribution.assetContribution)}
+                      </Num>
+                    </dd>
+                  </div>
+                  <div className="flex items-baseline justify-between">
+                    <dt className="text-[13px] text-fg-3">└ 환율</dt>
+                    <dd>
+                      <Num className={`text-[13px] ${pctColor(analysis.currencyAttribution.fxContribution)}`}>
+                        {fmtPct(analysis.currencyAttribution.fxContribution)}
+                      </Num>
+                    </dd>
+                  </div>
+                </dl>
+                <p className="mt-3 border-t border-line pt-3 text-[12px] leading-relaxed text-fg-3">
+                  보유 외화: {analysis.currencyAttribution.currencies.join(' · ')}. 두 기여를 곱하면 기간
+                  수익이 됩니다 — 더하기가 아닙니다.
+                </p>
+              </section>
+            )}
+
             {/* ⑥ 워터폴 */}
             {waterfall.length > 0 && (
               <section className="mt-8">

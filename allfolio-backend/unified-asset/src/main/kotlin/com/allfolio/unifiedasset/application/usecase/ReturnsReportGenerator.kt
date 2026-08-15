@@ -20,6 +20,18 @@ interface NavHistorySource {
     fun navSeries(userId: UUID, from: LocalDate, to: LocalDate): List<com.allfolio.report.domain.returns.NavPoint>
 }
 
+/** AF-106 통화별 평가액을 얹은 NAV 시계열 — 자산/환율 기여도 분해용 */
+interface NavFxHistorySource {
+    fun navFxSeries(
+        userId: UUID,
+        from: LocalDate,
+        to: LocalDate,
+    ): List<com.allfolio.report.domain.returns.NavFxPoint>
+
+    /** 기간 중 등장한 통화 코드 (중복 제거) */
+    fun currenciesIn(userId: UUID, from: LocalDate, to: LocalDate): List<String>
+}
+
 /**
  * R-02 수익률 리포트 생성기 — #32 프레임의 첫 ReportBodyGenerator.
  * NAV(KRW)와 cash_flow(KRW 고정 환산)로 TWR/MWR·입출금 효과 분해를 계산한다.

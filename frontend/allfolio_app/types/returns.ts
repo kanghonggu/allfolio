@@ -32,6 +32,15 @@ export interface BenchmarkConfig {
   available: BenchmarkOption[]
 }
 
+/** 기간 수익의 자산/환율 분해. `(1+asset)(1+fx)−1 == TWR` — 합이 아니라 곱이다 */
+export interface CurrencyAttribution {
+  /** percent(0~100). 백엔드가 JSON 숫자로 보낸다 — string으로 선언하지 말 것 */
+  assetContribution: number
+  fxContribution: number
+  /** 비-KRW 통화, 정렬됨 */
+  currencies: string[]
+}
+
 export interface ReturnsAnalysis {
   from: string
   to: string
@@ -39,6 +48,7 @@ export interface ReturnsAnalysis {
   summary: PeriodSummary
   navSeries: NavSeriesPoint[]
   benchmark: BenchmarkComparison | null
+  currencyAttribution: CurrencyAttribution | null
 }
 
 export type FlowType = 'DEPOSIT' | 'WITHDRAWAL' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'FX_IN' | 'FX_OUT'

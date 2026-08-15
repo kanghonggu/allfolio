@@ -37,6 +37,13 @@ class ReportController(
                 periodReturn = analysis.benchmark.periodReturn?.pct(),
                 excessReturn = analysis.benchmark.excessReturn?.pct(),
             ),
+            // AF-106 — 도메인은 ratio, 응답은 percent. 여기가 유일한 변환 지점이다.
+            currencyAttribution = analysis.currencyAttribution?.let {
+                it.copy(
+                    assetContribution = it.assetContribution.pct(),
+                    fxContribution = it.fxContribution.pct(),
+                )
+            },
         )
     }
 
