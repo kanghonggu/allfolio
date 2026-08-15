@@ -7,6 +7,15 @@ import Label from '@/components/ui/Label'
 import Num from '@/components/ui/Num'
 import { EmptyState } from '@/components/ui/states'
 import { dirTone } from '@/lib/format'
+import { fixed } from '@/lib/market-format'
+
+/**
+ * 금리 값은 소수 4자리다 — 백엔드가 `2.7500`으로 실어 보내는데 `JSON.parse`가 뒤 0을 버려
+ * `2.75 / 2.769 / 2.94 / 3.796`처럼 열이 어긋난 채 나갔다. 4자리로 되돌린다.
+ * 변화폭(bp)은 백엔드가 스케일 2로 고정한다(MarketQueryService.rateViews) — 여기도 2다.
+ */
+const RATE_DIGITS = 4
+const BP_DIGITS = 2
 
 function Section({ title, rows }: { title: string; rows: RateView[] }) {
   // 빈 단은 아예 안 그린다 — 코드가 다 매핑돼 있으면 '기타'가 사라지는 게 정상이다
@@ -20,12 +29,16 @@ function Section({ title, rows }: { title: string; rows: RateView[] }) {
             {rows.map((r) => (
               <tr key={r.code} className="border-b border-line-card/50">
                 <td className="py-1.5">{rateLabel(r.code)}</td>
-                <td className="py-1.5 text-right"><Num className="text-[13px]">{r.value}</Num></td>
+                <td className="py-1.5 text-right">
+                  <Num className="text-[13px]">{fixed(r.value, RATE_DIGITS)}</Num>
+                </td>
                 <td className="py-1.5 text-right">
                   {/* **bp다(%p 아님).** 1%p = 100bp — `-0.01bp` 같은 값이 보이면 단위가 100배 틀린 것이다.
-                      null은 비교할 직전 값이 없다는 뜻이라 0이 아니라 대시로 그린다 */}
-                  {r.changeBp ? (
-                    <Num tone={dirTone(Number(r.changeBp))}>{r.changeBp}bp</Num>
+                      null은 비교할 직전 값이 없다는 뜻이라 0이 아니라 대시로 그린다.
+                      **`r.changeBp ?`로 가르면 안 된다** — number라 0이 falsy여서
+                      "안 움직였다"(0.00)가 "직전 값 없음"(대시)으로 둔갑한다 */}
+                  {r.changeBp != null ? (
+                    <Num tone={dirTone(r.changeBp)}>{fixed(r.changeBp, BP_DIGITS)}bp</Num>
                   ) : (
                     <span className="text-fg-faint">-</span>
                   )}
@@ -54,17 +67,19 @@ export default function RatePanel({ rates }: { rates: RateView[] }) {
   // 같이 안 고쳐져 화석이 되기 때문이다(AF-102 판단)
   const krBase = kr.find((r) => r.code === 'BASE_RATE')
   const usBase = us.find((r) => r.code === 'US_FFR')
-  const gap = krBase && usBase ? (Number(krBase.value) - Number(usBase.value)).toFixed(2) : null
+  const gap = krBase && usBase ? krBase.value - usBase.value : null
 
   return (
     <div className="space-y-6">
-      {gap && krBase && usBase && (
+      {gap != null && krBase && usBase && (
         <div className="border border-line-card p-4">
           <Label size="sm" tone="faint">한·미 기준금리차</Label>
           <div className="mt-1 flex flex-wrap items-baseline gap-2">
-            <Num tone={dirTone(Number(gap))} className="text-[18px]">{gap}%p</Num>
+            <Num tone={dirTone(gap)} className="text-[18px]">{fixed(gap, 2)}%p</Num>
+            {/* 여기 두 값도 표와 같은 4자리여야 한다 — 같은 화면에서 `2.75`와 `2.7500`이
+                동시에 보이면 둘이 다른 값처럼 읽힌다 */}
             <span className="text-[11px] text-fg-2">
-              한국 {krBase.value} · 미국 {usBase.value}
+              한국 {fixed(krBase.value, RATE_DIGITS)} · 미국 {fixed(usBase.value, RATE_DIGITS)}
             </span>
           </div>
           {/* 두 기준일이 다르다 — 하나만 적으면 다른 쪽 값이 그 날짜 것으로 읽힌다 */}

@@ -35,7 +35,9 @@ export default function MarketPage() {
 
   // **지수 플래그가 off면 탭 자체를 지운다.** "준비 중"을 띄우지 않는다 —
   // 없는 기능을 광고하는 셈이고, 눌러도 빈 화면이면 다음부터 아무도 안 누른다.
-  // `data`가 아직 없을 때 탭을 다 보여주면 로딩 후 사라지며 깜빡이므로, 로딩 중에도 숨긴다.
+  // 플래그는 응답에 실려 오므로 `data` 전에는 알 수 없다. 그래서 탭 막대 자체를 응답 뒤에 그린다
+  // (아래 렌더 참고) — 로딩 중에 환율/금리만 먼저 그리면 선택이 환율에 붙었다가
+  // 응답이 오면서 국내가 생겨 선택이 국내로 튄다. 사용자 눈에는 내용이 저 혼자 바뀐 것으로 보인다.
   const indicesOn = data?.flags.indicesEnabled ?? false
   const visibleTabs = TABS.filter((t) => indicesOn || (t.key !== 'domestic' && t.key !== 'overseas'))
 
@@ -57,22 +59,28 @@ export default function MarketPage() {
     <div className="border border-line-card bg-surface">
       <PageHeader className="px-5 pt-4 sm:px-7" title="시장" meta="지수 · 환율 · 금리" />
 
-      <nav className="flex gap-1 border-b border-line-card px-5 sm:px-7" aria-label="시장 탭">
-        {visibleTabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => selectTab(t.key)}
-            aria-current={tab === t.key ? 'page' : undefined}
-            className={cx(
-              'px-3 py-2 font-mono text-[11px] tracking-label transition-colors',
-              tab === t.key ? 'border-b-2 border-ink text-ink' : 'text-fg-faint hover:text-ink',
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
+      {/* **응답이 온 뒤에 한 번만 그린다.** 로딩 중에 미리 그리면 그때의 구성(환율·금리)이
+          최종 구성과 달라 선택이 튄다. 본문이 이미 LoadingState라 탭 막대가 잠깐 없어도
+          빈 화면으로 보이지 않는다. 반대로 로딩 중에 지수 탭을 미리 보여주는 것도 안 된다 —
+          플래그가 off면 없어질 탭을 잠깐 광고하는 셈이다 */}
+      {data && (
+        <nav className="flex gap-1 border-b border-line-card px-5 sm:px-7" aria-label="시장 탭">
+          {visibleTabs.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => selectTab(t.key)}
+              aria-current={tab === t.key ? 'page' : undefined}
+              className={cx(
+                'px-3 py-2 font-mono text-[11px] tracking-label transition-colors',
+                tab === t.key ? 'border-b-2 border-ink text-ink' : 'text-fg-faint hover:text-ink',
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+      )}
 
       <div className="px-5 py-5 sm:px-7">
         {isLoading && <LoadingState />}

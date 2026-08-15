@@ -5,19 +5,21 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useUnifiedApi } from '@/lib/useApi'
 import type { FxSnapshot, FxQuoteView } from '@/types/market'
-import { currencyLabel } from '@/lib/market-labels'
+import { currencyLabel, currencyName } from '@/lib/market-labels'
 import Label from '@/components/ui/Label'
 import Num from '@/components/ui/Num'
 import { EmptyState } from '@/components/ui/states'
 import { dirTone } from '@/lib/format'
+import { fixed } from '@/lib/market-format'
 
 /**
- * 값이 없으면 0이 아니라 대시다 — 0은 "그 값이 0원"이라는 뜻이 된다.
- * 하나은행은 소수 통화를 현찰·송금으로 취급하지 않아 네 값이 통째로 비는 일이 흔하다.
+ * 환율은 소수 4자리로 통일한다 — 원본이 통화마다 1~4자리로 제각각이라 그대로 두면
+ * 열이 `1412.2 / 384.5 / 0.0794`처럼 어긋난다. 4자리면 원본 해상도(JPY 100엔 고시를
+ * 1엔으로 나눈 `9.5000` 등)를 하나도 안 잃으면서 세로줄이 맞는다.
+ * `fixed()`가 null을 대시로 만든다 — 하나은행이 현찰·송금을 취급 안 하는 통화가 흔하고,
+ * 그 칸에 0을 찍으면 "환율이 0원"으로 읽힌다.
  */
-function orDash(v: string | null): string {
-  return v ?? '-'
-}
+const FX_DIGITS = 4
 
 export default function FxPanel({ fx }: { fx: FxSnapshot | null }) {
   const unified = useUnifiedApi()
@@ -85,25 +87,30 @@ export default function FxPanel({ fx }: { fx: FxSnapshot | null }) {
             <div key={x.currency} className="border border-line-card p-4">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-mono text-[12px]">{x.currency}</span>
-                <span className="text-[11px] text-fg-faint">{currencyLabel(x.currency)}</span>
+                {/* 한글 이름이 없으면 아무것도 안 그린다 — 코드 바로 옆이라 `AED  AED`가 된다 */}
+                {currencyName(x.currency) && (
+                  <span className="text-[11px] text-fg-faint">{currencyName(x.currency)}</span>
+                )}
               </div>
               <div className="mt-2 flex items-baseline gap-2">
-                <Num className="text-[18px]">{x.baseRate}</Num>
-                {x.change && (
-                  <Num tone={dirTone(Number(x.change))} className="text-[12px]">
-                    {x.change} ({x.changeRate}%)
+                <Num className="text-[18px]">{fixed(x.baseRate, FX_DIGITS)}</Num>
+                {/* **`x.change &&`로 가르지 말 것.** change는 이제 number라 0이 falsy다 —
+                    "안 움직였다"(0)가 "직전 기준일에 없었다"(null)로 둔갑한다 */}
+                {x.change != null && (
+                  <Num tone={dirTone(x.change)} className="text-[12px]">
+                    {fixed(x.change, FX_DIGITS)} ({fixed(x.changeRate, 2)}%)
                   </Num>
                 )}
               </div>
               <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-fg-2">
                 <dt>현찰 살 때</dt>
-                <dd className="text-right"><Num>{orDash(x.cashBuy)}</Num></dd>
+                <dd className="text-right"><Num>{fixed(x.cashBuy, FX_DIGITS)}</Num></dd>
                 <dt>현찰 팔 때</dt>
-                <dd className="text-right"><Num>{orDash(x.cashSell)}</Num></dd>
+                <dd className="text-right"><Num>{fixed(x.cashSell, FX_DIGITS)}</Num></dd>
                 <dt>송금 보낼 때</dt>
-                <dd className="text-right"><Num>{orDash(x.remitSend)}</Num></dd>
+                <dd className="text-right"><Num>{fixed(x.remitSend, FX_DIGITS)}</Num></dd>
                 <dt>송금 받을 때</dt>
-                <dd className="text-right"><Num>{orDash(x.remitReceive)}</Num></dd>
+                <dd className="text-right"><Num>{fixed(x.remitReceive, FX_DIGITS)}</Num></dd>
               </dl>
               {/* 은행 화면은 100엔 고시다 — 안 적으면 우리 값이 틀린 걸로 보인다 */}
               {x.currency === 'JPY' && (
@@ -142,13 +149,18 @@ export default function FxPanel({ fx }: { fx: FxSnapshot | null }) {
             {filtered.map((x) => (
               <tr key={x.currency} className="border-b border-line-card/50">
                 <td className="py-1 font-mono">{x.currency}</td>
-                <td className="py-1 text-fg-2">{currencyLabel(x.currency)}</td>
-                <td className="py-1 text-right"><Num>{x.baseRate}</Num></td>
+                {/* 한글 이름이 없으면 대시다 — 코드 열이 왼쪽에 이미 있어서
+                    폴백 코드를 그리면 `AED  AED`로 두 번 나온다(58통화 중 46통화) */}
+                <td className="py-1 text-fg-2">
+                  {currencyName(x.currency) ?? <span className="text-fg-faint">—</span>}
+                </td>
+                <td className="py-1 text-right"><Num>{fixed(x.baseRate, FX_DIGITS)}</Num></td>
                 <td className="py-1 text-right">
-                  {/* change가 null이면 직전 기준일에 그 통화가 없었다는 뜻 — 0이 아니다 */}
-                  {x.change ? (
-                    <Num tone={dirTone(Number(x.change))}>
-                      {x.change} ({x.changeRate}%)
+                  {/* change가 null이면 직전 기준일에 그 통화가 없었다는 뜻 — 0이 아니다.
+                      number라 0이 falsy이므로 `!= null`로 갈라야 0이 대시로 새지 않는다 */}
+                  {x.change != null ? (
+                    <Num tone={dirTone(x.change)}>
+                      {fixed(x.change, FX_DIGITS)} ({fixed(x.changeRate, 2)}%)
                     </Num>
                   ) : (
                     <span className="text-fg-faint">-</span>

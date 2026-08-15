@@ -68,6 +68,21 @@ const CURRENCY_LABELS: Record<string, string> = {
   CHF: '스위스 프랑', SGD: '싱가포르 달러', THB: '태국 바트', VND: '베트남 동',
 }
 
+/**
+ * 한글 이름이 있으면 그것, 없으면 null.
+ *
+ * **표시용은 이쪽을 쓴다.** [currencyLabel]의 코드 폴백을 이름 칸에 그대로 그리면
+ * `AED  AED  384.5000`처럼 코드가 두 번 나온다 — 58통화 중 46통화가 그랬다.
+ * 코드 열이 바로 옆에 있으니 이름 칸은 비워도 정보가 사라지지 않는다.
+ */
+export function currencyName(code: string): string | null {
+  return CURRENCY_LABELS[code] ?? null
+}
+
+/**
+ * 이름이 없으면 코드로 대체한다. **검색처럼 "무언가 문자열이 필요한" 자리 전용이다** —
+ * 코드 열 옆에 그리면 같은 코드가 두 번 보인다. 화면 표시는 [currencyName]을 쓸 것.
+ */
 export function currencyLabel(code: string): string {
   return CURRENCY_LABELS[code] ?? code
 }
