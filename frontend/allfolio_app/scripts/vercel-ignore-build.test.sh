@@ -28,10 +28,10 @@ check() { # 이름 기대코드 실제코드
 }
 
 # Vercel은 Root Directory에서 Ignored Build Step을 실행한다. 그 조건을 그대로 재현한다.
-run_from_app_dir() { # 브랜치이름 -> 종료코드
+run_from_app_dir() { # 브랜치이름 [직전_성공배포_SHA] -> 종료코드
   (
     cd "$TMP/work/frontend/allfolio_app" || exit 9
-    VERCEL_GIT_COMMIT_REF="$1" bash "$SCRIPT" >/dev/null 2>&1
+    VERCEL_GIT_COMMIT_REF="$1" VERCEL_GIT_PREVIOUS_SHA="${2:-}" bash "$SCRIPT" >/dev/null 2>&1
     echo $?
   )
 }
@@ -79,6 +79,21 @@ commit_file frontend/allfolio_app/app/chart.tsx 'export const Chart = () => null
 commit_file allfolio-backend/A.kt 'class A' 'feat: A'
 commit_file allfolio-backend/B.kt 'class B' 'feat: B'
 check "여러 커밋 중 첫 커밋만 프런트엔드여도 빌드한다" 1 "$(run_from_app_dir fe-then-be)"
+
+# Vercel이 실제로 넘겨주는 값은 VERCEL_GIT_PREVIOUS_SHA다. 이게 1순위 비교 기준이 되어야 한다.
+# 첫 구현은 origin/main만 봤고, Vercel의 얕은 클론에는 그게 없어서 매번 fail open으로 떨어졌다.
+main_tip="$(git rev-parse main)"
+
+git checkout -q be-only
+check "직전 성공 배포 이후 백엔드만 바뀌면 건너뛴다" 0 "$(run_from_app_dir be-only "$main_tip")"
+
+git checkout -q fe-only
+check "직전 성공 배포 이후 프런트엔드가 바뀌면 빌드한다" 1 "$(run_from_app_dir fe-only "$main_tip")"
+
+# 클론에 없는 SHA가 들어오면 조용히 죽지 말고 2순위(main 분기점)로 떨어져야 한다.
+git checkout -q be-only
+check "모르는 SHA가 오면 분기점 판정으로 떨어진다" 0 \
+  "$(run_from_app_dir be-only 0000000000000000000000000000000000000000)"
 
 # 브랜치가 갈라진 지점을 못 찾으면 건너뛰지 않는다(fail open).
 git checkout -q -b orphan main

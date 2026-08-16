@@ -23,20 +23,35 @@ if [ "${VERCEL_GIT_COMMIT_REF:-}" = "main" ]; then
   build "main은 프로덕션 브랜치다"
 fi
 
-# 브랜치가 main에서 갈라진 지점을 찾는다.
+# 무엇과 비교할지 정한다.
 # HEAD^..HEAD로 마지막 커밋만 보면, 프런트엔드 변경이 푸시의 첫 커밋에 있고 뒤에 백엔드 커밋이
-# 쌓인 경우를 놓친다. 갈라진 지점부터 통째로 봐야 한다.
+# 쌓인 경우를 놓친다. 그래서 마지막 커밋은 절대 기준으로 삼지 않는다.
 base=""
-if git rev-parse --verify -q origin/main >/dev/null 2>&1; then
+
+# 1순위: Vercel이 Ignored Build Step에만 넘겨주는 값. 마지막으로 성공한 배포의 커밋이다.
+# "마지막으로 배포된 것과 지금이 다른가"가 정확히 우리가 묻고 싶은 질문이다.
+# (첫 구현은 origin/main 분기점만 봤는데, Vercel의 얕은 클론에는 origin/main이 없어서
+#  매번 fail open으로 떨어졌다. 빌드가 하나도 안 걸러지던 원인이다.)
+prev="${VERCEL_GIT_PREVIOUS_SHA:-}"
+if [ -n "$prev" ]; then
+  git cat-file -e "${prev}^{commit}" 2>/dev/null \
+    || git fetch --quiet --depth=1 origin "$prev" >/dev/null 2>&1 \
+    || true
+  if git cat-file -e "${prev}^{commit}" 2>/dev/null; then
+    base="$prev"
+  fi
+fi
+
+# 2순위: 로컬이나 다른 CI에서 돌릴 때. main에서 갈라진 지점부터 통째로 본다.
+if [ -z "$base" ] && git rev-parse --verify -q origin/main >/dev/null 2>&1; then
   base="$(git merge-base origin/main HEAD 2>/dev/null || true)"
 fi
 if [ -z "$base" ]; then
-  # Vercel은 얕은 클론을 준다. 분기점이 클론 깊이 밖이면 여기서 더 받아온다.
   if git fetch --quiet --depth=100 origin main >/dev/null 2>&1; then
     base="$(git merge-base FETCH_HEAD HEAD 2>/dev/null || true)"
   fi
 fi
-[ -n "$base" ] || build "분기점을 못 찾았다"
+[ -n "$base" ] || build "비교 기준을 못 찾았다"
 
 # HEAD가 이미 main 위에 있으면 분기점이 곧 HEAD고, 아래 diff는 무조건 비어 있다.
 # VERCEL_GIT_COMMIT_REF가 비었거나 다른 값일 때 프로덕션 배포가 통째로 건너뛰어지는 걸 막는다.
