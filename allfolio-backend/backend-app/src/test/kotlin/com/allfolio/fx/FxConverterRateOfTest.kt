@@ -22,7 +22,10 @@ class FxConverterRateOfTest {
     // USD와 USDT에 **다른** 값을 준다 — 둘이 같으면 canonical 접기 버그를 못 잡는다
     private val usdRate = BigDecimal("1400.5")
     private val usdtRate = BigDecimal("1385.0")
-    private val btcRate = BigDecimal("90000000")
+    // 소수점을 일부러 붙인다. 딱 떨어지는 90000000이면 0.5 BTC가 45000000으로 정확히
+    // 나뉘어 setScale이 아무 일도 안 하고, 이 테스트가 존재하는 이유인 반올림을 안 지난다.
+    // 90000000.7 × 0.5 = 45000000.35 → 45000000이라야 반올림이 실제로 걸린다.
+    private val btcRate = BigDecimal("90000000.7")
 
     /**
      * `getUsdToKrw()`를 직접 오버라이드하지 않고 고시([usdQuoteRef])로 준다.
