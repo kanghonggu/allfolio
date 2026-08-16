@@ -52,6 +52,9 @@ class HoldingsReportGeneratorTest {
     private val fx = object : FxConverter {
         override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
             if (currency.uppercase() == "KRW") amount else amount * BigDecimal("1000")
+
+        override fun rateOf(currency: String): BigDecimal =
+            if (currency.uppercase() == "KRW") BigDecimal.ONE else BigDecimal("1000")
     }
 
     private class FakeStockTradeRepo(private val trades: List<StockTrade>) : StockTradeRepository {

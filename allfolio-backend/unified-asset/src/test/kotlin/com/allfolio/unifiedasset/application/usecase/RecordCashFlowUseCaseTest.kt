@@ -30,6 +30,9 @@ class RecordCashFlowUseCaseTest {
     private val fx = object : FxConverter {
         override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
             if (currency.uppercase() == "KRW") amount else amount * BigDecimal("1400")
+
+        override fun rateOf(currency: String): BigDecimal =
+            if (currency.uppercase() == "KRW") BigDecimal.ONE else BigDecimal("1400")
     }
 
     private val ownedAccount = UUID.randomUUID()
@@ -148,6 +151,8 @@ class RecordCashFlowUseCaseTest {
             override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
                 amount * BigDecimal("1400")
 
+            override fun rateOf(currency: String): BigDecimal = BigDecimal("1400")
+
             override fun toKrwOn(amount: BigDecimal, currency: String, date: LocalDate) =
                 KrwConversion(amount * BigDecimal("1100"), date, estimated = false)
         }
@@ -170,6 +175,8 @@ class RecordCashFlowUseCaseTest {
         val estimatingFx = object : FxConverter {
             override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
                 amount * BigDecimal("1400")
+
+            override fun rateOf(currency: String): BigDecimal = BigDecimal("1400")
 
             override fun toKrwOn(amount: BigDecimal, currency: String, date: LocalDate) =
                 KrwConversion(amount * BigDecimal("1400"), null, estimated = true)

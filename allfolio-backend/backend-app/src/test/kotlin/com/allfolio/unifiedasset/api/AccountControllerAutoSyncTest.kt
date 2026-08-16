@@ -70,6 +70,7 @@ class AccountControllerAutoSyncTest {
         AuthorizationService(accountRepository),
         object : FxConverter {
             override fun toKrw(amount: BigDecimal, currency: String) = amount
+            override fun rateOf(currency: String): BigDecimal = BigDecimal.ONE
         },
     )
 

@@ -21,6 +21,12 @@ class NavCalculatorTest {
                 "USD", "USDT" -> amount.multiply(BigDecimal("1300"))
                 else -> amount
             }
+
+        override fun rateOf(currency: String): BigDecimal =
+            when (currency.uppercase()) {
+                "USD", "USDT" -> BigDecimal("1300")
+                else -> BigDecimal.ONE
+            }
     }
 
     @Test

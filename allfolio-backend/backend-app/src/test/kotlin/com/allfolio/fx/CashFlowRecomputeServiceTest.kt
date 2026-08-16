@@ -167,6 +167,8 @@ class CashFlowRecomputeServiceTest {
         override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
             amount.multiply(BigDecimal("1400"))
 
+        override fun rateOf(currency: String): BigDecimal = BigDecimal("1400")
+
         override fun toKrwOn(amount: BigDecimal, currency: String, date: LocalDate): KrwConversion =
             KrwConversion(
                 amountKrw = amount.multiply(BigDecimal(rate ?: "1400")),

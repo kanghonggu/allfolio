@@ -32,6 +32,7 @@ class SyncAccountUseCaseSensitiveDataTest {
             snapshotService = PerformanceSnapshotService(mock(JdbcTemplate::class.java)),
             fx = object : FxConverter {
                 override fun toKrw(amount: java.math.BigDecimal, currency: String) = amount
+                override fun rateOf(currency: String): java.math.BigDecimal = java.math.BigDecimal.ONE
             },
             syncLogRepository = NoopSyncLogRepository(),
             reconMutex = NoopReconMutex(),
