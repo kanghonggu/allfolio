@@ -6,13 +6,14 @@ import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.LocalDate
-import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.util.UUID
 
 data class DividendReport(
     val userId: UUID,
     val period: String,
-    val generatedAt: LocalDateTime,
+    val generatedAt: OffsetDateTime,
     val totalDividend: BigDecimal,
     val receiptCount: Int,
     val monthlyAvg: BigDecimal,
@@ -156,7 +157,7 @@ class DividendReportService(private val jdbc: JdbcTemplate) {
         return DividendReport(
             userId = userId,
             period = period,
-            generatedAt = LocalDateTime.now(),
+            generatedAt = OffsetDateTime.now(KST),
             totalDividend = kpi.total,
             receiptCount = kpi.count,
             monthlyAvg = monthlyAvg,
@@ -172,5 +173,13 @@ class DividendReportService(private val jdbc: JdbcTemplate) {
         "1Y"  -> LocalDate.now().minusYears(1)
         "전체" -> null
         else  -> null.also { log.warn("Unknown period '{}', defaulting to all-time", period) }
+    }
+
+    companion object {
+        /**
+         * `generatedAt`은 KST 오프셋을 달아 내보낸다 — Render 컨테이너는 TZ 설정이 없어 UTC라
+         * 기본 타임존을 쓰면 한국 사용자에게 9시간 어긋난다. 배경은 [ReportService.Companion] 참고.
+         */
+        private val KST: ZoneId = ZoneId.of("Asia/Seoul")
     }
 }

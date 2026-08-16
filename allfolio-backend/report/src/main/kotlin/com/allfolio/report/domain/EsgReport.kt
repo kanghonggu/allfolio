@@ -1,12 +1,12 @@
 package com.allfolio.report.domain
 
 import java.math.BigDecimal
-import java.time.LocalDateTime
+import java.time.OffsetDateTime
 import java.util.UUID
 
 data class EsgReport(
     val userId: UUID,
-    val generatedAt: LocalDateTime,
+    val generatedAt: OffsetDateTime,
     val rating: String,
     val totalScore: BigDecimal,
     val environmentalScore: BigDecimal,

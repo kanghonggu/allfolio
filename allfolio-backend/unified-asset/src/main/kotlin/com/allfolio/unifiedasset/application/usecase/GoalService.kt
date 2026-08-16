@@ -11,6 +11,8 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import java.util.UUID
 
@@ -41,7 +43,7 @@ data class GoalResponse(
 data class GoalsResponse(
     val goals: List<GoalResponse>,
     val totalNav: BigDecimal,
-    val generatedAt: LocalDateTime,
+    val generatedAt: OffsetDateTime,
 )
 
 @Service
@@ -90,7 +92,7 @@ class GoalService(
         val goals = goalRepository.findByUserId(userId)
             .sortedBy { it.createdAt }
             .map { it.toResponse(nav) }
-        return GoalsResponse(goals, nav, LocalDateTime.now())
+        return GoalsResponse(goals, nav, OffsetDateTime.now(KST))
     }
 
     private fun currentNav(userId: UUID): BigDecimal =
@@ -112,5 +114,13 @@ class GoalService(
             id, userId, name, description, targetAmount, targetDate, category,
             nav, pct, remaining, daysRemaining, createdAt, updatedAt,
         )
+    }
+
+    companion object {
+        /**
+         * `generatedAt`은 KST 오프셋을 달아 내보낸다 — Render 컨테이너는 TZ 설정이 없어 UTC라
+         * 기본 타임존을 쓰면 한국 사용자에게 9시간 어긋난다. 배경은 [ReportService.Companion] 참고.
+         */
+        private val KST: ZoneId = ZoneId.of("Asia/Seoul")
     }
 }
