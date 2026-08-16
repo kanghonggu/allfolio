@@ -10,7 +10,8 @@ import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.LocalDate
-import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlin.math.*
@@ -19,7 +20,7 @@ import kotlin.math.*
 
 data class SummaryReport(
     val userId: UUID,
-    val generatedAt: LocalDateTime,
+    val generatedAt: OffsetDateTime,
     val nav: BigDecimal,
     val totalPurchaseCost: BigDecimal,
     val unrealizedPnl: BigDecimal,
@@ -39,7 +40,7 @@ data class TopHolding(val name: String, val symbol: String?, val type: String, v
 
 data class AllocationReport(
     val userId: UUID,
-    val generatedAt: LocalDateTime,
+    val generatedAt: OffsetDateTime,
     val totalValue: BigDecimal,
     val byType: List<TypeBreakdown>,
     val byCurrency: List<CurrencyBreakdown>,
@@ -53,7 +54,7 @@ data class AllocationReport(
 data class PerformanceReport(
     val userId: UUID,
     val period: String,
-    val generatedAt: LocalDateTime,
+    val generatedAt: OffsetDateTime,
     val totalReturn: BigDecimal,
     /** 기간별 TWR(percent). null = 시계열이 해당 기간을 못 덮음 → FE는 '데이터 부족' 표기 (QA P2) */
     val periodReturns: Map<String, BigDecimal?>,
@@ -77,7 +78,7 @@ data class DailyPerf(
 
 data class RiskReport(
     val userId: UUID,
-    val generatedAt: LocalDateTime,
+    val generatedAt: OffsetDateTime,
     val volatility: BigDecimal?,
     val annualizedVolatility: BigDecimal?,
     val var95: BigDecimal?,
@@ -100,7 +101,7 @@ data class DailyRisk(
 
 data class PositionsReport(
     val userId: UUID,
-    val generatedAt: LocalDateTime,
+    val generatedAt: OffsetDateTime,
     val positions: List<PositionRow>,
     val totalUnrealizedPnl: BigDecimal,
     val totalPurchaseCost: BigDecimal,
@@ -130,7 +131,7 @@ data class PositionRow(
 data class BenchmarkReport(
     val userId: UUID,
     val period: String,
-    val generatedAt: LocalDateTime,
+    val generatedAt: OffsetDateTime,
     val portfolioReturn: BigDecimal,
     val benchmarks: List<BenchmarkItem>,
     val series: List<BenchmarkSeries>,
@@ -168,7 +169,7 @@ data class NetWorthPoint(
 
 data class NetWorthReport(
     val userId: UUID,
-    val generatedAt: LocalDateTime,
+    val generatedAt: OffsetDateTime,
     val totalAssets: BigDecimal,
     val totalLoan: BigDecimal,
     val netWorth: BigDecimal,
@@ -188,7 +189,7 @@ data class MonthlyPnlRow(
 
 data class MonthlyPnlReport(
     val userId: UUID,
-    val generatedAt: LocalDateTime,
+    val generatedAt: OffsetDateTime,
     val months: List<MonthlyPnlRow>,  // 오래된 순서 정렬
     val bestMonth: MonthlyPnlRow?,
     val worstMonth: MonthlyPnlRow?,
@@ -225,7 +226,7 @@ class ReportService(
 
         return SummaryReport(
             userId = userId,
-            generatedAt = LocalDateTime.now(),
+            generatedAt = OffsetDateTime.now(KST),
             nav = totalValue,
             totalPurchaseCost = totalCost,
             unrealizedPnl = unrealized,
@@ -248,7 +249,7 @@ class ReportService(
 
         return AllocationReport(
             userId = userId,
-            generatedAt = LocalDateTime.now(),
+            generatedAt = OffsetDateTime.now(KST),
             totalValue = totalValue,
             byType = buildTypeBreakdown(assets, totalValue),
             byCurrency = buildCurrencyBreakdown(assets, totalValue),
@@ -283,7 +284,7 @@ class ReportService(
         return PerformanceReport(
             userId = userId,
             period = period,
-            generatedAt = LocalDateTime.now(),
+            generatedAt = OffsetDateTime.now(KST),
             totalReturn = totalReturn,
             periodReturns = periodReturns,
             dailySeries = dailySeries,
@@ -303,7 +304,7 @@ class ReportService(
 
         return RiskReport(
             userId = userId,
-            generatedAt = LocalDateTime.now(),
+            generatedAt = OffsetDateTime.now(KST),
             volatility = latest?.volatility,
             annualizedVolatility = latest?.annualizedVolatility,
             var95 = latest?.var95,
@@ -358,7 +359,7 @@ class ReportService(
 
         return PositionsReport(
             userId = userId,
-            generatedAt = LocalDateTime.now(),
+            generatedAt = OffsetDateTime.now(KST),
             positions = rows,
             totalUnrealizedPnl = totalUnrealized,
             totalPurchaseCost = totalCost,
@@ -401,7 +402,7 @@ class ReportService(
         return BenchmarkReport(
             userId = userId,
             period = period,
-            generatedAt = LocalDateTime.now(),
+            generatedAt = OffsetDateTime.now(KST),
             portfolioReturn = portfolioReturn,
             benchmarks = benchmarks,
             series = series,
@@ -452,7 +453,7 @@ class ReportService(
 
         return NetWorthReport(
             userId = userId,
-            generatedAt = LocalDateTime.now(),
+            generatedAt = OffsetDateTime.now(KST),
             totalAssets = totalAssets,
             totalLoan = totalLoan,
             netWorth = netWorth,
@@ -520,7 +521,7 @@ class ReportService(
 
         return MonthlyPnlReport(
             userId = userId,
-            generatedAt = LocalDateTime.now(),
+            generatedAt = OffsetDateTime.now(KST),
             months = rows,
             bestMonth = bestMonth,
             worstMonth = worstMonth,
@@ -722,5 +723,24 @@ class ReportService(
                 kospi     = indexPctAt(com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.KOSPI, perf.date),
             )
         }
+    }
+
+    companion object {
+        /**
+         * `generatedAt`을 찍는 시계. **서버 기본 타임존을 쓰면 안 된다** — Render 컨테이너에
+         * TZ 설정이 없어 벽시계가 UTC다.
+         *
+         * 이 필드는 `LocalDateTime`이었다. Jackson은 오프셋 없이 적고(`"2026-08-15T11:49:00"`),
+         * 브라우저의 `new Date(...)`는 오프셋 없는 값을 **읽는 쪽 로컬 시각**으로 해석한다.
+         * 그래서 한국 사용자는 20:49에 11:49를 봤다 — 새벽만이 아니라 하루 종일 9시간씩.
+         *
+         * 값만 KST로 옮기는 것으로는 부족해서 타입을 [OffsetDateTime]으로 바꿨다. 값만 옮기면
+         * 한국 사용자에겐 맞지만 다른 시간대 사용자에겐 여전히 조용히 틀린다 — 전선이 오프셋을
+         * 안 실으니 읽는 쪽이 계속 추측한다. 오프셋을 실으면 누가 읽든 같은 순간이 된다.
+         *
+         * KST로 찍는 건 정확성이 아니라 가독성 때문이다 — 원시 JSON을 눈으로 볼 때 한국 시각으로
+         * 읽힌다. 절대 시각은 어느 존으로 찍든 같다.
+         */
+        private val KST: ZoneId = ZoneId.of("Asia/Seoul")
     }
 }
