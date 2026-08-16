@@ -42,12 +42,69 @@ const RATE_LABELS: Record<string, string> = {
 const KR_RATES = ['BASE_RATE', 'CALL_ON', 'CD_91D', 'KTB_3Y', 'KTB_10Y', 'CORP_AA3Y']
 const US_RATES = ['US_FFR', 'UST_2Y', 'UST_10Y', 'UST_30Y']
 
+/**
+ * 원자재 코드 → 한글 라벨 (AF-108). 코드는 `application.yml`의 `market-commodity` 그대로다.
+ *
+ * **단위를 여기 안 적는다.** 단위는 관측과 함께 행에 실려 오므로(CommodityQuoteView.unit)
+ * 그쪽을 쓴다 — 여기 상수로 두면 설정이 바뀐 날 저장은 멀쩡한데 화면만 조용히 틀린다.
+ *
+ * `GOLD_KRX`는 아직 수집이 없다(FSC 인증키 보류, Task 4). **그래도 미리 넣어 둔다** —
+ * 붙는 날 라벨만 없어서 표에 `GOLD_KRX`가 그대로 노출되는 걸 막는다.
+ */
+const COMMODITY_LABELS: Record<string, string> = {
+  WTI: 'WTI 원유',
+  BRENT: '브렌트유',
+  NATGAS: '천연가스',
+  COPPER: '구리',
+  NICKEL: '니켈',
+  ZINC: '아연',
+  ALUMINUM: '알루미늄',
+  IRON_ORE: '철광석',
+  COAL_AU: '석탄(호주)',
+  URANIUM: '우라늄',
+  WHEAT: '밀',
+  CORN: '옥수수',
+  SOYBEANS: '대두',
+  SUGAR: '설탕',
+  COFFEE: '커피',
+  ALL_INDEX: '원자재 종합지수',
+  GOLD_KRX: '금(KRX)',
+}
+
 export function indexLabel(code: string): string {
   return INDEX_LABELS[code] ?? code
 }
 
 export function rateLabel(code: string): string {
   return RATE_LABELS[code] ?? code
+}
+
+export function commodityLabel(code: string): string {
+  return COMMODITY_LABELS[code] ?? code
+}
+
+export type CommoditySection = 'DAILY' | 'MONTHLY' | 'ETC'
+
+/**
+ * 원자재 탭의 2단 구성. **소스 이름이나 코드가 아니라 주기로 가른다** —
+ * 금(FSC, frequency=D)이 붙어도 화면 코드가 안 바뀌게 하려는 것이다.
+ *
+ * **`ETC`가 있는 이유**: 백엔드 필드가 `String`(length 1)이라 설정 오타 한 번이면 `'d'`가
+ * 실려 온다. 그때 갈 곳이 없으면 그 종목은 어느 섹션에도 안 떠 화면에서 조용히 사라진다 —
+ * 값이 틀린 것보다 없어진 것이 알아채기 더 어렵다.
+ * (금리 탭의 [rateCountry]가 같은 이유로 '기타'를 남긴다.)
+ *
+ * **인자를 `'D' | 'M'`이 아니라 string으로 받는 이유는 그 fallback을 지키기 위해서다.**
+ * 유니언으로 받아도 마지막 `return 'ETC'`는 그대로 컴파일되고 그대로 emit된다 — tsc는 타입을
+ * 지울 뿐 분기를 지우지 않으므로, 런타임에 `'d'`가 오면 유니언 선언이어도 'ETC'가 반환된다.
+ * 위험한 건 컴파일러가 아니라 **읽는 사람**이다: 유니언이면 그 갈래가 타입상 도달 불가(`never`)로
+ * 보여 죽은 코드로 읽히고, 누군가 지운다. 종목이 사라지려면 그 삭제가 있어야 한다.
+ * string으로 받으면 지울 이유가 안 생긴다.
+ */
+export function commoditySection(frequency: string): CommoditySection {
+  if (frequency === 'D') return 'DAILY'
+  if (frequency === 'M') return 'MONTHLY'
+  return 'ETC'
 }
 
 export type RateCountry = 'KR' | 'US' | 'ETC'
