@@ -81,13 +81,32 @@ class ReportWindowTimezoneTest {
      * 쿼리에 실제로 실려 나간 인자를 붙잡는다. Mockito로 vararg를 캡처하는 것보다 읽기 쉽고,
      * 무엇보다 **구간 경계는 SQL 파라미터로만 관찰된다** — 리포트 DTO에는 안 실린다.
      */
-    private class RecordingJdbc : JdbcTemplate() {
-        val captured = mutableListOf<Any?>()
+    private class RecordingJdbc(private val perfRows: List<DailyPerf> = emptyList()) : JdbcTemplate() {
+        val calls = mutableListOf<Pair<String, List<Any?>>>()
+
+        /** 어느 쿼리에 실렸든 상관없이 인자만 훑을 때. */
+        val captured: List<Any?> get() = calls.flatMap { it.second }
+
+        @Suppress("UNCHECKED_CAST")
         override fun <T : Any?> query(sql: String, rowMapper: RowMapper<T>, vararg args: Any?): List<T> {
-            captured.addAll(args)
-            return emptyList()
+            calls += sql to args.toList()
+            // 성과 시계열 조회에만 행을 돌려준다. 다른 조회에 섞어 주면 호출부에서
+            // ClassCastException이 나고 try/catch가 그걸 빈 목록으로 삼켜 원인이 안 보인다.
+            return if (sql.contains("daily_return")) perfRows as List<T> else emptyList()
         }
+
+        fun argsOf(sqlFragment: String): List<Any?> =
+            calls.first { it.first.contains(sqlFragment) }.second
     }
+
+    private fun perf(date: LocalDate, nav: String) = DailyPerf(
+        date = date,
+        nav = BigDecimal(nav),
+        dailyReturn = BigDecimal.ZERO,
+        cumulativeReturn = BigDecimal.ZERO,
+        benchmarkReturn = null,
+        alpha = null,
+    )
 
     /** 조회 상한(`to`)을 붙잡는다. Mockito 매처는 코틀린 non-null 파라미터에 null을 넘겨 터진다. */
     private class RecordingBenchmarkStore : BenchmarkDailyStore {
@@ -171,6 +190,32 @@ class ReportWindowTimezoneTest {
             .isEqualTo(LocalDate.now(KST).dayOfYear)
     }
 
+    /**
+     * **이 파일에서 가장 큰 자리다.** `computePeriodReturns`의 `now`는 컷오프 기준이면서 창의
+     * **상한**이기도 하다 — `periodTwrPercent(..., asOf)`가 `anchor..asOf`로 거른다. 상한이 하루
+     * 밀리면 자정 KST 마감이 오늘 날짜로 써 둔 `performance_daily` 행이 창 밖으로 떨어지고,
+     * 관측이 1건만 남아 **수익률이 통째로 null이 되는데 에러는 안 난다.** 화면에는 '데이터 부족'으로
+     * 뜨므로 사용자도 개발자도 시간대 문제라고 생각할 이유가 없다.
+     *
+     * (원본: claude/affectionate-jennings-b2d284, 8a8a291)
+     */
+    @Test
+    fun `기간 수익률은 KST 오늘까지 본다 — 자정 마감이 쓴 오늘 스냅샷을 빠뜨리지 않는다`() {
+        val today = LocalDate.now(KST)
+        val jdbc = RecordingJdbc(
+            perfRows = listOf(perf(today.minusDays(40), "1000000"), perf(today, "1100000")),
+        )
+
+        val result = onTheDayBeforeKst {
+            reportService(jdbc, mock(BenchmarkDailyStore::class.java)).performance(userId, "1M")
+        }
+
+        assertThat(result.periodReturns["1M"])
+            .describedAs("오늘 스냅샷이 조회 창 밖으로 떨어졌다 — 1M 수익률이 null")
+            .isNotNull()
+        assertThat(result.periodReturns["1M"]).isEqualByComparingTo(BigDecimal("10.00"))
+    }
+
     // ── DividendReportService ────────────────────────────────────────────────
 
     @Test
@@ -224,6 +269,31 @@ class ReportWindowTimezoneTest {
         assertThat(prompt)
             .describedAs("데이터 기준 시각도 같은 달력이어야 한다")
             .contains("데이터 기준 시각: ${LocalDate.now(KST)}")
+    }
+
+    /**
+     * 앞의 배당 YTD 가드와 같은 이유로 **오늘은 실패할 수 없다** — 연도는 KST 1/1 00:00~09:00에만
+     * 갈린다. 그 창에 걸리면 모델이 "올해 배당"으로 작년 수치를 받아 그걸 근거로 답한다.
+     *
+     * (원본: claude/affectionate-jennings-b2d284, 8a8a291)
+     */
+    @Test
+    fun `올해 배당은 KST 기준 올해를 조회한다`() {
+        val jdbc = RecordingJdbc()
+        val service = AiConsultantService(
+            configRepo = mock(UserAiConfigJpaRepository::class.java),
+            jdbc = jdbc,
+            objectMapper = ObjectMapper(),
+        )
+        val buildSystemPrompt = AiConsultantService::class.declaredMemberFunctions
+            .first { it.name == "buildSystemPrompt" }
+            .apply { isAccessible = true }
+
+        onTheDayBeforeKst { buildSystemPrompt.call(service, userId) }
+
+        assertThat(jdbc.argsOf("DIVIDEND").filterIsInstance<Int>().first())
+            .describedAs("배당 집계 연도가 KST 기준이 아니다 — 1월 1일 새벽엔 작년 배당을 보여준다")
+            .isEqualTo(LocalDate.now(KST).year)
     }
 
     // ── GoalService ──────────────────────────────────────────────────────────
