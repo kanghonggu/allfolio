@@ -347,8 +347,11 @@ import java.time.LocalDate
  * **[RateValuePolicy.PRICE]를 명시한다.** 클라이언트 기본값은 PERCENT이고, 그대로 두면
  * 구리·금·지수가 파싱 단계에서 버려진다(WTI만 우연히 통과한다).
  *
- * `sourceName`이 두 가지인 이유는 EIA와 IMF가 신선도가 완전히 다르기 때문이다 —
- * 일간은 영업일 3일, 월간은 두 달. 저장된 행만 보고도 구분되어야 한다.
+ * **`sourceName`은 "FRED" 하나다.** 실제 발행처는 EIA(일간)와 IMF(월간)로 갈리고 신선도도
+ * 영업일 3일 대 두 달로 완전히 다르지만, 그 구분은 `frequency`(D|M)가 이미 진다 —
+ * `(frequency, source)` 짝이 EIA(D,FRED)·IMF(M,FRED)·금(D,FSC)을 그대로 가른다.
+ * `sourceName`을 항목별로 쪼개려면 포트의 `val sourceName` 모양을 바꿔야 하는데,
+ * 이미 있는 열로 갈리는 것을 위해 치를 값이 아니다. `FredRateSource`도 "FRED" 하나다.
  */
 @Component
 class FredCommoditySource(
@@ -476,6 +479,10 @@ Step 1을 마치면 **보고하고 멈출 것.** 계획 작성자가 나머지 �
 - Modify: `allfolio-backend/backend-app/src/main/kotlin/com/allfolio/api/scheduler/SchedulerTriggerController.kt`
 
 **`RateCollectService`를 읽고 그대로 옮길 것.** AF-102가 ECOS를 겪으며 만든 방어 일곱 개가 거기 있고, 소스와 무관하게 옳다.
+
+> **영속화는 형제 시세 표 둘과 같은 모양으로 간다** — `MarketCommodityQuoteEntity(@Id val id: UUID, …)` + `uk_market_commodity_quote(code, trade_date)` 유니크 제약. `MarketRateEntity`·`MarketIndexQuoteEntity`가 둘 다 이 패턴이고, `RateCollectService`의 upsert가 그 리포지터리 모양에 붙어 있다.
+>
+> 설계 초안은 `(code, trade_date)` 복합 자연키였다. DB만 놓고 보면 그쪽이 낫지만, **형제 표 둘과 어긋나면 베껴 오기로 한 서비스가 안 붙는다** — 방어 일곱 개와 그 테스트 템플릿을 통째로 다시 써야 한다. 유니크 제약이 같은 보장을 주므로 치를 값이 아니다. (`nav_currency_daily`가 복합 PK + JdbcTemplate인 것은 사실이나 그건 NAV 표이고 모듈도 다르다 — 시세 표의 선례가 아니다.)
 
 - [ ] **Step 1: 수집 서비스**
 

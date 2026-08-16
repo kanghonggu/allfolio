@@ -26,7 +26,13 @@
 | **FRED (IMF)** | 월간 금속·농산물 | IMF 발행분 | 같은 클라이언트 |
 | **공공데이터포털 (금융위)** | 금 — KRX 금시장 | **이용허락범위 제한 없음**(포털 표기 확인) | `FscStockClient` — **같은 베이스 URL·같은 인증키** |
 
-`FscStockClient`가 이미 `https://apis.data.go.kr/1160100/service`를 `FSC_API_KEY`로 호출한다. 일반상품시세정보는 같은 기관의 다른 오퍼레이션이라 **새 인증·새 베이스 URL·새 키가 필요 없다.**
+`FscStockClient`가 이미 `https://apis.data.go.kr/1160100/service`를 `FSC_API_KEY`로 호출한다. 일반상품시세정보는 같은 기관의 다른 오퍼레이션이라 **새 인증 방식·새 베이스 URL이 필요 없다.**
+
+> **⚠️ "새 키가 필요 없다"고 단정했던 것은 틀렸다 (2026-08-16 정정).** 공공데이터포털은 **데이터셋별로 활용신청이 따로**다. 기존 `FSC_API_KEY`가 주식시세정보(15094808)에만 승인돼 있으면 일반상품시세정보(15094805)는 `SERVICE_KEY_IS_NOT_REGISTERED_ERROR`가 계속 난다. 같은 포털·같은 키 문자열이라고 같은 권한이 아니다.
+>
+> 오퍼레이션 경로는 실측으로 확정했다: **`/GetGeneralProductInfoService/getGoldPriceInfo`**. 근거는 오류 코드가 갈린다는 것이다 — 포털은 경로가 없으면 키를 보기 전에 `NO_OPENAPI_SERVICE_ERROR`(12)를 내고, 경로가 있으면 키 검증까지 간다. 대조군(존재하지 않는 오퍼레이션)이 12를 내는데 `getGoldPriceInfo`는 키 오류까지 갔다. `getGoldPrcInfo`·`getGoldMarketPriceInfo`는 둘 다 12 — 오답이다.
+>
+> **응답 필드·단위·상장 종목 구성은 아직 확인 못 했다.** 로컬 `.env`의 `FSC_API_KEY`가 빈 값이라 호출이 안 된다(실제 키는 GitHub Secrets/Render에만 있다). 확인 전까지 파서를 쓰지 않는다.
 
 **다만 코드가 없는 것은 아니다** — 오퍼레이션(경로·파라미터·응답 필드)이 다르므로 호출 메서드는 새로 쓴다. 재사용되는 것은 인증과 베이스이지 파싱이 아니다.
 
@@ -86,21 +92,31 @@ IMF 월간은 63품목이 있으나 50종(새우·양모·원목·바나나 등)
 
 ## 4. 저장 — `market_commodity_quote`
 
+확정본은 `docs/superpowers/migrations/2026-08-16-market-commodity-quote.sql`이다. 설계 초안에서 셋이 바뀌었고, 셋 다 **형제 표를 실제로 열어 보고** 고친 것이다.
+
 ```sql
 CREATE TABLE IF NOT EXISTS market_commodity_quote (
+    id            UUID          NOT NULL,
     code          VARCHAR(20)   NOT NULL,
     trade_date    DATE          NOT NULL,
     price         NUMERIC(18,4) NOT NULL,
-    unit          VARCHAR(20)   NOT NULL,   -- KRW/g · USD/bbl · USD/MT · index
+    unit          VARCHAR(20)   NOT NULL,   -- USD/bbl · USD/MMBtu · USD/MT · USD/lb · USc/lb · KRW/g · index
     frequency     VARCHAR(1)    NOT NULL,   -- D | M
     prev_close    NUMERIC(18,4),
     change_value  NUMERIC(18,4),
     change_rate   NUMERIC(9,4),
-    source        VARCHAR(20)   NOT NULL,   -- FRED_EIA | FRED_IMF | FSC
-    collected_at  TIMESTAMP     NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (code, trade_date)
+    source        VARCHAR(20)   NOT NULL,   -- FRED | FSC. EIA/IMF 구분은 frequency가 진다
+    collected_at  TIMESTAMP     NOT NULL,
+    CONSTRAINT pk_market_commodity_quote PRIMARY KEY (id),
+    CONSTRAINT uk_market_commodity_quote UNIQUE (code, trade_date)
 );
 ```
+
+**초안에서 바뀐 것 셋 (2026-08-16 정정)**
+
+1. **PK가 `(code, trade_date)` 복합 자연키 → 대리키 `id`.** DB만 놓고 보면 자연키가 낫지만, 형제 시세 표 둘(`market_rate`·`market_index_quote`)이 **둘 다 대리키 + `uk_` 패턴**이고 그대로 옮겨 오기로 한 `RateCollectService`의 upsert가 그 리포지터리 모양에 붙어 있다. 유니크 제약이 같은 보장을 주므로 형제 쪽에 맞췄다.
+2. **`source`가 `FRED_EIA | FRED_IMF | FSC` → `FRED | FSC`.** 구현할 `FredCommoditySource`의 `sourceName`은 하나이고 `FredRateSource`도 그렇다. 열 주석은 이 표를 쿼리하는 사람의 유일한 계약이라, 저장되지 않을 값을 적으면 `WHERE source = 'FRED_IMF'`가 조용히 0행을 낸다. EIA/IMF 구분은 `frequency`가 이미 진다.
+3. **`collected_at`의 `DEFAULT NOW()` 제거.** 형제 표 중 가장 나중인 `market_rate`가 같은 열에서 DEFAULT를 **의도적으로 뺐고** 이유를 적어 뒀다 — 앱이 항상 채우므로 DEFAULT는 정상 경로에서 절대 발화하지 않고, 발화하는 유일한 경우는 앱이 빠뜨린 사고일 때인데 그때 에러 대신 **서버 시각(UTC)** 이 들어간다. KST로 만든 값과 같은 열에 섞이면 아홉 시간 어긋난 두 종류가 된다. (`market_index_quote`·`hana_fx_quote`엔 DEFAULT가 있지만 그 둘이 **먼저**다 — 오래된 쪽을 따라가면 학습이 되돌아간다.)
 
 **`slot`을 만들지 않는다.** 세 소스 다 하루(또는 한 달) 한 값이라 `OPEN/MID/CLOSE` 개념이 없다. `market_index_quote`를 재사용하면 `slot`에 `CLOSE`를 억지로 채우게 되고, 그러면 "종가"라는 말이 원자재 행에서만 다른 뜻이 된다 — 나중에 지수와 원자재를 같이 조회할 때 조용히 틀린다.
 
