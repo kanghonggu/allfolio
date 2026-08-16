@@ -1,10 +1,12 @@
 package com.allfolio.api.scheduler
 
+import com.allfolio.api.admin.CommodityAdminController
 import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.api.admin.MarketRateAdminController
 import com.allfolio.fx.BackfillSummary
 import com.allfolio.fx.hana.HanaCollectSummary
+import com.allfolio.market.commodity.CommodityCollectSummary
 import com.allfolio.market.index.DomesticIndexCollectSummary
 import com.allfolio.market.index.IndexSlot
 import com.allfolio.market.index.OverseasIndexCollectSummary
@@ -48,6 +50,7 @@ class SchedulerTriggerController(
     private val fxAdmin: FxRateAdminController,
     private val indexAdmin: MarketIndexAdminController,
     private val rateAdmin: MarketRateAdminController,
+    private val commodityAdmin: CommodityAdminController,
     private val stepExecutor: WfStepExecutor,
     @Value("\${scheduler.trigger-token:}") private val configuredToken: String,
 ) {
@@ -187,6 +190,31 @@ class SchedulerTriggerController(
     ): ResponseEntity<RateCollectSummary> {
         authorize(token)
         return rateAdmin.collect(null, null)
+    }
+
+    /**
+     * POST /api/internal/scheduler/commodity — 원자재 수집 트리거 (AF-108)
+     *
+     * **날짜를 노출하지 않는다.** [CommodityAdminController.collect]가 null을 KST 오늘 기준
+     * 최근 90일로 해석한다. 워크플로가 날짜를 계산해 실어 보내면 러너의 UTC 시계가 그대로
+     * 데이터에 새겨지고, GitHub cron이 밀린 날 구간이 어긋난다.
+     *
+     * **창이 금리(2주)보다 훨씬 긴 이유는 월간 계열이다** — 관측일이 그 달 1일인데 공표가
+     * 한두 달 뒤라, 짧은 창으로는 공표 시점에 이미 창 밖이다. 근거는 어드민 쪽 `WINDOW_DAYS`에 있다.
+     *
+     * 백필 구간을 여기 노출하지 않는 이유는 금리 트리거와 같다 — 초기 백필은 사람이 한 번 부르는
+     * 일회성 작업이고, 어드민 엔드포인트에 있다.
+     *
+     * 어드민 컨트롤러에 위임하는 이유도 같다: 502(전량 실패 — 상류 장애이거나 마이그레이션 미적용)와
+     * 500(전 종목 0건 = 시리즈 ID가 틀렸다 / 설정이 비었다)의 구분이 Actions 로그를 읽는 사람에게
+     * 그대로 필요하다. **이 위임을 "정리"하지 말 것.**
+     */
+    @PostMapping("/commodity")
+    fun collectCommodity(
+        @RequestHeader(name = TOKEN_HEADER, required = false) token: String?,
+    ): ResponseEntity<CommodityCollectSummary> {
+        authorize(token)
+        return commodityAdmin.collect(null, null)
     }
 
     /**

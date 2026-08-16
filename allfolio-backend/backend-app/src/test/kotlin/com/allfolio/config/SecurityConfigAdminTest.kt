@@ -2,6 +2,7 @@ package com.allfolio.config
 
 import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.api.admin.MarketIndexAdminController
+import com.allfolio.api.admin.CommodityAdminController
 import com.allfolio.api.admin.MarketRateAdminController
 import com.allfolio.api.market.MarketQueryController
 import com.allfolio.api.scheduler.SchedulerTriggerController
@@ -11,6 +12,8 @@ import com.allfolio.market.index.OverseasIndexCollectService
 import com.allfolio.market.query.MarketFlags
 import com.allfolio.market.query.MarketQueryService
 import com.allfolio.market.query.MarketSnapshot
+import com.allfolio.market.commodity.CommodityCollectService
+import com.allfolio.market.commodity.CommodityProperties
 import com.allfolio.market.rate.RateCollectService
 import com.allfolio.auth.JwtTokenService
 import com.allfolio.auth.UserEntity
@@ -49,6 +52,7 @@ import java.math.BigDecimal
         FxRateAdminController::class,
         MarketIndexAdminController::class,
         MarketRateAdminController::class,
+        CommodityAdminController::class,
         SchedulerTriggerController::class,
         // AF-104. 어드민이 아니지만 이 컨텍스트에 함께 둔다 — 이 파일이 보는 건 SecurityConfig의
         // 경로 규칙 전체이고(스케줄러 트리거도 여기 있다), 컨텍스트를 하나 더 띄우는 값이 안 된다.
@@ -96,6 +100,14 @@ class SecurityConfigAdminTest {
 
     @MockBean
     private lateinit var ecosStatListClient: EcosStatListClient
+
+    // 원자재도 같다 — SchedulerTriggerController가 CommodityAdminController를,
+    // 그쪽이 이 둘을 요구한다 (AF-108).
+    @MockBean
+    private lateinit var commodityCollectService: CommodityCollectService
+
+    @MockBean
+    private lateinit var commodityProperties: CommodityProperties
 
     // 마감 트리거는 어드민에 위임하지 않고 WfStepExecutor를 직접 요구한다.
     // 위 overseasIndexCollectService와 같은 함정이다 — 빠뜨리면 이 파일의 테스트가 실패하는 게
@@ -219,6 +231,12 @@ class SecurityConfigAdminTest {
             .andExpect { status { isForbidden() } }
     }
 
+    @Test
+    fun `admin 원자재 수집은 토큰 없이 403으로 차단된다`() {
+        mockMvc.post("/api/admin/commodity/collect")
+            .andExpect { status { isForbidden() } }
+    }
+
     /**
      * AF-103: 스케줄러 트리거는 Security를 통과해 컨트롤러까지 도달해야 한다.
      *
@@ -245,6 +263,17 @@ class SecurityConfigAdminTest {
     @Test
     fun `해외 지수 트리거도 Security를 통과해 컨트롤러까지 도달한다`() {
         mockMvc.post("/api/internal/scheduler/index/overseas?schedule=US")
+            .andExpect { status { isServiceUnavailable() } }
+    }
+
+    /**
+     * AF-108: 원자재 트리거도 같은 규칙 아래 있는지. 위 둘과 같은 이유로 503이 곧
+     * "컨트롤러까지 닿았다"는 증거다 — 이 경로만 Security에 막히면 크론이 401을 받고
+     * 원자재가 한 건도 안 쌓인다.
+     */
+    @Test
+    fun `원자재 트리거도 Security를 통과해 컨트롤러까지 도달한다`() {
+        mockMvc.post("/api/internal/scheduler/commodity")
             .andExpect { status { isServiceUnavailable() } }
     }
 
