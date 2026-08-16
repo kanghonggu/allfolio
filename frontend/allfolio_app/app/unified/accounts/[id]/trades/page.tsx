@@ -16,6 +16,7 @@ import Field, { Input } from '@/components/ui/Field'
 import { EmptyState, LoadingState } from '@/components/ui/states'
 import type { StockTrade, StockTradeType, CreateStockTradePayload } from '@/types/unified'
 import { useStockSearch } from '@/lib/useStockSearch'
+import { todayIso } from '@/lib/date'
 
 // ── 거래 유형 설정 ─────────────────────────────────────────────
 // 색은 국내 HTS 관례: 매수 계열 빨강 / 매도 계열 파랑 / 미수 경고 / 배당 녹색
@@ -33,8 +34,9 @@ function fmt(n: number) {
   return new Intl.NumberFormat('ko-KR').format(Math.round(n))
 }
 
+// 저장되는 tradedAt의 기본값이다 — UTC 포맷이면 KST 09시 전 입력이 어제로 기록된다 (lib/date 참조)
 function today() {
-  return new Date().toISOString().slice(0, 10)
+  return todayIso()
 }
 
 const EMPTY_FORM: CreateStockTradePayload = {
