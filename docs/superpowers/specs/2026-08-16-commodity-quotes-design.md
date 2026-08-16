@@ -116,7 +116,7 @@ CREATE TABLE IF NOT EXISTS market_commodity_quote (
 
 1. **PK가 `(code, trade_date)` 복합 자연키 → 대리키 `id`.** DB만 놓고 보면 자연키가 낫지만, 형제 시세 표 둘(`market_rate`·`market_index_quote`)이 **둘 다 대리키 + `uk_` 패턴**이고 그대로 옮겨 오기로 한 `RateCollectService`의 upsert가 그 리포지터리 모양에 붙어 있다. 유니크 제약이 같은 보장을 주므로 형제 쪽에 맞췄다.
 2. **`source`가 `FRED_EIA | FRED_IMF | FSC` → `FRED | FSC`.** 구현할 `FredCommoditySource`의 `sourceName`은 하나이고 `FredRateSource`도 그렇다. 열 주석은 이 표를 쿼리하는 사람의 유일한 계약이라, 저장되지 않을 값을 적으면 `WHERE source = 'FRED_IMF'`가 조용히 0행을 낸다. EIA/IMF 구분은 `frequency`가 이미 진다.
-3. **`collected_at`의 `DEFAULT NOW()` 제거.** 형제 표 중 가장 나중인 `market_rate`가 같은 열에서 DEFAULT를 **의도적으로 뺐고** 이유를 적어 뒀다 — 앱이 항상 채우므로 DEFAULT는 정상 경로에서 절대 발화하지 않고, 발화하는 유일한 경우는 앱이 빠뜨린 사고일 때인데 그때 에러 대신 **서버 시각(UTC)** 이 들어간다. KST로 만든 값과 같은 열에 섞이면 아홉 시간 어긋난 두 종류가 된다. (`market_index_quote`·`hana_fx_quote`엔 DEFAULT가 있지만 그 둘이 **먼저**다 — 오래된 쪽을 따라가면 학습이 되돌아간다.)
+3. **`collected_at`의 `DEFAULT NOW()` 제거.** 형제 표 중 가장 나중인 `market_rate`가 같은 열에서 DEFAULT를 **의도적으로 뺐고** 이유를 적어 뒀다 — 앱이 항상 채우므로 DEFAULT는 정상 경로에서 절대 발화하지 않고, 발화하는 유일한 경우는 앱이 빠뜨린 사고일 때인데, 그때 **에러 대신 값이 들어가 사고가 사고로 안 보인다.** 열에 무엇이 빠졌는지가 아니라 "이 행이 언제 수집됐는지 아무도 모른다"가 문제이고, DEFAULT는 그걸 그럴듯한 타임스탬프로 덮는다. (초안은 *"KST로 만든 값과 섞여 아홉 시간 어긋난다"*고 적었는데 **그건 틀렸다** — 앱도 이 열엔 `LocalDateTime.now(ZoneOffset.UTC)`를 쓴다. 저장소 관례가 `collected_at`은 UTC다. 결론은 그대로지만 근거의 절반이 사실이 아니었다.) (`market_index_quote`·`hana_fx_quote`엔 DEFAULT가 있지만 그 둘이 **먼저**다 — 오래된 쪽을 따라가면 학습이 되돌아간다.)
 
 **`slot`을 만들지 않는다.** 세 소스 다 하루(또는 한 달) 한 값이라 `OPEN/MID/CLOSE` 개념이 없다. `market_index_quote`를 재사용하면 `slot`에 `CLOSE`를 억지로 채우게 되고, 그러면 "종가"라는 말이 원자재 행에서만 다른 뜻이 된다 — 나중에 지수와 원자재를 같이 조회할 때 조용히 틀린다.
 
@@ -126,7 +126,7 @@ CREATE TABLE IF NOT EXISTS market_commodity_quote (
 
 **월간 행의 `trade_date`는 그 달의 1일**이다(IMF 관측일 규약 그대로). 월말로 바꾸지 않는다 — 소스가 준 날짜를 우리가 해석해 옮기면 그 해석이 어디에도 안 적힌다.
 
-**별도 인덱스를 만들지 않는다.** PK 선두 열 `code`가 코드별 최신 조회를 받는다.
+**별도 인덱스를 만들지 않는다.** 다만 이유가 초안과 다르다 — PK 선두 열은 **랜덤 UUID라 조회에 아무 도움이 안 된다.** 코드별 최신 조회(`code = ? ORDER BY trade_date DESC LIMIT 1`)와 구간 조회를 둘 다 받는 것은 `uk_market_commodity_quote (code, trade_date)`가 만드는 btree다. Postgres는 btree를 역방향으로도 비용 없이 스캔하므로 별도 DESC 인덱스가 필요 없다.
 
 ## 5. 소스 포트 — `CommoditySource`
 
@@ -186,7 +186,9 @@ PRICE { override fun accepts(value: BigDecimal) = value > BigDecimal.ZERO }
 
 **섹션을 나누는 이유는 신선도가 층마다 다르기 때문이다.** "사흘 전"과 "두 달 전"이 같은 표에 놓이면 사용자가 숫자를 믿는 방식이 망가진다. 항목마다 기준일을 찍는 것은 AF-104 금리 탭이 이미 쓰는 방식이다(기준금리 08-12 vs 국고채 08-14).
 
-**자릿수는 `lib/market-format.ts`의 `fixed()`를 쓴다.** 새 포맷터를 만들지 않는다. 단위가 값 옆에 붙으므로 라벨 맵에 단위 표기를 더한다.
+**자릿수는 `lib/market-format.ts`의 `fixed()`를 쓴다.** 새 포맷터를 만들지 않는다. 단위는 값 옆에 붙인다.
+
+> **⚠️ "라벨 맵에 단위 표기를 더한다"고 적었던 것은 틀렸다 (2026-08-16 정정).** 그건 바로 위 §4가 못박은 것과 정면으로 어긋난다 — *"코드에 상수로 들고 있으면 소스가 바꾼 날 저장은 멀쩡한데 화면만 조용히 틀린다"*. 그래서 `unit`을 행에 저장하기로 한 것인데, 화면이 라벨 맵의 상수를 쓰면 그 저장이 무의미해진다. **화면은 행에 실려 온 `unit`을 쓴다.** 구현이 이쪽을 택했고 그게 맞다.
 
 **노출 플래그**: `market.commodities-enabled`. `render.yaml`에는 **`value:`가 아니라 `sync: false`** — blueprint에 값을 적으면 대시보드에서 끈 것이 다음 sync 때 조용히 되살아난다(AF-104가 그 함정을 주석으로 못박아 뒀다).
 

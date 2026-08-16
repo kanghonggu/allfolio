@@ -16,7 +16,7 @@
 
 **1. `PERCENT` 정책이 원자재를 죽인다.** `FredApiClient.fetch()`의 마지막 줄이 `parser.parse(body, RateValuePolicy.PERCENT)`이고 `PERCENT`는 `|value| ≤ 100`을 요구한다. 구리(~9,000)·금(~150,000)·종합지수(~180)가 전부 파싱 단계에서 버려진다. **WTI(~70)는 우연히 통과한다** — 그래서 WTI만으로 테스트하면 이 문제를 못 본다.
 
-**2. 상한을 없애면 단위 오인을 못 잡는다.** `PRICE`는 0 초과만 본다. 소스가 USD/MT를 USD/kg로 바꿔도 여전히 양수다. `RateValuePolicy.PERCENT`의 KDoc이 *"반대 방향 단위 오인은 구조적으로 못 잡는다"*고 적은 것과 같다. **그래서 Task 1의 마지막 단계가 17종을 한 번씩 호출해 눈으로 대조하는 것이다.**
+**2. 상한을 없애면 단위 오인을 못 잡는다.** `PRICE`는 0 초과만 본다. 소스가 USD/MT를 USD/kg로 바꿔도 여전히 양수다. `RateValuePolicy.PERCENT`의 KDoc이 *"반대 방향 단위 오인은 구조적으로 못 잡는다"*고 적은 것과 같다. **그래서 Task 1의 마지막 단계가 FRED 16종을 한 번씩 호출해 눈으로 대조하는 것이다.**
 
 **3. FRED 인증키가 쿼리 파라미터에 실린다.** `FredApiClient`가 URL 로깅 금지·`cause` 금지·본문 미리보기 금지 세 가지로 방어한다. 그 파일 주석이 왜 그런지 길게 적어 뒀다. **일반화하면서 그 방어를 건드리지 말 것.**
 
@@ -165,7 +165,7 @@ Expected: 전부 PASS. **`--rerun-tasks`를 반드시 붙일 것** — 캐시된
 
 - [ ] **Step 6: 실제 값과 단위를 눈으로 대조한다 — 이 태스크의 핵심**
 
-`PRICE`가 상한을 안 걸므로 단위 오인을 코드가 못 잡는다. 17종을 한 번씩 호출해 값이 상식적인지 본다.
+`PRICE`가 상한을 안 걸므로 단위 오인을 코드가 못 잡는다. 16종을 한 번씩 호출해 값이 상식적인지 본다 (금은 Task 4라 여기 없다).
 
 ```bash
 cd /Users/hong9/IdeaProjects/allfolio && KEY=$(grep -E "^FRED_API_KEY=" .env | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '[:space:]') && for S in DCOILWTICO DCOILBRENTEU DHHNGSP PCOPPUSDM PNICKUSDM PZINCUSDM PALUMUSDM PIORECRUSDM PCOALAUUSDM PURANUSDM PWHEAMTUSDM PMAIZMTUSDM PSOYBUSDM PSUGAISAUSDM PCOFFOTMUSDM PALLFNFINDEXM; do echo -n "$S "; curl -s "https://api.stlouisfed.org/fred/series/observations?series_id=$S&api_key=$KEY&file_type=json&sort_order=desc&limit=1" | python3 -c "import sys,json;o=json.load(sys.stdin)['observations'][0];print(o['date'], o['value'])"; done
@@ -208,9 +208,12 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 --
 -- 월간 행의 trade_date는 그 달의 1일이다(IMF 관측일 규약 그대로). 월말로 옮기지 않는다.
 --
--- 별도 인덱스를 만들지 않는다: PK 선두 열 code가 코드별 최신 조회를 그대로 받는다.
+-- id를 대리키로 쓴다: 형제 시세 표 둘(market_rate·market_index_quote)이 같은 패턴이고,
+-- Task 5에서 옮겨 오는 수집 서비스가 그 리포지터리 모양에 붙어 있다. 자연키 유일성은 uk_가 진다.
+-- 코드별 최신 조회도 PK가 아니라 그 uk_ btree가 받는다 (PK 선두 열은 랜덤 UUID다).
 
 CREATE TABLE IF NOT EXISTS market_commodity_quote (
+    id            UUID           NOT NULL,
     code          VARCHAR(20)    NOT NULL,
     trade_date    DATE           NOT NULL,
     price         NUMERIC(18,4)  NOT NULL,
@@ -219,13 +222,14 @@ CREATE TABLE IF NOT EXISTS market_commodity_quote (
     prev_close    NUMERIC(18,4),
     change_value  NUMERIC(18,4),
     change_rate   NUMERIC(9,4),
-    source        VARCHAR(20)    NOT NULL,   -- FRED_EIA | FRED_IMF | FSC
-    collected_at  TIMESTAMP      NOT NULL DEFAULT NOW(),
-    CONSTRAINT pk_market_commodity_quote PRIMARY KEY (code, trade_date)
+    source        VARCHAR(20)    NOT NULL,   -- FRED | FSC. EIA/IMF 구분은 frequency가 진다
+    collected_at  TIMESTAMP      NOT NULL,   -- 앱이 항상 채운다. DEFAULT를 두면 빠뜨렸을 때 조용히 틀린 값이 들어간다
+    CONSTRAINT pk_market_commodity_quote PRIMARY KEY (id),
+    CONSTRAINT uk_market_commodity_quote UNIQUE (code, trade_date)
 );
 
 COMMENT ON TABLE  market_commodity_quote            IS '원자재 시세 — 에너지(일간)·금(D+1)·월간 지표';
-COMMENT ON COLUMN market_commodity_quote.unit       IS 'USD/bbl · USD/MMBtu · USD/MT · USD/lb · KRW/g · index';
+COMMENT ON COLUMN market_commodity_quote.unit       IS 'USD/bbl · USD/MMBtu · USD/MT · USD/lb · USc/lb · KRW/g · index — USD/lb와 USc/lb는 100배 다르다';
 COMMENT ON COLUMN market_commodity_quote.frequency  IS 'D=일간 M=월간. 화면이 섹션을 가르는 기준';
 
 SELECT count(*) AS existing_rows FROM market_commodity_quote;
@@ -619,7 +623,7 @@ SELECT frequency, source, count(*), min(trade_date), max(trade_date)
 FROM market_commodity_quote GROUP BY frequency, source ORDER BY 1,2;
 ```
 
-일간 3종 · 월간 13종 · 금 1종이 각각 쌓였는지. 그리고 **값이 상식적인지 눈으로** — Task 1 Step 6에서 본 값과 같은 자리수인지 확인한다. 단위 오인은 코드가 못 잡는다.
+일간 3종 · 월간 13종이 각각 쌓였는지 (금 1종은 Task 4가 풀린 뒤). 그리고 **값이 상식적인지 눈으로** — Task 1 Step 6에서 본 값과 같은 자리수인지 확인한다. 단위 오인은 코드가 못 잡는다.
 
 - [ ] **Step 4: 화면**
 
@@ -629,7 +633,7 @@ FROM market_commodity_quote GROUP BY frequency, source ORDER BY 1,2;
 
 ## 완료 기준
 
-- [ ] 17종이 각자 주기대로 쌓인다
+- [ ] FRED 16종이 각자 주기대로 쌓인다 (금 1종은 Task 4 해제 후)
 - [ ] 값과 단위를 눈으로 대조했다 (Task 1 Step 6 · Task 8 Step 3)
 - [ ] 변이 테스트: `PRICE`→`PERCENT` / `fetch` 기본값 / `uppercase` 계열 — 확인했다
 - [ ] 플래그 off면 탭이 안 뜬다
