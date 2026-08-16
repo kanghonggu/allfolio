@@ -381,7 +381,7 @@ class ReportService(
         else BigDecimal.ZERO
 
         // 실제 지수 시계열(benchmark_daily, 일일 sync) 기반 — 데이터 없으면 목록에서 제외 (QA P1 #10)
-        val today = LocalDate.now()
+        val today = LocalDate.now(KST)
         val since = today.minusDays(periodDays(period).toLong())
         val indexSeries = com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.entries.associateWith { type ->
             // 휴장일 대비 앵커 여유 2주 — 기간 시작 이전 마지막 종가를 기저로 쓴다
@@ -435,7 +435,7 @@ class ReportService(
             }
             .sortedByDescending { it.netWorth }
 
-        val since = LocalDate.now().minusDays(365)
+        val since = LocalDate.now(KST).minusDays(365)
         val trend = try {
             jdbc.query(
                 """SELECT date, nav FROM performance_daily WHERE portfolio_id = ? AND date >= ? ORDER BY date ASC""",
@@ -579,12 +579,12 @@ class ReportService(
             "1W"  -> 7
             "1M"  -> 30
             "3M"  -> 90
-            "YTD" -> LocalDate.now().dayOfYear
+            "YTD" -> LocalDate.now(KST).dayOfYear
             "1Y"  -> 365
             "ALL" -> 3650
             else  -> 30
         }
-        val since = LocalDate.now().minusDays(days.toLong())
+        val since = LocalDate.now(KST).minusDays(days.toLong())
 
         return try {
             jdbc.query(
@@ -643,7 +643,7 @@ class ReportService(
     ): Map<String, BigDecimal?> {
         val empty = mapOf<String, BigDecimal?>("1W" to null, "1M" to null, "3M" to null, "YTD" to null, "1Y" to null)
         if (series.size < 2) return empty
-        val now = LocalDate.now()
+        val now = LocalDate.now(KST)
         val navPoints = series.map { com.allfolio.report.domain.returns.NavPoint(it.date, it.nav) }
 
         // 대시보드(GetDashboardUseCase)와 동일한 공용 엔진 — 두 엔드포인트 수치 불일치 방지 (QA 후속 #3)
@@ -678,7 +678,7 @@ class ReportService(
 
     private fun periodDays(period: String): Int = when (period) {
         "1W"  -> 7; "1M" -> 30; "3M" -> 90
-        "YTD" -> LocalDate.now().dayOfYear
+        "YTD" -> LocalDate.now(KST).dayOfYear
         "1Y"  -> 365; "ALL" -> 3650
         else  -> 30
     }

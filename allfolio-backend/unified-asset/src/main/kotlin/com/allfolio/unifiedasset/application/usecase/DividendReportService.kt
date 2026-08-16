@@ -132,13 +132,13 @@ class DividendReportService(private val jdbc: JdbcTemplate) {
                    FROM ua_stock_trades
                    WHERE user_id = ? AND trade_type = 'DIVIDEND' AND traded_at >= ?""",
                 { rs, _ -> rs.getBigDecimal("total") },
-                userId, LocalDate.now().minusYears(1),
+                userId, LocalDate.now(KST).minusYears(1),
             ).firstOrNull() ?: BigDecimal.ZERO
         }.getOrElse { BigDecimal.ZERO }
 
         // 6. 월 평균: totalDividend / 기간 개월수 (최소 1)
         val elapsedMonths = if (since != null) {
-            java.time.temporal.ChronoUnit.MONTHS.between(since, LocalDate.now()).coerceAtLeast(1)
+            java.time.temporal.ChronoUnit.MONTHS.between(since, LocalDate.now(KST)).coerceAtLeast(1)
         } else {
             val oldest = runCatching {
                 jdbc.query(
@@ -149,7 +149,7 @@ class DividendReportService(private val jdbc: JdbcTemplate) {
                 ).firstOrNull()
             }.getOrElse { null }
             if (oldest != null)
-                java.time.temporal.ChronoUnit.MONTHS.between(oldest, LocalDate.now()).coerceAtLeast(1)
+                java.time.temporal.ChronoUnit.MONTHS.between(oldest, LocalDate.now(KST)).coerceAtLeast(1)
             else 1L
         }
         val monthlyAvg = kpi.total.divide(BigDecimal(elapsedMonths), 0, RoundingMode.HALF_UP)
@@ -169,8 +169,8 @@ class DividendReportService(private val jdbc: JdbcTemplate) {
     }
 
     private fun periodStart(period: String): LocalDate? = when (period) {
-        "YTD" -> LocalDate.of(LocalDate.now().year, 1, 1)
-        "1Y"  -> LocalDate.now().minusYears(1)
+        "YTD" -> LocalDate.of(LocalDate.now(KST).year, 1, 1)
+        "1Y"  -> LocalDate.now(KST).minusYears(1)
         "전체" -> null
         else  -> null.also { log.warn("Unknown period '{}', defaulting to all-time", period) }
     }
