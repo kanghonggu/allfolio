@@ -167,12 +167,22 @@ export default function UnifiedDashboard() {
   ) : undefined
 
   // 포지션은 있는데 지표만 비어 있으면 원인은 자산이 아니라 스냅샷 축적 기간이다
+  //
+  // **"내일부터"·"매일 자정"을 다시 쓰지 말 것.** 자정 적재는 마감 워크플로우(S030)가 하는데
+  // 그 트리거는 운영에서 성립한 적이 없다 — 무료 인스턴스가 자정에 잠들어 있고, 깨어 있던 날은
+  // wf_ 테이블이 없어 첫 쿼리에서 죽었다(2026-08-14 확인). 사용자에게 "내일"을 약속하면
+  // 영원히 오지 않는 내일이 된다. 지금 실제로 스냅샷을 남기는 경로는 동기화 하나뿐이라
+  // (SyncAccountUseCase → PerformanceSnapshotService UPSERT) 그것만 말한다.
+  //
+  // PR #168이 트리거를 고치는 중이다(외부 GitHub Actions 크론 + wf_ 마이그레이션). 그게 머지·적용되고
+  // performance_daily에 이틀 연속 행이 쌓이는 것을 **운영에서 눈으로 확인한 뒤에** 문구를 되돌릴 것.
+  // 머지됐다는 사실만으로 되돌리지 말 것 — 마이그레이션은 코드가 아니라 운영자 액션이라 따로 논다.
   const metricsEmpty = portfolio.positions.length > 0
     ? {
-        title: '내일부터 수익률이 표시됩니다',
+        title: '스냅샷이 2건 쌓이면 수익률이 표시됩니다',
         description:
           '일별 NAV 스냅샷이 2건 이상 쌓여야 수익률을 계산할 수 있습니다. ' +
-          '계좌를 연동해 두면 매일 자정 스냅샷이 쌓입니다.',
+          '동기화할 때마다 그날의 스냅샷이 기록됩니다.',
         action: undefined as React.ReactNode,
       }
     : { title: emptyState.title, description: emptyState.description, action: emptyAction }

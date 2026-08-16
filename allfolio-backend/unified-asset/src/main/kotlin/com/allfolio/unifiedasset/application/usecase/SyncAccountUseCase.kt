@@ -94,9 +94,32 @@ class SyncAccountUseCase(
                 recordInitialInflow(account, assets)
             }
 
-            // 이 계좌 유저의 전체 NAV를 스냅샷으로 기록 (통화별 원통화 합계 → 환산은 record()가 한다)
-            val allAssets = assetRepository.findByUserId(account.userId)
-            snapshotService.record(account.userId, allAssets.navByCurrency(), LocalDate.now(ZoneId.of("Asia/Seoul")))
+            // 이 계좌 유저의 전체 NAV를 스냅샷으로 기록.
+            // 통화별 원통화 합계를 넘기고 환산은 record()가 통화별로 한 번씩 한다 (AF-106) —
+            // 그래야 performance_daily와 nav_currency_daily가 같은 숫자에서 나온다.
+            //
+            // **SCHEDULED는 제외한다 — 마감 중 기록자는 S030 하나여야 한다.** 이 경로는 마감
+            // 워크플로우 S010(`DailyAccountSyncer.syncAll`)도 그대로 쓰는데, 그쪽은 워크플로우의
+            // 업무일자를 모른다. 여기서 쓰면 날짜가 `ctx.ymd`가 아니라 **실행 시각의 KST 오늘**이
+            // 되어, S030이 `ctx.ymd.minusDays(1)`로 D−1을 쓰는 동안 같은 실행이 D 행을 하나 더 만든다.
+            // D 행에 앉는 값은 00:05 KST에 읽은 것이라 실질적으로 D−1 종가인데 D로 라벨된 행이다
+            // (2026-08-16 운영 로그에서 12초 간격으로 두 날짜가 찍혔다).
+            //
+            // 다음 밤 S030이 같은 UPSERT 키로 덮어 자가 치유되지만, 그때까지 **가장 최근 행이 항상
+            // 틀린 행**이고 `GetReturnsAnalysisUseCase`가 `[from,to]`의 `to` 끝점으로 잡는 게 정확히
+            // 그 행이라 오늘 보는 사람이 틀린 초과수익을 본다.
+            //
+            // 날짜를 여기까지 내려보내는 대안은 `AccountSyncRunner` 시그니처를 바꾸게 되어 뺐다.
+            // `SCHEDULED`를 쓰는 호출자는 `DailyAccountSyncer` 하나뿐이라(전 저장소 검색) 사용자
+            // 경로(MANUAL·AUTO)는 그대로 기록한다. **이 분기를 "정리"하지 말 것.**
+            if (trigger != SyncTrigger.SCHEDULED) {
+                val allAssets = assetRepository.findByUserId(account.userId)
+                snapshotService.record(
+                    account.userId,
+                    allAssets.navByCurrency(),
+                    LocalDate.now(ZoneId.of("Asia/Seoul")),
+                )
+            }
 
             log.info("Synced ${assets.size} assets for account $accountId (${account.provider})")
             SyncResult(accountId, assets.size, AccountStatus.ACTIVE)

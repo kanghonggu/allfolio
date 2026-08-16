@@ -10,7 +10,8 @@ import org.springframework.stereotype.Service
 import org.springframework.web.server.ResponseStatusException
 import java.math.BigDecimal
 import java.math.RoundingMode
-import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.util.UUID
 
 @Service
@@ -53,7 +54,7 @@ class EsgReportService(
 
         return EsgReport(
             userId             = userId,
-            generatedAt        = LocalDateTime.now(),
+            generatedAt        = OffsetDateTime.now(KST),
             rating             = portfolioScore.rating,
             totalScore         = portfolioScore.total,
             environmentalScore = portfolioScore.environmental,
@@ -63,5 +64,13 @@ class EsgReportService(
             topAssets          = breakdown.take(3),
             bottomAssets       = if (breakdown.size > 3) breakdown.takeLast(3).reversed() else emptyList(),
         )
+    }
+
+    companion object {
+        /**
+         * `generatedAt`은 KST 오프셋을 달아 내보낸다 — Render 컨테이너는 TZ 설정이 없어 UTC라
+         * 기본 타임존을 쓰면 한국 사용자에게 9시간 어긋난다. 배경은 [ReportService.Companion] 참고.
+         */
+        private val KST: ZoneId = ZoneId.of("Asia/Seoul")
     }
 }

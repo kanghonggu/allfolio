@@ -16,8 +16,10 @@ import { EmptyState, LoadingState } from '@/components/ui/states'
 import { fmtKrw } from '@/lib/report-format'
 import type { Account } from '@/types/unified'
 import type { CashFlowItem, FxRequest, TransferRequest } from '@/types/returns'
+import { todayIso } from '@/lib/date'
 
-const today = () => new Date().toISOString().slice(0, 10)
+// 저장되는 flowDate의 기본값이다 — UTC 포맷이면 KST 09시 전 입력이 어제로 기록된다 (lib/date 참조)
+const today = () => todayIso()
 
 const FLOW_TYPE_KO: Record<string, string> = {
   TRANSFER_IN: '이체 입금',

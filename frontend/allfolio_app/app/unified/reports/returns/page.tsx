@@ -6,6 +6,7 @@ import Link from 'next/link'
 import axios from 'axios'
 import { useBenchmarkApi, useCashFlowApi, useReportApi } from '@/lib/useApi'
 import { SUPPORTED_CURRENCIES } from '@/lib/currencies'
+import { isoDate, todayIso } from '@/lib/date'
 import PageHeader from '@/components/ui/PageHeader'
 import SectionHeader from '@/components/ui/SectionHeader'
 import Label from '@/components/ui/Label'
@@ -30,13 +31,11 @@ const TOOLTIP_STYLE = {
   color: 'var(--c-ink)',
 } as const
 
-function iso(d: Date): string {
-  return d.toISOString().slice(0, 10)
-}
-
+// 날짜 포맷은 lib/date의 isoDate로 통일한다 — 여기 있던 toISOString().slice(0,10)은
+// 로컬 new Date()로 만든 값을 UTC로 읽어 KST 09시 전에는 to가 어제였다. 이유는 그 파일 참조.
 function presetRange(preset: Preset): { from: string; to: string } {
   const today = new Date()
-  const to = iso(today)
+  const to = isoDate(today)
   const d = new Date(today)
   switch (preset) {
     case '1M': d.setMonth(d.getMonth() - 1); break
@@ -47,7 +46,7 @@ function presetRange(preset: Preset): { from: string; to: string } {
     case 'SI': return { from: '2000-01-01', to }   // BE가 첫 관측일로 클램프
     default: break
   }
-  return { from: iso(d), to }
+  return { from: isoDate(d), to }
 }
 
 // BE가 percent(0~100) 단위로 내려보낸다 (QA 후속 #1 — dashboard와 단위 통일, ×100 금지)
@@ -240,10 +239,15 @@ export default function ReturnsReportPage() {
           </Button>
         </div>
 
+        {/*
+          **"매일 자정"을 다시 쓰지 말 것** — 대시보드 빈 상태(app/unified/page.tsx)에 같은 경고를
+          적어 뒀다. 자정 적재가 운영에서 성립한 적이 없어서, 그 문장은 이 경고를 보는 사용자에게
+          정확히 거짓이다(그 경고가 떠 있다는 것 자체가 안 쌓였다는 뜻이다).
+        */}
         {insufficientData && (
           <div className="mt-6 border border-warn-line bg-warn-bg px-4 py-3.5 text-[13px] leading-relaxed text-warn">
             이 기간에는 일별 NAV 스냅샷이 2건 미만이라 수익률을 계산할 수 없습니다.
-            계좌를 연동하면 매일 자정 스냅샷이 쌓입니다. 입출금 기록은 지금도 남길 수 있고, 스냅샷이 쌓이면 자동 반영됩니다.
+            동기화할 때마다 그날의 스냅샷이 기록됩니다. 입출금 기록은 지금도 남길 수 있고, 스냅샷이 쌓이면 자동 반영됩니다.
           </div>
         )}
 
@@ -514,7 +518,8 @@ function RecordFlowModal({
   onSaved: () => void
   record: (req: RecordCashFlowRequest) => Promise<CashFlowItem>
 }) {
-  const [flowDate, setFlowDate] = useState(iso(new Date()))
+  // 저장되는 flowDate의 기본값이다 — UTC 포맷이면 KST 09시 전 입력이 어제로 기록된다 (lib/date 참조)
+  const [flowDate, setFlowDate] = useState(todayIso())
   const [flowType, setFlowType] = useState<FlowType>('DEPOSIT')
   const [amount, setAmount] = useState('')
   const [currency, setCurrency] = useState('KRW')

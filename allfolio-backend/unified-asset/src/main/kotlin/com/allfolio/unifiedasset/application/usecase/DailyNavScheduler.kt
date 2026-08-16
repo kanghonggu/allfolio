@@ -10,17 +10,30 @@ import java.util.UUID
 /**
  * 전 사용자 NAV 스냅샷 기록 (P3 #24에서 마감 워크플로우 S030 액션으로 편입).
  *
- * 자정 트리거는 backend-app ClosingScheduler → WfStepExecutor.runDaily가 담당하고,
+ * 자정 트리거는 GitHub Actions 크론(.github/workflows/closing.yml) → /api/internal/scheduler/closing
+ * → WfStepExecutor.runDaily가 담당한다. 인스턴스 안의 ClosingScheduler는 기본 꺼짐
+ * (CLOSING_SCHEDULER_ENABLED) — 무료 Render는 자정에 잠들어 있어 @Scheduled가 성립하지 않는다.
  * 재동기화(구 1단계)는 S010 액션(DailyAccountSyncer)으로 분리됐다 — 이 클래스는 NAV 파트만 남음.
  *
- * SyncAccountUseCase가 sync 성공 시 이미 스냅샷을 UPSERT하지만, 이 명시적 패스는 syncable
- * 계좌가 없는 사용자·전부 실패한 사용자까지 마지막 값으로라도 스냅샷을 보장하는 안전망이다.
+ * **이 패스가 자기 일자의 마지막 기록자다.** 받는 일자는 ctx.ymd가 아니라 ctx.ymd.minusDays(1)
+ * (NavSnapshotAction 참조) — 자정 KST가 읽는 값은 직전일이 끝난 값이기 때문이다. 그 일자 X에
+ * 대화형 sync가 쓰는 건 전부 X 당일(00:00~24:00 KST)에 일어나고 이 패스는 X+1 00:05에 도니,
+ * (tenant,portfolio,date) UPSERT의 순서상 항상 이쪽이 마지막이다.
  *
- * **이 패스가 남기는 건 그 날의 첫 값이지 최종값이 아니다.** 자정 KST 실행이 쓰는 일자는
- * 그날 자신(ctx.ymd)이라, 이후 같은 날 도는 sync가 (tenant,portfolio,date) UPSERT로 계속
- * 덮어쓴다. 그래서 하루가 끝난 뒤 performance_daily에 남는 값은 그날 마지막 sync의 것이다.
- * (AF-106 이후로는 sync 경로도 통화별 내역을 넘기고 환산은 record()가 통화별로 한 번씩
- * 하므로, 두 경로의 KRW 라운딩이 같아져 덮어써도 값이 어긋나지 않는다.)
+ * **환산 방식으로는 이제 두 경로가 다르지 않다 (AF-106).** 예전엔 이 패스만 통화별 1회 환산이라
+ * sync의 자산별 환산 합보다 정확했지만, 지금은 둘 다 통화별 원통화 합계를 넘기고 환산은
+ * PerformanceSnapshotService.record()가 통화별로 한 번씩 한다. 그러니 이쪽이 마지막이라는 사실은
+ * 값의 정확도가 아니라 **일자 라벨이 옳다는 것**에서 의미를 갖는다.
+ *
+ * S010이 도는 동안 sync 부수효과가 같은 날 행을 하나 더 만들던 문제는 SyncAccountUseCase가
+ * SyncTrigger.SCHEDULED에서 스냅샷을 안 쓰게 해서 닫았다 — 마감 중 기록자는 이 패스 하나다.
+ *
+ * **한계 둘.** (1) ua_assets에 행이 없는 사용자는 navByUser에 안 잡혀 스냅샷이 아예 안 남는다.
+ * (2) S030은 S020←S010 게이트 뒤라, 동기화가 전량 실패한 날은 이 패스가 돌지 않는다 — 의도된
+ * 동작이다(그날 NAV는 어제 값 그대로라 "안 움직인 날"이라는 거짓 관측이 되고, TWR은 결측은
+ * 견디지만 거짓 관측은 못 견딘다). **이 클래스를 "전 사용자 안전망"이라고 부르지 말 것** —
+ * 덮는 건 syncable 계좌가 없는 사용자까지고(그쪽은 total=0이라 게이트에 안 걸린다), 전량
+ * 실패한 사용자는 일부러 안 덮는다.
  */
 @Component
 class DailyNavScheduler(
