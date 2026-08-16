@@ -23,10 +23,15 @@ import java.util.UUID
  * @param skippedRows 값·날짜가 이상해 파서가 버린 행 수. 0이 아니면 형식이 바뀐 신호다
  * @param outOfRange 요청 구간 밖 날짜라 걷어낸 행 수
  * @param emptySeries 저장할 행이 한 건도 남지 않은 종목. **그 자체로 실패는 아니다** —
- *                    다만 시리즈 ID가 죽어도 똑같이 0건이라 어느 쪽인지는 사람이 봐야 한다.
- *                    그래서 세지 말고 이름을 남긴다.
- *                    **월간 계열을 "정상적으로 빈" 예로 들지 말 것** — 기본 수집 창이 90일이라
- *                    IMF의 두 달 지연을 감안해도 관측이 최소 한 건은 들어온다(그 창 길이의 근거가 그것이다).
+ *                    계열이 중단됐거나 이번에 새로 편입돼 아직 값이 없을 수 있다. 다만 시리즈 ID가
+ *                    틀려도 똑같이 0건이라 자동으로는 못 가른다. 그래서 세지 말고 이름을 남긴다.
+ *
+ *                    **"월간은 새 관측이 없는 달이 있으니 비는 게 정상"이라고 적지 말 것.**
+ *                    그건 창 길이에 달린 문제이고, 기본 창은 월간을 400일로 잡아 관측 13건이
+ *                    들어오게 해 뒀다 — 월간이 비면 정상이 아니라 대개 시리즈 ID가 틀린 것이다.
+ *                    (AF-102가 `BASE_RATE`를 "정상적으로 빈다"고 적어 진짜 경보를 무시하게 만든
+ *                    실수의 거울상이 여기 있다. 반대로 창을 짧게 잡아 놓고 "정상"이라 적으면
+ *                    이번엔 없는 장애를 쫓게 된다. 어느 쪽이든 창을 바꾸면 이 문장을 다시 볼 것.)
  * @param failures "WTI: <사유>" 형태. 어느 종목이 왜 빠졌는지 한 번에 보여야 한다
  */
 data class CommodityCollectSummary(
@@ -106,10 +111,52 @@ class CommodityCollectService(
         private const val CHANGE_RATE_SCALE = 4
 
         private val HUNDRED = BigDecimal(100)
+
+        /** [CommodityProperties.CommodityItem.frequency]의 일간 값. 나머지는 전부 월간 취급이다 */
+        private const val DAILY = "D"
+
+        /**
+         * 일간 계열의 기본 수집 창(일). `MarketRateAdminController`의 14일과 같은 수다 —
+         * 달력 14일이면 연휴가 끼어도 영업일이 5~6일은 들어오고, 잡이 며칠 실패해도 다음 날이 메운다.
+         * 일간 원자재(FRED/EIA)의 공표 지연은 영업일 3일이라 금리와 같은 층위다.
+         */
+        private const val DAILY_WINDOW_DAYS = 14L
+
+        /**
+         * 월간 계열의 기본 수집 창(일).
+         *
+         * **일간과 창을 나누는 이유가 이 상수다.** 월간 지표(FRED/IMF)는 관측일이 그 달 1일인데
+         * 공표는 한참 뒤다 — **실측: 2026-08-16 시점의 최신 관측이 2026-06-01, 즉 76일 전이고
+         * 7월 관측은 아직 없었다.** 그리고 그 나이는 다음 공표가 올 때까지 **계속 자란다.**
+         * 14일 창으로는 공표 시점에 관측일이 이미 창 밖이라 월간 13종이 영원히 안 들어오고,
+         * 실측(76일)에 아슬아슬하게 맞춘 숫자(예: 90일)는 공표가 한 달 밀리는 구간마다
+         * 월간이 통째로 창 밖으로 나가 **없는 장애를 쫓게 만든다.**
+         *
+         * **월간은 창을 늘려도 비용이 한 달에 한 행씩만 는다** — 400일이면 종목당 관측 13건,
+         * 13종 합쳐 170행 남짓이다. 일간을 90일로 잡았을 때의 190행보다 오히려 싸다.
+         * 그래서 실측의 다섯 배가 넘는 창을 잡고 지연이 자라도 흔들리지 않게 둔다.
+         * 덤으로 IMF의 과거 값 정정도 매 실행 13개월치가 다시 확인된다.
+         *
+         * 이 수를 줄이려거든 **반올림 라벨("두 달")이 아니라 실측부터 다시 재고**,
+         * 잰 날짜를 여기 함께 남길 것.
+         */
+        private const val MONTHLY_WINDOW_DAYS = 400L
+
+        /**
+         * 주기별 기본 창. **모르는 주기는 월간(긴 쪽)으로 친다** — 짧은 창은 데이터가 조용히
+         * 안 쌓이고 긴 창은 merge 왕복이 조금 더 들 뿐이다. 모를 때 기울 방향은 후자다.
+         */
+        internal fun windowDaysFor(frequency: String): Long =
+            if (frequency == DAILY) DAILY_WINDOW_DAYS else MONTHLY_WINDOW_DAYS
     }
 
-    fun collect(from: LocalDate, to: LocalDate, now: LocalDateTime): CommodityCollectSummary {
-        require(!from.isAfter(to)) { "from이 to보다 늦습니다: $from ~ $to" }
+    /**
+     * @param from `null`이면 **주기별 기본 창**을 종목마다 따로 잡는다(일간 14일 · 월간 400일).
+     *             날짜를 주면 그 구간이 전 종목에 그대로 적용된다 — 백필 경로가 그쪽이다.
+     *             요약의 `from`은 실제로 쓰인 창 중 **가장 이른 시작일**이다(기본 창일 때는 월간 쪽).
+     */
+    fun collect(from: LocalDate?, to: LocalDate, now: LocalDateTime): CommodityCollectSummary {
+        require(from == null || !from.isAfter(to)) { "from이 to보다 늦습니다: $from ~ $to" }
 
         var inserted = 0
         var updated = 0
@@ -118,6 +165,9 @@ class CommodityCollectService(
         var outOfRange = 0
         val emptySeries = mutableListOf<String>()
         val failures = mutableListOf<String>()
+        // 실제로 쓰인 창 중 가장 이른 시작일. 종목마다 창이 다를 수 있으므로 요약이 "어디까지 봤나"를
+        // 말하려면 모아서 최솟값을 내야 한다
+        var earliestFrom: LocalDate? = null
 
         // 소스 x 코드로 편다. 어느 소스가 어느 코드를 갖는지는 소스가 안다 —
         // 서비스는 설정 모양을 알 필요가 없고, 그래서 소스가 늘어도(FSC가 붙어도) 이 루프는 안 바뀐다
@@ -130,18 +180,26 @@ class CommodityCollectService(
                 val item = properties.allItems.firstOrNull { it.code == code }
                     ?: throw IllegalStateException("설정(market-commodity)에 없는 코드입니다")
 
-                val result = source.fetch(code, from, to)
+                // **창은 종목의 주기가 정한다.** 신선도가 층마다 다른 것이 이 기능의 조직 원리인데
+                // (화면이 섹션을 가르는 근거가 그것이다) 수집만 한 창으로 뭉개면, 일간에 맞춘 창은
+                // 월간을 영원히 놓치고 월간에 맞춘 창은 일간을 매일 수백 행씩 헛돌린다
+                val start = from ?: to.minusDays(windowDaysFor(item.frequency))
+                earliestFrom = earliestFrom?.let { minOf(it, start) } ?: start
+
+                val result = source.fetch(code, start, to)
                 skippedRows += result.skipped
 
                 // 요청 구간 밖 날짜를 먼저 걷어낸다. 파서는 날짜만 파싱되면 통과시키므로
-                // 소스가 구간 밖 날짜를 섞어 줄 수 있는데, 아래 existing 조회는 from..to로 한정된다 —
+                // 소스가 구간 밖 날짜를 섞어 줄 수 있는데, 아래 existing 조회는 start..to로 한정된다 —
                 // 그 날짜 행이 이미 테이블에 있으면 existing에서 안 잡혀 새 UUID로 INSERT가 나가고
                 // uk_market_commodity_quote가 배치 전체를 죽인다. 재실행해도 똑같이 죽는다.
-                val inRange = result.rows.filter { it.quoteDate in from..to }
+                val inRange = result.rows.filter { it.quoteDate in start..to }
                 outOfRange += result.rows.size - inRange.size
 
-                // **0건을 실패로 만들지 않는다.** 다만 시리즈 ID가 틀려도 똑같이 0건이라
-                // 자동으로는 못 가른다 — 이름을 남겨 사람이 보게 한다
+                // **0건을 실패로 만들지 않는다** (계열 중단·신규 편입). 다만 시리즈 ID가 틀려도
+                // 똑같이 0건이라 자동으로는 못 가른다 — 이름을 남겨 사람이 보게 한다.
+                // 창이 주기에 맞춰져 있으므로(일간 14일·월간 400일) 살아 있는 계열이 여기 뜨는 일은
+                // 드물다. 그 전제가 깨지면 위 KDoc과 어드민의 500 분기를 함께 고칠 것
                 if (inRange.isEmpty()) emptySeries += code
 
                 // 같은 응답에 같은 날짜가 두 번 오면 유니크 제약에 걸린다. 마지막 값을 남긴다 —
@@ -149,7 +207,7 @@ class CommodityCollectService(
                 val deduped = LinkedHashMap<LocalDate, BigDecimal>()
                 inRange.forEach { deduped[it.quoteDate] = it.value }
 
-                val existing = store.findRange(code, from, to).associateBy { it.tradeDate }
+                val existing = store.findRange(code, start, to).associateBy { it.tradeDate }
 
                 // 전일대비의 사다리: 날짜 -> 가격. 창 안의 기존 행을 깔고 이번에 온 값으로 덮은 뒤,
                 // 창 바깥의 직전 한 행을 출발점으로 얹는다.
@@ -160,7 +218,7 @@ class CommodityCollectService(
                 val ladder = TreeMap<LocalDate, BigDecimal>()
                 existing.forEach { (date, row) -> ladder[date] = row.price }
                 deduped.forEach { (date, value) -> ladder[date] = value }
-                store.findLatestBefore(code, from)?.let { ladder[it.tradeDate] = it.price }
+                store.findLatestBefore(code, start)?.let { ladder[it.tradeDate] = it.price }
 
                 val toInsert = mutableListOf<MarketCommodityQuoteEntity>()
 
@@ -168,7 +226,9 @@ class CommodityCollectService(
                 // 덮고 나면 사라진다. 키가 엔티티 인스턴스이고 equals를 정의하지 않으므로 동일성으로 접힌다
                 val toUpdate = LinkedHashMap<MarketCommodityQuoteEntity, BigDecimal>()
 
-                // 날짜 오름차순으로 돈다 — 같은 실행 안에서 앞 날짜가 뒤 날짜의 직전 값이 된다
+                // 날짜 오름차순으로 돈다. **순서는 결과에 영향을 주지 않는다** — 사다리는 루프에
+                // 들어오기 전에 이미 굳었고 루프 안에서 변하지 않는다. 읽는 사람이 값의 흐름을
+                // 따라가기 쉬우라고 정렬할 뿐이니, 순서에 기대는 코드를 여기 새로 넣지 말 것
                 for ((date, value) in deduped.entries.sortedBy { it.key }) {
                     // **날짜 산술이 아니라 "가장 최근 이전 행"이다.** headMap(date)는 date 미만이고
                     // lastKey()가 그중 가장 최근이다. 하루를 빼서 찾으면 월간은 영원히 null이 된다
@@ -241,7 +301,10 @@ class CommodityCollectService(
         }
 
         val summary = CommodityCollectSummary(
-            from = from,
+            // 실제로 쓰인 창 중 가장 이른 시작일. 대상이 하나도 안 돌아 창을 정한 적이 없으면
+            // (설정이 비었거나 전 종목이 코드 조회에서 터진 경우) 가장 넓은 창으로 적는다 —
+            // 요약이 "덜 봤다"고 말하는 것보다 낫다
+            from = earliestFrom ?: from ?: to.minusDays(windowDaysFor("")),
             to = to,
             // 설정 항목 수가 아니라 소스 x 코드 대상 수다 — FSC가 붙는 날 둘이 갈린다.
             // 어드민이 requested == 0으로 "설정이 빈 실행"을 가르므로 실제로 돈 대상을 세야 한다

@@ -195,12 +195,13 @@ class SchedulerTriggerController(
     /**
      * POST /api/internal/scheduler/commodity — 원자재 수집 트리거 (AF-108)
      *
-     * **날짜를 노출하지 않는다.** [CommodityAdminController.collect]가 null을 KST 오늘 기준
-     * 최근 90일로 해석한다. 워크플로가 날짜를 계산해 실어 보내면 러너의 UTC 시계가 그대로
-     * 데이터에 새겨지고, GitHub cron이 밀린 날 구간이 어긋난다.
+     * **날짜를 노출하지 않는다.** [CommodityAdminController.collect]가 끝점을 KST 오늘로 잡고,
+     * 시작점은 종목의 주기가 정한다(일간 14일 · 월간 400일). 워크플로가 날짜를 계산해 실어 보내면
+     * 러너의 UTC 시계가 그대로 데이터에 새겨지고, GitHub cron이 밀린 날 구간이 어긋난다.
      *
-     * **창이 금리(2주)보다 훨씬 긴 이유는 월간 계열이다** — 관측일이 그 달 1일인데 공표가
-     * 한두 달 뒤라, 짧은 창으로는 공표 시점에 이미 창 밖이다. 근거는 어드민 쪽 `WINDOW_DAYS`에 있다.
+     * **창이 금리(2주 하나)와 달리 둘인 이유는 월간 계열이다** — 관측일이 그 달 1일인데 공표는
+     * 실측 76일 뒤였고(2026-08-16 기준) 그 지연은 다음 공표까지 자란다. 근거는
+     * [com.allfolio.market.commodity.CommodityCollectService]의 창 상수 KDoc에 있다.
      *
      * 백필 구간을 여기 노출하지 않는 이유는 금리 트리거와 같다 — 초기 백필은 사람이 한 번 부르는
      * 일회성 작업이고, 어드민 엔드포인트에 있다.

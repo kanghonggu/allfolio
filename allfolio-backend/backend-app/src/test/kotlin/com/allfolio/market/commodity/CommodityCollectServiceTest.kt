@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 /**
@@ -14,6 +15,15 @@ import java.util.UUID
  * 원자재에만 있는 것은 전일대비 계산(직전 값이 없으면 null)과 설정에서 오는 단위·주기다.
  */
 class CommodityCollectServiceTest {
+
+    private companion object {
+        /**
+         * 실측한 월간 공표 지연(일). 2026-08-16 기준 최신 월간 관측이 2026-06-01이었고
+         * 7월 관측은 아직 없었다 — 스펙의 반올림 라벨("두 달")이 아니라 이 수가 기준이다.
+         * 다시 재면 이 값과 잰 날짜를 함께 고칠 것.
+         */
+        private const val MEASURED_MONTHLY_LAG_DAYS = 76L
+    }
 
     private val from = LocalDate.of(2026, 8, 10)
     private val to = LocalDate.of(2026, 8, 12)
@@ -294,7 +304,7 @@ class CommodityCollectServiceTest {
     }
 
     /**
-     * 값이 그대로면 갱신이 아니라 무변동이다. 창이 90일이라 매 실행이 수백 건을 다시 쓰는데,
+     * 값이 그대로면 갱신이 아니라 무변동이다. 매 실행이 창 안의 기존 행 수백 건을 다시 쓰는데,
      * 뭉쳐 세면 그중 하나뿐인 정정이 동일값 재기록에 묻힌다.
      *
      * 무변동 쪽 값의 스케일을 일부러 어긋나게 둔다. equals로 비교하면 70.00과 70.0000이 갈려서
@@ -467,6 +477,77 @@ class CommodityCollectServiceTest {
         } finally {
             Thread.interrupted() // 플래그를 지워 다른 테스트로 새지 않게 한다
         }
+    }
+
+    /**
+     * **`from`이 null이면 창을 종목의 주기가 정한다.**
+     *
+     * 한 창으로 뭉개면 둘 중 하나가 반드시 틀린다: 일간에 맞춘 짧은 창은 월간 13종을 **영원히**
+     * 놓치고(관측일이 그 달 1일인데 공표가 한참 뒤라 공표 시점엔 이미 창 밖이다), 월간에 맞춘
+     * 긴 창은 일간 3종을 매 실행 수백 행씩 헛돌린다.
+     *
+     * **월간 창을 실측에 아슬아슬하게 맞추지 않는다.** 2026-08-16 기준 최신 월간 관측은
+     * 2026-06-01(76일 전)이었고 7월 관측은 아직 없었다 — 그 나이는 다음 공표까지 계속 자라므로,
+     * 실측에 겨우 맞춘 창(예: 90일)은 공표가 밀리는 구간마다 월간을 통째로 창 밖으로 밀어내
+     * "전 종목 0건" 거짓 경보를 만든다. 그래서 실측의 두 배를 훨씬 넘는 창인지까지 못 박는다.
+     */
+    @Test
+    fun `기본 창은 주기별로 다르고 월간은 실측 공표 지연보다 훨씬 길다`() {
+        val repo = FakeRepo()
+        val source = FakeSource(codes = listOf("WTI", "COPPER"))
+
+        service(source, repo).collect(null, to, now)
+
+        val dailyFrom = source.fetched.single { it.first == "WTI" }.second
+        val monthlyFrom = source.fetched.single { it.first == "COPPER" }.second
+
+        assertThat(ChronoUnit.DAYS.between(dailyFrom, to))
+            .describedAs("일간 창 — 금리(14일)와 같은 층위다")
+            .isEqualTo(14)
+        assertThat(ChronoUnit.DAYS.between(monthlyFrom, to))
+            .describedAs("월간 창 — 2026-08-16 실측 지연 76일의 몇 배는 돼야 한다")
+            .isGreaterThan(MEASURED_MONTHLY_LAG_DAYS * 2)
+        // 끝점은 두 주기가 같다 — 갈리는 건 시작점뿐이다
+        assertThat(source.fetched.map { it.third }).containsOnly(to)
+    }
+
+    /**
+     * 주기 표기가 설정 오타 등으로 D도 M도 아니면 **긴 창(월간)** 쪽으로 기운다.
+     * 짧은 창은 데이터가 조용히 안 쌓이고, 긴 창은 merge 왕복이 조금 더 들 뿐이다.
+     */
+    @Test
+    fun `모르는 주기는 긴 창으로 친다`() {
+        val repo = FakeRepo()
+        val source = FakeSource(codes = listOf("MYSTERY"))
+        val properties = properties(item("MYSTERY", frequency = "W"))
+
+        CommodityCollectService(listOf(source), properties, repo).collect(null, to, now)
+
+        assertThat(ChronoUnit.DAYS.between(source.fetched.single().second, to)).isGreaterThan(14)
+    }
+
+    /** 명시한 구간은 주기와 무관하게 그대로 쓰인다 — 백필이 이 경로다 */
+    @Test
+    fun `구간을 명시하면 주기와 상관없이 그대로 쓴다`() {
+        val repo = FakeRepo()
+        val source = FakeSource(codes = listOf("WTI", "COPPER"))
+
+        val summary = service(source, repo).collect(from, to, now)
+
+        assertThat(source.fetched.map { it.second }).containsOnly(from)
+        assertThat(summary.from).isEqualTo(from)
+    }
+
+    /** 요약의 from은 실제로 쓴 창 중 가장 이른 시작일이다 — "어디까지 봤나"가 어드민 문구에 실린다 */
+    @Test
+    fun `기본 창일 때 요약의 from은 가장 이른 시작일이다`() {
+        val repo = FakeRepo()
+        val source = FakeSource(codes = listOf("WTI", "COPPER"))
+
+        val summary = service(source, repo).collect(null, to, now)
+
+        assertThat(summary.from).isEqualTo(source.fetched.minOf { it.second })
+        assertThat(summary.to).isEqualTo(to)
     }
 
     @Test

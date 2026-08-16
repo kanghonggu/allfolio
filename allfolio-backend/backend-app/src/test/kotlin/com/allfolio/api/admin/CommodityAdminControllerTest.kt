@@ -82,8 +82,8 @@ class CommodityAdminControllerTest {
      * 내보내면 잡이 영원히 초록으로 끝난다.
      *
      * **502가 아니라 500이다.** 상류는 정상 응답을 줬고 틀린 건 우리가 넣은 시리즈 ID다.
-     * 기본 창이 90일이라 "전부 정상적으로 비었다"는 상태는 존재하지 않는다 —
-     * 일간은 영업일 3일, 월간은 두 달 지연이고 창이 그보다 길다.
+     * 창이 주기에 맞춰져 있어(일간 14일 · 월간 400일) "전부 정상적으로 비었다"는 상태는
+     * 존재하지 않는다 — 살아 있는 계열이라면 어느 층이든 값을 준다.
      */
     @Test
     fun `실패가 없어도 전 종목이 0건이면 500이다`() {
@@ -98,8 +98,12 @@ class CommodityAdminControllerTest {
     }
 
     /**
-     * 저장이 0건이어도 **일부만 비었으면 장애가 아니다.** 월간 계열은 새 관측이 없는 달이 있다.
-     * 이 상태는 emptySeries가 설명한다.
+     * 저장이 0건이어도 **일부만 비었으면 장애가 아니다** — 계열이 중단됐거나 새로 편입돼 아직
+     * 값이 없을 수 있다. 이 상태는 emptySeries가 설명한다.
+     *
+     * **"월간은 새 관측이 없는 달이 있어서 빈다"는 이유를 여기 적지 말 것.** 월간 창이 400일이라
+     * 살아 있는 계열은 관측 13건을 준다 — 그 문장은 창을 짧게 잡았을 때만 참이고, 지금 적어 두면
+     * 아래 `전 종목이 0건이면 500` 판정과 정면으로 어긋난다.
      */
     @Test
     fun `일부만 비었으면 0건이어도 200이다`() {
@@ -123,19 +127,19 @@ class CommodityAdminControllerTest {
     }
 
     /**
-     * 기본 창은 **KST 오늘** 기준 최근 90일이다.
+     * 끝점은 **KST 오늘**이고, 시작점은 여기서 정하지 않는다.
      *
      * **`LocalDate.now()`(시스템 기본 시간대)로 바꾸는 변이를 잡으려면 기본 시간대를 옮겨야 한다** —
      * 개발 머신이 KST라 그냥 두면 두 값이 같아서 변이가 초록으로 통과한다. 운영 컨테이너는 UTC라
      * 거기서만 새벽에 하루가 밀리고, 그 날 공표된 값이 통째로 빠진 채 잡은 초록으로 끝난다.
      * (`SchedulerTriggerControllerTest`의 마감 트리거 테스트가 같은 함정을 같은 방식으로 다룬다.)
      *
-     * 창 길이를 함께 보는 이유: 끝점만 맞고 창이 2주로 줄면 **월간 13종이 영원히 수집되지 않는다** —
-     * 관측일이 그 달 1일인데 공표가 한두 달 뒤라, 짧은 창에서는 공표 시점에 이미 창 밖이다.
-     * 값이 안 들어올 뿐 오류가 안 나서 사후에 눈으로 못 잡는다.
+     * **`from`이 null 그대로 내려가는지도 함께 못 박는다.** 여기서 시작일을 계산해 넣으면 창이
+     * 하나로 뭉개져 일간과 월간 중 한쪽이 반드시 틀린다 — 주기별 창은 서비스가 정한다.
+     * 그 길이는 `CommodityCollectServiceTest`가 잰다.
      */
     @Test
-    fun `날짜를 안 주면 KST 오늘 기준 최근 90일을 조회한다`() {
+    fun `날짜를 안 주면 끝점은 KST 오늘이고 시작점은 서비스에 맡긴다`() {
         stub(summary(requested = 16, collected = 200))
         val kstToday = LocalDate.now(KST)
 
@@ -154,7 +158,7 @@ class CommodityAdminControllerTest {
         val from = ArgumentCaptor.forClass(LocalDate::class.java)
         val to = ArgumentCaptor.forClass(LocalDate::class.java)
         verify(service).collect(
-            from.capture() ?: LocalDate.EPOCH,
+            from.capture(),
             to.capture() ?: LocalDate.EPOCH,
             any(LocalDateTime::class.java) ?: LocalDateTime.MIN,
         )
@@ -162,7 +166,9 @@ class CommodityAdminControllerTest {
         assertThat(to.value)
             .describedAs("끝점은 KST 오늘이어야 한다. LocalDate.now()를 쓰면 UTC 컨테이너에서 하루 밀린다")
             .isEqualTo(kstToday)
-        assertThat(ChronoUnit.DAYS.between(from.value, to.value)).isEqualTo(90)
+        assertThat(from.value)
+            .describedAs("시작일을 여기서 계산하면 주기별 창이 하나로 뭉개진다")
+            .isNull()
     }
 
     /** 주어진 구간은 그대로 내려가야 한다 — 초기 백필이 이 경로를 쓴다 */
@@ -175,7 +181,7 @@ class CommodityAdminControllerTest {
         val from = ArgumentCaptor.forClass(LocalDate::class.java)
         val to = ArgumentCaptor.forClass(LocalDate::class.java)
         verify(service).collect(
-            from.capture() ?: LocalDate.EPOCH,
+            from.capture(),
             to.capture() ?: LocalDate.EPOCH,
             any(LocalDateTime::class.java) ?: LocalDateTime.MIN,
         )
@@ -197,7 +203,7 @@ class CommodityAdminControllerTest {
         assertThat(thrown.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
         assertThat(thrown.reason).contains("끊어 호출")
         verify(service, never()).collect(
-            any(LocalDate::class.java) ?: LocalDate.EPOCH,
+            any(),
             any(LocalDate::class.java) ?: LocalDate.EPOCH,
             any(LocalDateTime::class.java) ?: LocalDateTime.MIN,
         )
@@ -221,9 +227,15 @@ class CommodityAdminControllerTest {
     fun `설정 조회는 목록 이름과 함께 전 종목을 돌려준다`() {
         val body = controller.config().body!!
 
-        assertThat(body.total).isEqualTo(2)
+        // **하드코딩하지 않는다.** 목록이 하나 늘었을 때 config()가 그걸 빠뜨리면
+        // 여기서 잡혀야 한다 — total을 2로 박아 두면 정확히 그 실패를 못 본다
+        assertThat(body.total).isEqualTo(properties.allItems.size)
+        // 항목 집합은 allItems가 기준이다 — 이름표 표는 group 라벨만 붙인다
+        assertThat(body.items.map { it.code })
+            .containsExactlyElementsOf(properties.allItems.map { it.code })
         assertThat(body.items.map { it.group to it.code })
             .containsExactly("fredDaily" to "WTI", "fredMonthly" to "COPPER")
+        assertThat(body.items.map { it.group }).doesNotContain(CommodityAdminController.UNKNOWN_GROUP)
         // 단위가 빠지면 화면이 USc/lb와 USD/lb(100배 차이)를 대조할 방법이 없다
         assertThat(body.items.map { it.unit }).containsExactly("USD/bbl", "USD/MT")
         assertThat(body.items.map { it.frequency }).containsExactly("D", "M")
@@ -233,15 +245,17 @@ class CommodityAdminControllerTest {
     // ── 도우미 ────────────────────────────────────────────────────────────────
 
     private fun verifyNoInteractionsWithCollector() = verify(service, never()).collect(
-        any(LocalDate::class.java) ?: LocalDate.EPOCH,
+        any(),
         any(LocalDate::class.java) ?: LocalDate.EPOCH,
         any(LocalDateTime::class.java) ?: LocalDateTime.MIN,
     )
 
     private fun stub(summary: CommodityCollectSummary) {
+        // **첫 인자는 맨 any()다.** `from`은 null일 수 있고, any(LocalDate::class.java)는
+        // Mockito 2.1부터 null을 매칭하지 않아 기본 창 경로가 스텁에 안 걸린다
         `when`(
             service.collect(
-                any(LocalDate::class.java) ?: LocalDate.EPOCH,
+                any(),
                 any(LocalDate::class.java) ?: LocalDate.EPOCH,
                 any(LocalDateTime::class.java) ?: LocalDateTime.MIN,
             ),

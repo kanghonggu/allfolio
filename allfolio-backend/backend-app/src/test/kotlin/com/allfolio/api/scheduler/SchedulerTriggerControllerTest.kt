@@ -929,9 +929,10 @@ class SchedulerTriggerControllerTest {
         failures = emptyList(),
     )
 
-    // 날짜를 노출하지 않는 게 이 엔드포인트의 설계다. null이 그대로 넘어가야 어드민 컨트롤러의
-    // KST 오늘 기준 90일 창이 적용된다 — 러너의 UTC 시계가 아니라.
-    // 창이 90일인 이유는 월간 계열의 공표 지연이다(짧으면 관측일이 이미 창 밖이라 영원히 안 들어온다).
+    // 날짜를 노출하지 않는 게 이 엔드포인트의 설계다. null이 그대로 넘어가야 끝점이 KST 오늘로,
+    // 시작점이 주기별 기본 창으로 잡힌다 — 러너의 UTC 시계가 아니라.
+    // 창이 주기별로 갈리는 이유는 월간 계열의 공표 지연이다(한 창으로 뭉개면 일간과 월간 중
+    // 한쪽이 반드시 틀린다). 길이는 CommodityCollectServiceTest가 잰다.
     @Test
     fun `토큰이 맞으면 원자재 수집을 위임한다`() {
         `when`(commodityAdmin.collect(null, null)).thenReturn(ResponseEntity.ok(commoditySummary))
@@ -1054,7 +1055,9 @@ class SchedulerTriggerControllerTest {
         // 엘비스로 아무 값이나 채우면 매처는 그대로 등록된 채 검사만 통과한다.
         `when`(
             service.collect(
-                any(LocalDate::class.java) ?: LocalDate.EPOCH,
+                // 트리거는 from을 null로 내려보낸다(주기별 기본 창). any(LocalDate::class.java)는
+                // null을 매칭하지 않아 스텁이 안 걸린다
+                any(),
                 any(LocalDate::class.java) ?: LocalDate.EPOCH,
                 any(LocalDateTime::class.java) ?: LocalDateTime.MIN,
             )
