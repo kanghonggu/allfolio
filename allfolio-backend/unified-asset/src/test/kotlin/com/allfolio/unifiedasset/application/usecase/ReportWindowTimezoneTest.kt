@@ -20,6 +20,7 @@ import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.TimeZone
 import java.util.UUID
 import kotlin.reflect.full.declaredMemberFunctions
@@ -39,30 +40,37 @@ import kotlin.reflect.jvm.isAccessible
  *
  * ## 왜 UTC로 고정하지 않는가
  * UTC는 KST와 아홉 시간 차이라 **KST 09:00~24:00에는 날짜가 같다.** 그 시간대에 돌리면 테스트가
- * 조용히 통과해버린다(버그를 못 잡는데 초록). 그래서 존을 하드코딩하지 않고 *지금* KST와 날짜가
- * 갈리는 존을 골라 박는다 — [onACalendarDayApartFromKst] 참고.
+ * 버그를 못 잡고도 조용히 초록이 된다. 그래서 기본 타임존을 *지금* KST보다 하루 뒤가 되도록 계산해
+ * 박고([oneDayBehindKst]), 재현이 실제로 걸렸는지 하네스가 스스로 확인한다([onTheDayBeforeKst]).
  */
 class ReportWindowTimezoneTest {
 
     private val userId: UUID = UUID.randomUUID()
 
     /**
-     * 지구는 어느 순간에도 두세 개의 날짜를 동시에 쓴다(오프셋이 -12부터 +14까지 26시간에 걸쳐 있다).
-     * 그러니 "지금 KST와 날짜가 다른 존"은 **항상 존재한다.** 뒤진 존을 먼저 두는 건 실제로 보고된
-     * 결함 방향(하루 뒤로 밀림)을 그대로 재현하기 위해서고, KST 21:00~24:00처럼 뒤진 존이 전부
-     * 같은 날짜가 되는 구간에서는 앞선 존([Pacific/Kiritimati], UTC+14)이 받는다.
+     * KST 시각 h시에 대해 현지 날짜가 **항상 하루 전**이 되는 오프셋을 고른다.
+     *
+     * 실재하는 존을 후보 목록에서 고르는 방법은 여기서 안 통한다. UTC는 KST와 아홉 시간 차이라
+     * KST 09:00~24:00에 날짜가 같고, 실재 존의 하한은 -12라 KST 21시 이후엔 **뒤진 존이 전부
+     * KST와 같은 날짜가 된다.** 그 구간에서 UTC+14 같은 앞선 존으로 넘어가면 날짜가 갈리긴 하지만
+     * 방향이 뒤집혀 실제 결함(하루 뒤로 밀림)과 반대를 재현하게 된다. 합성 오프셋은 그 구멍이 없다.
+     *
+     * 경계 여유도 같이 챙긴다 — 현지 시각을 전날 12:00~20:00에 놓으므로 테스트가 도는 중에 시(hour)
+     * 경계를 넘어도 재현이 안 깨진다. (`ZoneOffset` 하한이 -18이라 KST 16시 이후엔 정오에서 밀린다.)
      */
-    private fun zoneOnAnotherCalendarDay(): ZoneId {
-        val today = LocalDate.now(KST)
-        return CANDIDATE_ZONES.map(ZoneId::of).firstOrNull { LocalDate.now(it) != today }
-            ?: error("KST와 날짜가 다른 존을 못 찾았다 — 후보 목록이 -12..+14를 못 덮고 있다")
-    }
+    private fun oneDayBehindKst(): ZoneOffset =
+        ZoneOffset.ofHours(maxOf(-18, -3 - LocalDateTime.now(KST).hour))
 
-    /** Render 컨테이너 재현: 기본 타임존이 KST가 아니고, 지금 이 순간 날짜부터 다르다. */
-    private fun <T> onACalendarDayApartFromKst(block: () -> T): T {
+    /** Render 컨테이너 재현: 기본 타임존의 날짜가 KST보다 하루 뒤다. */
+    private fun <T> onTheDayBeforeKst(block: () -> T): T {
         val original = TimeZone.getDefault()
-        TimeZone.setDefault(TimeZone.getTimeZone(zoneOnAnotherCalendarDay()))
+        TimeZone.setDefault(TimeZone.getTimeZone(oneDayBehindKst()))
         try {
+            // 하네스가 실제로 컨테이너 조건을 만들었는지 먼저 확인한다. 이게 없으면 재현이 조용히
+            // 실패했을 때 "구현이 맞다"로 읽힌다 — 통과했는데 아무것도 검사 안 한 초록이 된다.
+            assertThat(LocalDate.now())
+                .describedAs("하네스 재현 실패 — 기본 타임존 날짜가 KST 전날이어야 한다")
+                .isEqualTo(LocalDate.now(KST).minusDays(1))
             return block()
         } finally {
             TimeZone.setDefault(original)
@@ -114,7 +122,7 @@ class ReportWindowTimezoneTest {
     @Test
     fun `벤치마크 조회 상한은 KST 오늘이다`() {
         val store = RecordingBenchmarkStore()
-        onACalendarDayApartFromKst { reportService(RecordingJdbc(), store).benchmark(userId, "1M") }
+        onTheDayBeforeKst { reportService(RecordingJdbc(), store).benchmark(userId, "1M") }
 
         assertThat(store.upperBounds).isNotEmpty()
         assertThat(store.upperBounds.distinct())
@@ -125,7 +133,7 @@ class ReportWindowTimezoneTest {
     @Test
     fun `순자산 추이 365일 창의 시작은 KST 오늘 기준이다`() {
         val jdbc = RecordingJdbc()
-        onACalendarDayApartFromKst { reportService(jdbc, mock(BenchmarkDailyStore::class.java)).networth(userId) }
+        onTheDayBeforeKst { reportService(jdbc, mock(BenchmarkDailyStore::class.java)).networth(userId) }
 
         assertThat(jdbc.captured.filterIsInstance<LocalDate>())
             .describedAs("365일 창이 컨테이너 날짜를 따라가면 하루씩 밀린다")
@@ -135,7 +143,7 @@ class ReportWindowTimezoneTest {
     @Test
     fun `1개월 성과 조회 구간의 시작은 KST 오늘 기준 30일 전이다`() {
         val jdbc = RecordingJdbc()
-        onACalendarDayApartFromKst {
+        onTheDayBeforeKst {
             reportService(jdbc, mock(BenchmarkDailyStore::class.java)).performance(userId, "1M")
         }
 
@@ -156,7 +164,7 @@ class ReportWindowTimezoneTest {
             .apply { isAccessible = true }
         val service = reportService(RecordingJdbc(), mock(BenchmarkDailyStore::class.java))
 
-        val days = onACalendarDayApartFromKst { periodDays.call(service, "YTD") as Int }
+        val days = onTheDayBeforeKst { periodDays.call(service, "YTD") as Int }
 
         assertThat(days)
             .describedAs("컨테이너 달력으로 세면 올해 경과일수가 하루 짧다")
@@ -168,7 +176,7 @@ class ReportWindowTimezoneTest {
     @Test
     fun `배당 1Y 구간의 시작은 KST 오늘 기준 1년 전이다`() {
         val jdbc = RecordingJdbc()
-        onACalendarDayApartFromKst { DividendReportService(jdbc).report(userId, "1Y") }
+        onTheDayBeforeKst { DividendReportService(jdbc).report(userId, "1Y") }
 
         assertThat(jdbc.captured.filterIsInstance<LocalDate>())
             .describedAs("구간 시작과 연환산 창이 전부 KST 달력이어야 한다")
@@ -188,7 +196,7 @@ class ReportWindowTimezoneTest {
             .apply { isAccessible = true }
         val service = DividendReportService(RecordingJdbc())
 
-        val start = onACalendarDayApartFromKst { periodStart.call(service, "YTD") as LocalDate }
+        val start = onTheDayBeforeKst { periodStart.call(service, "YTD") as LocalDate }
 
         assertThat(start)
             .describedAs("연말연시에 컨테이너가 작년에 머물면 YTD가 통째로 작년이 된다")
@@ -208,7 +216,7 @@ class ReportWindowTimezoneTest {
             .first { it.name == "buildSystemPrompt" }
             .apply { isAccessible = true }
 
-        val prompt = onACalendarDayApartFromKst { buildSystemPrompt.call(service, userId) as String }
+        val prompt = onTheDayBeforeKst { buildSystemPrompt.call(service, userId) as String }
 
         assertThat(prompt)
             .describedAs("모델은 프롬프트에 적힌 날짜를 그대로 믿는다 — 틀린 날짜를 주면 틀린 근거로 답한다")
@@ -239,7 +247,7 @@ class ReportWindowTimezoneTest {
             fx = mock(FxConverter::class.java),
         )
 
-        val response = onACalendarDayApartFromKst { service.list(userId) }
+        val response = onTheDayBeforeKst { service.list(userId) }
 
         assertThat(response.goals.single().daysRemaining)
             .describedAs("컨테이너가 어제에 머물면 D-1을 D-2로 말한다")
@@ -249,10 +257,5 @@ class ReportWindowTimezoneTest {
     private companion object {
         val KST: ZoneId = ZoneId.of("Asia/Seoul")
 
-        /**
-         * 뒤진 존 우선(실제 결함 방향), 마지막은 KST보다 앞선 존 — KST 21:00~24:00에는
-         * 뒤진 존이 전부 KST와 같은 날짜가 되기 때문에 반드시 필요하다.
-         */
-        val CANDIDATE_ZONES = listOf("Etc/GMT+12", "UTC", "America/New_York", "Pacific/Kiritimati")
     }
 }
