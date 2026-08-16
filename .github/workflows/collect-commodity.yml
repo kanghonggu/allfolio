@@ -1,0 +1,254 @@
+name: Collect Commodity
+
+# Render 무료 플랜에는 크론 잡이 없고, 무료 웹 서비스는 15분 유휴 시 잠들어 인스턴스 안의
+# @Scheduled만으로는 주기 실행이 성립하지 않는다. collect-rate.yml·collect-index.yml과 같은 구조다.
+#
+# **하루 한 번인 이유: 소스가 하루에 한 값밖에 안 준다.** 지수처럼 OPEN/MID/CLOSE로 나눌 대상이
+# 애초에 없다. 일간 에너지(FRED/EIA)는 영업일 3일 지연이고 월간 지표(FRED/IMF)는 두 달 지연이라,
+# 하루에 두 번 불러도 두 번째는 첫 번째와 같은 값을 다시 쓰는 일뿐이다(수집은 멱등하니 사고는
+# 아니지만 얻는 것도 없다). collect-index.yml이 세 슬롯을 도는 것을 근거로 여기 슬롯을 늘리지 말
+# 것 — 그건 장중 값이 시시각각 바뀌는 대상의 이야기다. 지연 자체는 워크플로가 못 줄인다.
+#
+# 18:20인 이유: collect-rate.yml(18:10)과 10분 벌려 같은 무료 인스턴스에서 겹치지 않게 한다.
+# 두 배치가 같은 콜드 스타트에 몰리면 한쪽이 --max-time을 넘긴다.
+# GitHub cron이 5~30분 밀려도 상관없다 — 대상이 3일 전·두 달 전 관측이라 분 단위 밀림이
+# 데이터에 남을 여지가 없다.
+#
+# **요일 필드(1-5)가 성립하는 조건은 "UTC 15:00 이전"이다.** cron은 UTC로 해석되므로 여기 적힌
+# 요일은 UTC 요일이고, 우리가 원하는 건 KST 평일이다. UTC 09:20 + 9시간 = 같은 날 KST 18:20이라
+# 두 요일이 같다. 09:20은 15:00까지 여유가 크므로 밀림에도 안전하다. **시각을 UTC 15:00 이후로
+# 옮기면 KST가 다음 날로 넘어가 금요일 실행이 토요일이 되면서 1-5에서 조용히 사라진다** —
+# 실행이 안 되는 게 아니라 "요일이 하나 없어지는" 방식으로 틀리기 때문에 눈에 안 띈다.
+# 시각을 옮기려는 사람은 이 문단을 먼저 읽을 것. (closing.yml은 같은 함정을 경계 바로 위
+# UTC 15:00에서 설명해 뒀고, 그래서 그쪽은 요일 필터를 아예 안 건다.)
+on:
+  schedule:
+    - cron: "20 9 * * 1-5"   # UTC 09:20 = KST 18:20 (평일)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # **겹치면 배치가 통째로 죽는다 — FRED 호출을 아끼자는 얘기가 아니다.** 수집은 혼자 돌 때만
+  # 멱등하다: CommodityCollectService는 기존 행이 없으면 새 UUID로 INSERT하는데, 두 실행이 같은
+  # (code, trade_date)를 동시에 "없다"고 읽으면 둘 다 INSERT를 시도해
+  # uk_market_commodity_quote에 걸린다. 그 예외는 종목 하나가 아니라 saveAll 배치 전체를 날린다.
+  #
+  # cancel-in-progress: false여야 한다. true면 앞 실행을 죽여 절반만 저장된 구간이 남는데,
+  # 겹침을 없애려다 정확히 반대편 손상을 만드는 셈이다. false는 겹치는 대신 줄을 세운다.
+  group: collect-commodity
+  cancel-in-progress: false
+
+jobs:
+  commodity:
+    name: 원자재 수집
+    runs-on: ubuntu-latest
+    # 아래 curl 재시도 예산(최악 9분)보다 커야 한다. 잡이 먼저 잘리면 요약도 애너테이션도
+    # 남지 않고 "cancelled"만 떠서 백엔드 문제가 러너 문제처럼 보인다.
+    timeout-minutes: 12
+    steps:
+      - name: Trigger collection
+        env:
+          # ${{ }}를 셸 본문에 직접 박지 않는다 — 표현식은 셸이 파싱하기 **전에** 문자열로
+          # 치환되므로 값에 따옴표나 `$(...)`가 섞이면 그대로 명령이 된다. env로 넘기면
+          # 셸이 값을 데이터로만 본다.
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          SCHEDULER_TOKEN: ${{ secrets.SCHEDULER_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${BACKEND_URL}" ] || [ -z "${SCHEDULER_TOKEN}" ]; then
+            echo "::error::BACKEND_URL 또는 SCHEDULER_TOKEN 시크릿이 없습니다."
+            exit 1
+          fi
+
+          # 끝의 슬래시를 지운다. 남겨두면 경로가 "//api/internal/..."이 되어 404가 난다.
+          while [ "${BACKEND_URL}" != "${BACKEND_URL%/}" ]; do
+            BACKEND_URL="${BACKEND_URL%/}"
+          done
+
+          # https만 허용한다. http로 두면 Render가 301로 넘기는데 -L이 없어 POST가 아예
+          # 전달되지 않고 HTTP 301만 남는다(-L을 붙여도 --post301 없이는 POST가 GET으로
+          # 바뀌어 소용없다). 아래 에러 범례에도 없는 코드라 원인 파악이 오래 걸린다.
+          case "${BACKEND_URL}" in
+            https://*) ;;
+            *)
+              # 값 자체는 찍지 않는다(시크릿). 형식만 알린다.
+              echo "::error::BACKEND_URL 시크릿은 https://로 시작하고 끝에 슬래시가 없어야 합니다. 예: https://<서비스>.onrender.com"
+              exit 1
+              ;;
+          esac
+
+          # 날짜를 싣지 않는다. 백엔드가 KST 오늘 기준으로 구간을 정한다 —
+          # 여기서 계산하면 러너의 UTC 시계가 그대로 데이터에 새겨진다.
+          #
+          # 무료 인스턴스가 잠들어 있으면 첫 요청이 30~90초 걸리거나 502가 난다.
+          # 재시도가 안전한 이유는 수집이 멱등하기 때문이다 — 같은 구간을 몇 번 돌려도
+          # CommodityCollectService가 같은 행을 덮어쓴다.
+          #
+          # -o/-w로 본문과 상태를 분리해 받는다. --fail을 쓰면 4xx/5xx에서 본문이 버려져
+          # 왜 실패했는지(502 상류 장애인지 500 코드 오류인지) 알 수 없게 된다.
+          # 원자재 수집은 부분 실패가 HTTP 200으로 나오므로, 본문의 failures·emptySeries가 유일한 단서다.
+          #
+          # --max-time은 전체가 아니라 "시도 1회당" 상한이다. 그래서 최악 소요는
+          # 120초 x 4회 시도 + 20초 x 3회 대기 = 540초(9분)이고, 이 값은 위
+          # timeout-minutes(12)보다 작아야 한다 — 두 숫자는 따로 노는 값이 아니다.
+          #
+          # set -e 아래에서 명령 치환 대입은 그 종료 코드를 그대로 물려받는다. curl은 HTTP
+          # 응답만 오면 4xx/5xx라도 0으로 끝나지만 전송 계층 실패(7 연결거부 / 28 타임아웃 /
+          # 6 DNS / 35 TLS)에서는 0이 아니다. 그대로 두면 이 워크플로가 견디려고 만들어진
+          # 바로 그 상황 — 콜드 인스턴스가 매 시도 --max-time을 넘기는 경우 — 에서 여기서
+          # 죽어 요약도 에러 범례도 남지 않는다. 그래서 실패를 삼키고 센티널을 세운다.
+          # curl 자신도 전송 실패 시 %{http_code}로 000을 찍으므로 000 = "HTTP 응답 없음".
+          HTTP_CODE=$(curl -sS -X POST \
+            "${BACKEND_URL}/api/internal/scheduler/commodity" \
+            -H "X-Scheduler-Token: ${SCHEDULER_TOKEN}" \
+            --max-time 120 \
+            --retry 3 \
+            --retry-delay 20 \
+            --retry-all-errors \
+            -o response.json \
+            -w '%{http_code}') || HTTP_CODE="000"
+
+          echo "HTTP ${HTTP_CODE}"
+
+          # 이 저장소는 공개다. 토큰은 어디에도 찍지 않는다 — 요약은 영구 보존되고
+          # 로그와 달리 GitHub의 시크릿 마스킹에 기대는 것도 위험하다.
+          {
+            echo "### 원자재 수집"
+            echo ""
+            echo "HTTP \`${HTTP_CODE}\`"
+            echo ""
+            echo '```json'
+            cat response.json 2>/dev/null || echo '(본문 없음)'
+            echo ""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # 500과 502를 갈라 안내한다 — 상태 코드가 정하는 건 "운영자를 어디로 보낼지"다.
+          # 500의 원인은 셋이고 고칠 곳이 전부 다르다:
+          #  (1) **market_commodity_quote 테이블 부재 — 첫 배포에서 가장 흔한 원인이다.**
+          #      docs/superpowers/migrations/2026-08-16-market-commodity-quote.sql을 운영 Neon에
+          #      적용했는지 확인할 것. ddl-auto: none이라 아무도 대신 만들어 주지 않는다.
+          #      이건 가정이 아니라 겪은 일이다 — 마감 워크플로가 운영 Neon에 wf_ 테이블이 없어
+          #      같은 방식으로 조용히 실패했다(closing.yml의 같은 범례가 그 흔적이다).
+          #  (2) 수집 대상이 아예 없는 경우(market-commodity.fred-daily·fred-monthly·fsc가 전부 빔)
+          #  (3) 대상은 있는데 전 종목이 0건으로 돌아온 경우(= 상류는 정상 응답을 줬고 FRED
+          #      시리즈 ID가 틀린 것). FRED는 틀린 시리즈에 오류가 아니라 빈 관측을 주므로
+          #      이걸 502로 부르면 운영자가 멀쩡한 FRED 상태 페이지를 확인하러 간다.
+          if [ "${HTTP_CODE}" != "200" ]; then
+            # **본문을 stdout에도 찍는다 — 지우지 말 것.** 위 범례는 500의 세 원인을 나열할
+            # 뿐이고, 실제로 어느 쪽인지는 서버가 만든 예외 사유에만 들어 있다.
+            # 그 사유를 요약에만 남기면 아무도 못 읽는다: $GITHUB_STEP_SUMMARY는 사람이 UI를
+            # 열어야 보이고 REST API로는 안 나온다(아래 파이썬 주석의 AF-111 교훈과 같은 이유).
+            # 첫 실행에서 기대되는 실패가 하필 (1) 테이블 부재라 여기가 정확히 그 순간에 필요하다.
+            #
+            # 시크릿은 안 샌다: 이 본문에는 토큰도 URL도 없고 FRED API 키는 서버가 이미 마스킹한다.
+            # 게다가 로그는 등록된 시크릿을 GitHub이 한 번 더 가려 주므로 요약보다 오히려 안전하다.
+            # head -c로 자르는 이유는 HTML 오류 페이지가 돌아왔을 때 로그를 통째로 덮지 않게 하려는 것.
+            echo "응답 본문:"
+            head -c 2000 response.json 2>/dev/null || echo '(본문 없음)'
+            echo ""
+            echo "::error::원자재 수집 실패 (HTTP ${HTTP_CODE}). 500=대개 market_commodity_quote 테이블 부재(docs/superpowers/migrations/2026-08-16-market-commodity-quote.sql을 운영 Neon에 적용했는지 확인 — ddl-auto: none이라 아무도 대신 만들어 주지 않는다). 그 외 500은 수집 대상 설정 없음(market-commodity.fred-daily·fred-monthly·fsc가 전부 빔) 또는 전 종목 0건(FRED 시리즈 ID가 틀림 — application.yml을 고친다. 위 응답 본문이 셋 중 어느 쪽인지 말해 준다) / 502=FRED·공공데이터포털 응답 이상으로 전량 실패 / 503=SCHEDULER_TOKEN 미설정 / 401=토큰 불일치(양끝 공백·개행 확인) / 404=BACKEND_URL 경로 확인 / 000=백엔드 응답 없음(콜드 스타트·네트워크)"
+            exit 1
+          fi
+
+          # 200이어도 부분 실패일 수 있다 — CommodityCollectService는 종목 하나가 터져도 나머지를
+          # 살리려고 예외 대신 요약으로 돌려준다. 부분 실패를 빨갛게 만들지는 않는다(종목 하나가
+          # 흔들렸다고 매일 잡이 실패로 보이면 아무도 안 보게 된다). 대신 애너테이션으로 남긴다.
+          #
+          # 본문을 grep으로 재해석하지 않는다: 직렬화 형식이 조금만 바뀌어도(들여쓰기·필드 순서)
+          # 조용히 아무것도 안 잡는 가드가 되어, 없느니만 못하다. 그래서 진짜 JSON 파서로 읽는다.
+          # 본문이 없거나 깨졌으면 그것도 말한다 — 조용히 넘어가면 위와 같은 실패가 된다.
+          python3 - response.json <<'PY'
+          import json, sys
+
+          try:
+              with open(sys.argv[1], encoding="utf-8") as f:
+                  body = json.load(f)
+          except (OSError, ValueError) as e:
+              print(f"::warning::HTTP 200인데 응답 본문을 읽지 못했습니다({e}). 부분 실패 여부를 확인할 수 없습니다.")
+              raise SystemExit(0)
+
+          # 유효한 JSON이어도 객체가 아닐 수 있다 — `null`·`[]`·`"ok"`·`123`은 json.load를
+          # 통과하고 아래 body.get()에서 AttributeError로 터진다. 위 except는 ValueError만 잡으니
+          # 파이썬이 역추적을 뱉고 종료 코드 1이 되어, **성공한 수집이 빨간 잡으로 끝난다.**
+          # 프록시가 끼거나 응답 타입이 바뀌는 날의 이야기라 드물지만, 드문 게 요점이 아니다 —
+          # 여기서 죽어 봐야 얻는 정보가 없다. (collect-index.yml에서 물려온 구멍이다.)
+          if not isinstance(body, dict):
+              print(f"::warning::HTTP 200인데 응답 본문이 JSON 객체가 아닙니다({type(body).__name__}). 부분 실패 여부를 확인할 수 없습니다.")
+              raise SystemExit(0)
+
+          failed = body.get("failed") or 0
+          failures = body.get("failures") or []
+          skipped = body.get("skippedRows") or 0
+          out_of_range = body.get("outOfRange") or 0
+          empty = body.get("emptySeries") or []
+
+          # **건수를 stdout에도 남긴다.** 잡 요약($GITHUB_STEP_SUMMARY)은 사람이 UI를 열어야만
+          # 보이고 REST API로는 못 읽는다 — 로그에도 체크런 output에도 안 실린다(둘 다 null).
+          # 그래서 이 줄이 없으면 "대상이 조용히 줄어든 경우"를 아무도 못 가른다: 설정 누락이나
+          # 구버전 배포로 requested가 16→3이 돼도 3/3 전량 성공이라 아래 경고가 안 뜨고 잡은
+          # 초록으로 끝난다. **실패가 아니라 대상이 사라지는 쪽**의 결함이다(AF-111에서 실제로 겪었다).
+          #
+          # updated와 unchanged를 따로 찍는다. 같은 구간을 매일 다시 부르므로 대부분은 unchanged이고,
+          # updated가 0이 아닌 날이 곧 "FRED가 값을 정정했다"는 뜻이다 — 구간을 다시 도는 이유가
+          # 그 정정이다. 합쳐 놓으면 매일 쌓이는 unchanged 더미에 그 사건이 묻힌다.
+          print(
+              f"수집 결과: requested={body.get('requested')} collected={body.get('collected')} "
+              f"inserted={body.get('inserted')} updated={body.get('updated')} "
+              f"unchanged={body.get('unchanged')} "
+              f"skippedRows={skipped} outOfRange={out_of_range} empty={len(empty)} "
+              f"failed={failed} ({body.get('from')}~{body.get('to')})"
+          )
+
+          # 대상이 0이면 서버가 500을 주므로 여기까지 오지 않는다. 그래도 확인해 둔다 —
+          # 그 계약이 바뀌는 날 이 워크플로가 "0건 성공"을 초록으로 넘기지 않게.
+          if not body.get("requested"):
+              print("::warning::수집 대상이 0건입니다 — market-commodity.fred-daily·fred-monthly·fsc 설정을 확인하세요.")
+
+          if skipped:
+              # 파서가 버린 행이다. FRED는 결측을 "."으로 주므로 평소에도 조금씩 나온다.
+              # 꾸준히 늘면 응답 형식이나 단위가 바뀐 신호다.
+              print(f"::warning::값이 이상해 버린 행이 {skipped}건 있습니다.")
+
+          if out_of_range:
+              # 요청 구간 밖 날짜. 서비스가 걷어내 사고는 안 나지만, 상류가 구간 해석을
+              # 바꿨다는 신호라 계속 나오면 봐야 한다.
+              print(f"::warning::요청 구간 밖 날짜 {out_of_range}건을 걷어냈습니다.")
+
+          if empty:
+              # **잡을 빨갛게 만들진 않지만, "정상"이라고 적지도 않는다.**
+              #
+              # 수집 창이 주기에 맞춰져 있다(일간 14일 · 월간 400일). 월간 400일은 IMF의
+              # 공표 지연(2026-08-16 실측 76일)보다 훨씬 길게 잡은 값이라, **살아 있는 계열은
+              # 반드시 값을 준다.** 그래서 "월간은 새 관측이 없는 달이 있으니 비는 게 정상"은
+              # 이 워크플로에서 **틀린 말이다** — CommodityCollectService의 emptySeries KDoc이
+              # 그 문장을 명시적으로 금지한다. 창을 짧게 잡아 놓고 "정상"이라 적으면 없는 장애를
+              # 쫓게 되고, 여기처럼 창이 넉넉한데 "정상"이라 적으면 진짜 경보를 무시하게 된다.
+              # (AF-102가 BASE_RATE를 "정상적으로 빈다"고 적어 겪은 사고가 후자다.)
+              #
+              # 0건의 실제 원인은 대개 셋이다: 계열 중단 · 신규 편입 · **시리즈 ID 오타**.
+              # 셋을 자동으로 못 가르므로 사람에게 넘긴다. 같은 종목이 계속 여기 뜨면
+              # application.yml의 series-id를 의심할 것.
+              #
+              # **수집 창을 바꾸면 이 문단을 다시 볼 것.** 창 길이가 이 판단의 근거다.
+              # (전 종목이 0건인 경우는 서버가 500으로 끊어 여기까지 오지 않는다.)
+              #
+              # str(x)로 감싸는 이유는 아래 failures와 같다 — 원소가 문자열이 아니면 join이
+              # TypeError로 죽는데, 그때는 이미 위 결과 줄이 찍힌 뒤라 "수집은 됐는데 잡은 빨갛다"가
+              # 된다. 방어 방식을 두 곳에서 다르게 둘 이유가 없다.
+              print(f"::warning::0건으로 돌아온 종목: {', '.join(str(x) for x in empty)} — 계열 중단·신규 편입이거나 series-id 오타다. 창(일간 14일·월간 400일)은 공표 지연보다 길게 잡혀 있어 살아 있는 계열은 여기 안 뜬다")
+
+          if failed or failures:
+              # **개행을 지운다.** 서비스는 사유를 200자로만 자르고 줄바꿈은 그대로 둔다 —
+              # DataIntegrityViolationException이 바로 여러 줄 SQL 덤프다.
+              # ::warning::은 첫 줄만 먹으므로 나머지가 조용히 사라지고, 하필 이어지는 줄이
+              # `::`로 시작하면 GitHub이 그걸 또 다른 워크플로 명령으로 해석한다.
+              reasons = " | ".join(str(x).replace("\n", " ") for x in failures) or "(사유 없음)"
+              # 지수 워크플로처럼 "수집 collected/requested"로 쓰지 않는다 — 여기서는
+              # collected가 **행 수**이고 requested는 **종목 수**라 둘을 나눠 놓으면
+              # "40/16"처럼 100%가 넘는 비율이 찍혀 읽는 사람을 헷갈리게 한다.
+              print(f"::warning::원자재 {failed}/{body.get('requested')}종목 수집 실패 (저장 {body.get('collected')}행): {reasons}")
+          PY

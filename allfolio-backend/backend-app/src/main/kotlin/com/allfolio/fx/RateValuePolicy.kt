@@ -32,6 +32,25 @@ enum class RateValuePolicy {
     PERCENT {
         override fun accepts(value: BigDecimal): Boolean = value.abs() <= BigDecimal("100")
     },
+
+    /**
+     * 시세(원자재 등) — **상한을 걸지 않는다.** 2026-08-16 실측으로 구리 13,552 USD/MT ·
+     * 니켈 17,588 USD/MT · 금 ~150,000 KRW/g · 종합지수 194.9가 전부 정상값이라
+     * 어떤 상한도 진짜 값을 자른다.
+     *
+     * **[PERCENT]를 쓰면 안 된다.** `|value| <= 100`이라 위 셋이 전부 버려지고,
+     * WTI(~70)만 우연히 통과했다가 유가가 100달러를 넘는 날 조용히 사라진다.
+     *
+     * **[POSITIVE]를 재사용하지 않는 이유**: 술어는 같지만 뜻이 다르다. POSITIVE의 KDoc은
+     * "0원짜리 환율은 없다"는 환율 도메인의 진술이고, 그쪽 판단이 바뀌면 원자재가 따라 움직인다.
+     *
+     * **못 잡는 것**: 반대 방향 단위 오인. USD/MT를 USD/kg로 주면 값이 1000분의 1이 되는데
+     * 그것도 양수다. [PERCENT]의 KDoc이 적은 것과 같은 한계이고, 시리즈를 확정할 때
+     * 눈으로 한 번 보는 것이 유일한 방어다.
+     */
+    PRICE {
+        override fun accepts(value: BigDecimal): Boolean = value > BigDecimal.ZERO
+    },
     ;
 
     abstract fun accepts(value: BigDecimal): Boolean

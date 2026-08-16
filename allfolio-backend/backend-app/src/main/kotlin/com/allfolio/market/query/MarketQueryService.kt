@@ -1,9 +1,12 @@
 package com.allfolio.market.query
 
+import com.allfolio.market.commodity.CommodityProperties
 import com.allfolio.market.index.MarketIndexProperties
 import com.allfolio.market.rate.MarketRateProperties
+import com.allfolio.unifiedasset.infrastructure.entity.MarketCommodityQuoteEntity
 import com.allfolio.unifiedasset.infrastructure.entity.MarketIndexQuoteEntity
 import com.allfolio.unifiedasset.infrastructure.jpa.HanaFxQuoteJpaRepository
+import com.allfolio.unifiedasset.infrastructure.jpa.MarketCommodityQuoteJpaRepository
 import com.allfolio.unifiedasset.infrastructure.jpa.MarketIndexQuoteJpaRepository
 import com.allfolio.unifiedasset.infrastructure.jpa.MarketRateJpaRepository
 import org.springframework.stereotype.Service
@@ -40,6 +43,8 @@ class MarketQueryService(
     private val fxRepository: HanaFxQuoteJpaRepository,
     private val rateRepository: MarketRateJpaRepository,
     private val rateProperties: MarketRateProperties,
+    private val commodityRepository: MarketCommodityQuoteJpaRepository,
+    private val commodityProperties: CommodityProperties,
     private val queryProperties: MarketQueryProperties,
 ) {
     companion object {
@@ -69,6 +74,10 @@ class MarketQueryService(
         // 그중 하나만 고치면 한 탭만 새어 나간다. null로 두면 "안 읽었으면 안 싣는다"가 타입으로 강제된다.
         val latestByCode = if (indicesOn) latestIndexQuotes() else null
 
+        // 원자재도 같다 — off면 **읽지도 않는다.** 플래그가 지수와 따로인 이유는
+        // [MarketQueryProperties.commoditiesEnabled] 참조(소스가 다르다).
+        val commoditiesOn = queryProperties.commoditiesEnabled
+
         // 국내·해외를 코드로 다시 가른다. 설정 순서를 그대로 유지해야 화면 줄 순서가 안 흔들린다.
         // 수집된 적 없는 지수는 맵에 없어 빠진다 — 0으로 채우면 화면이 그걸 진짜 값으로 보여준다.
         // **off는 빈 리스트가 아니라 null이다.** 빈 리스트는 "조회했는데 데이터가 없다"는 뜻이라
@@ -81,7 +90,11 @@ class MarketQueryService(
             overseas = latestByCode?.let { byCode -> indexProperties.overseas.mapNotNull { byCode[it.code]?.toView() } },
             fx = fxSnapshot(),
             rates = rateViews(),
-            flags = MarketFlags(indicesEnabled = indicesOn),
+            // **off는 빈 리스트가 아니라 null이다** — 지수와 같은 관례다(MarketSnapshot KDoc).
+            // 여기서 `?: emptyList()`를 붙이면 "약관 때문에 감춘 탭"이 "데이터 없음" 탭으로 바뀌어
+            // 프런트가 빈 표를 그리고, 그때는 이미 화면에 나가 있다.
+            commodities = if (commoditiesOn) commodityViews() else null,
+            flags = MarketFlags(indicesEnabled = indicesOn, commoditiesEnabled = commoditiesOn),
         )
     }
 
@@ -147,6 +160,37 @@ class MarketQueryService(
                 },
             )
         }
+    }
+
+    /**
+     * 설정에 있는 전 종목의 **최신 한 행씩을 쿼리 한 번으로** 긁는다.
+     * 종목마다 부르면 원격 Neon 왕복이 종목 수(현재 16종, 금이 붙으면 17종)만큼 난다.
+     *
+     * **전일대비를 여기서 계산하지 않는다.** 금리·환율과 갈리는 지점이다 —
+     * 원자재는 `prev_close`·`change_*`가 수집 시점에 이미 행에 저장돼 있다(소스가 전일 종가를
+     * 안 주므로 수집이 계산해 넣는다). 조회가 다시 만들면 규칙이 두 벌이 되고, 특히
+     * "직전"의 정의(월간은 한 달 전 1일이다)가 한쪽에서만 고쳐진다.
+     *
+     * **출력은 설정 순서다**([CommodityProperties.allItems] = fred-daily → fred-monthly → fsc).
+     * 리포지터리 결과 순서를 그대로 쓰면 DB가 준 임의 순서가 되고, `sortedBy { it.code }`로
+     * 정렬하면 ALL_INDEX가 맨 앞에 오는 사전순이 되어 신선도가 다른 것들이 뒤섞인다.
+     *
+     * **소스 이름으로 분기하지 않는다.** 금(FSC)이 나중에 붙어도 설정에 줄이 늘 뿐 이 코드는
+     * 안 바뀌어야 한다 — 화면이 가르는 축은 소스가 아니라 [CommodityQuoteView.frequency]다.
+     */
+    private fun commodityViews(): List<CommodityQuoteView> {
+        // **`fredDaily`만 읽지 말 것.** 설정이 소스·주기별 목록 셋으로 갈려 있어서 한쪽만 열거하면
+        // 나머지 종목은 조회 대상에 아예 안 들어간다 — 수집은 되고 DB에도 쌓이는데 화면에만 없고,
+        // 오류도 로그도 안 난다(AF-FRED가 금리에서 실제로 겪은 실수다).
+        val codes = commodityProperties.allCodes
+        // 빈 목록을 그대로 넘기면 `IN ()`이라 벤더에 따라 문법 오류다 — 금(fsc)이 지금 비어 있듯
+        // 설정 전체가 비는 구성도 문법적으로 가능하다. 지수·금리 구간과 같은 방어다.
+        if (codes.isEmpty()) return emptyList()
+
+        val latestByCode = commodityRepository.findLatestByCodes(codes).associateBy { it.code }
+        // 수집된 적 없는 종목은 빠진다 — 0으로 채우면 화면이 그걸 진짜 시세로 보여준다.
+        // 코드는 행이 아니라 설정에서 가져온다(묶음 키와 어긋날 수 없는 쪽이다).
+        return commodityProperties.allItems.mapNotNull { item -> latestByCode[item.code]?.toView(item.code) }
     }
 
     /**
@@ -218,5 +262,22 @@ class MarketQueryService(
         marketStatus = marketStatus,
         tradeDate = tradeDate,
         slot = slot,
+    )
+
+    /**
+     * 저장된 값을 그대로 옮긴다 — **[MarketCommodityQuoteEntity.changeValue]·`changeRate`가
+     * null이면 null로 나간다.** `?: ZERO`로 채우면 "직전 값 없음"이 "안 움직였다"로 둔갑한다.
+     *
+     * `unit`도 손대지 않는다. `USc/lb`를 `USD/lb`로 "정리"하면 한 글자 차이에 100배가 틀린다.
+     * `prevClose`를 안 싣는 이유는 [CommodityQuoteView] KDoc 참조.
+     */
+    private fun MarketCommodityQuoteEntity.toView(code: String) = CommodityQuoteView(
+        code = code,
+        tradeDate = tradeDate,
+        price = price,
+        unit = unit,
+        frequency = frequency,
+        changeValue = changeValue,
+        changeRate = changeRate,
     )
 }

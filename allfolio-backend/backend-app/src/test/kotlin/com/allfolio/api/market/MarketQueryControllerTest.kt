@@ -31,7 +31,8 @@ class MarketQueryControllerTest {
             overseas = emptyList(),
             fx = null,
             rates = emptyList(),
-            flags = MarketFlags(indicesEnabled = true),
+            commodities = emptyList(),
+            flags = MarketFlags(indicesEnabled = true, commoditiesEnabled = true),
         )
         `when`(service.snapshot()).thenReturn(snapshot)
 

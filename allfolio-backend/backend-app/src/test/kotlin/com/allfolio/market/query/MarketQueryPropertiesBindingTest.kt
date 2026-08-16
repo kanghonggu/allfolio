@@ -73,4 +73,38 @@ class MarketQueryPropertiesBindingTest {
             assertThat(context.getBean(MarketQueryProperties::class.java).indicesEnabled).isFalse()
         }
     }
+
+    /** 원자재도 같은 블록·같은 관례다. 기본은 켜져 있다 */
+    @Test
+    fun `실제 application_yml에서 원자재 노출은 기본으로 켜져 있다`() {
+        runner.run { context ->
+            assertThat(context.getBean(MarketQueryProperties::class.java).commoditiesEnabled).isTrue()
+        }
+    }
+
+    /**
+     * **원자재 스위치도 환경변수 이름으로 단언한다.** 이유는 위 지수 테스트와 같다 —
+     * relaxed binding만으로는 스프링이 `MARKET_COMMODITIESENABLED`를 찾으므로, 운영자가 Render
+     * 대시보드에 넣는 `MARKET_COMMODITIES_ENABLED`가 먹는 이유는 오로지 yml의 플레이스홀더다.
+     *
+     * **지수를 끄는 값이 원자재까지 끄지 않는 것도 함께 못 박는다.** 두 스위치를 한 필드로
+     * 합치거나 플레이스홀더를 복사하다 이름을 안 바꾸면, 지수 하나를 끄려던 조작이
+     * 멀쩡한 탭까지 지운다 — 그 증상은 "수집이 안 됐나?"로 오진하기 딱 좋다.
+     */
+    @Test
+    fun `환경변수 MARKET_COMMODITIES_ENABLED가 false면 원자재 노출만 꺼진다`() {
+        runner.withInitializer { context: ConfigurableApplicationContext ->
+            context.environment.propertySources.replace(
+                StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME,
+                SystemEnvironmentPropertySource(
+                    StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME,
+                    mapOf<String, Any>("MARKET_COMMODITIES_ENABLED" to "false"),
+                ),
+            )
+        }.run { context ->
+            val properties = context.getBean(MarketQueryProperties::class.java)
+            assertThat(properties.commoditiesEnabled).isFalse()
+            assertThat(properties.indicesEnabled).isTrue()
+        }
+    }
 }

@@ -1,11 +1,14 @@
 package com.allfolio.market.query
 
+import com.allfolio.market.commodity.CommodityProperties
 import com.allfolio.market.index.MarketIndexProperties
 import com.allfolio.market.rate.MarketRateProperties
 import com.allfolio.unifiedasset.infrastructure.entity.HanaFxQuoteEntity
+import com.allfolio.unifiedasset.infrastructure.entity.MarketCommodityQuoteEntity
 import com.allfolio.unifiedasset.infrastructure.entity.MarketIndexQuoteEntity
 import com.allfolio.unifiedasset.infrastructure.entity.MarketRateEntity
 import com.allfolio.unifiedasset.infrastructure.jpa.HanaFxQuoteJpaRepository
+import com.allfolio.unifiedasset.infrastructure.jpa.MarketCommodityQuoteJpaRepository
 import com.allfolio.unifiedasset.infrastructure.jpa.MarketIndexQuoteJpaRepository
 import com.allfolio.unifiedasset.infrastructure.jpa.MarketRateJpaRepository
 import org.assertj.core.api.Assertions.assertThat
@@ -32,6 +35,9 @@ class MarketQueryServiceTest {
 
     private val rateRepo: MarketRateJpaRepository = mock(MarketRateJpaRepository::class.java)
 
+    private val commodityRepo: MarketCommodityQuoteJpaRepository =
+        mock(MarketCommodityQuoteJpaRepository::class.java)
+
     /** 묶음 조회에 넘어간 코드들 — 호출 한 번당 한 줄 */
     private val requestedCodes = mutableListOf<List<String>>()
 
@@ -41,11 +47,18 @@ class MarketQueryServiceTest {
     /** 금리 묶음 조회에 넘어간 (코드들, from, to) — 호출 한 번당 한 줄 */
     private val rateQueries = mutableListOf<Triple<List<String>, LocalDate, LocalDate>>()
 
+    /** 원자재 스텁이 돌려줄 행. 리포지터리가 순서를 보장하지 않으므로 넣은 순서 그대로 돌려준다 */
+    private val commodityRows = mutableListOf<MarketCommodityQuoteEntity>()
+
+    /** 원자재 묶음 조회에 넘어간 코드들 — 호출 한 번당 한 줄 */
+    private val commodityQueries = mutableListOf<List<String>>()
+
     private val today = LocalDate.of(2026, 8, 13)
     private val yesterday = LocalDate.of(2026, 8, 12)
 
     init {
         stubRateQuery()
+        stubCommodityQuery()
     }
 
     @Test
@@ -386,6 +399,153 @@ class MarketQueryServiceTest {
     }
 
     /**
+     * **플래그가 off면 서버가 원자재를 아예 싣지 않는다 — 빈 리스트가 아니라 null이다.**
+     * 지수와 같은 관례다(MarketSnapshot KDoc): `[]`는 "조회는 했는데 데이터가 없다"는 뜻이라
+     * 프런트가 그걸 렌더하면 감춰야 할 탭이 빈 표로 나간다.
+     *
+     * **조회조차 안 하는 것까지 못 박는다** — 데이터가 **있는** 상태로 스텁해 두고 검증한다.
+     * 스텁을 비워 두면 "안 불렀다"와 "불렀는데 없더라"가 구분되지 않는다.
+     *
+     * 지수가 그대로 실리는지도 함께 본다: 플래그 확인을 `snapshot()` 맨 앞의 조기 반환으로 넣는
+     * 변이가 여기서 깨진다(원자재 하나 끄려다 다섯 탭이 다 사라진다).
+     */
+    @Test
+    fun `원자재 플래그가 off면 조회하지도 싣지도 않는다`() {
+        stubLatest(indexQuote("KOSPI", "2500.00"))
+        stubCommodities(commodityQuote("WTI"))
+
+        val snapshot = service(commoditiesEnabled = false).snapshot()
+
+        assertThat(snapshot.commodities).isNull()
+        assertThat(snapshot.flags.commoditiesEnabled).isFalse()
+        verifyNoInteractions(commodityRepo)
+        // 원자재만 사라져야 한다
+        assertThat(snapshot.domestic?.map { it.code }).containsExactly("KOSPI")
+    }
+
+    /**
+     * 플래그가 켜져 있는데 수집이 한 번도 안 됐으면 `[]`다 — **null이 아니다.**
+     * 이 둘이 뭉개지면 "약관 때문에 감췄다"와 "아직 안 들어왔다"를 화면이 구분할 수 없다.
+     */
+    @Test
+    fun `플래그가 on인데 데이터가 없으면 빈 리스트다`() {
+        val snapshot = service().snapshot()
+
+        assertThat(snapshot.commodities).isNotNull()
+        assertThat(snapshot.commodities).isEmpty()
+        assertThat(snapshot.flags.commoditiesEnabled).isTrue()
+    }
+
+    /** 수집된 적 없는 종목은 빠진다. 0으로 채우면 화면이 그걸 진짜 시세로 보여준다 */
+    @Test
+    fun `행이 없는 원자재는 응답에서 빠진다`() {
+        stubCommodities(commodityQuote("WTI"))
+
+        assertThat(service().snapshot().commodities?.map { it.code }).containsExactly("WTI")
+    }
+
+    /**
+     * **줄 순서는 설정 순서다.** 픽스처의 설정 순서(WTI → COPPER → ALL_INDEX)는 사전순
+     * (ALL_INDEX → COPPER → WTI)과 정확히 반대이고, 거래일 순서와도, 아래 스텁을 쌓은 순서
+     * (= DB가 행을 주는 순서)와도 다르게 잡았다.
+     *
+     * `sortedBy { it.code }`로 정렬하는 변이가 여기서 깨진다 — 운영에서 그 변이는 종합지수가
+     * 맨 앞에 오고 에너지 3종이 농산물 사이로 흩어져, 화면이 섹션을 가르는 근거가 사라진다.
+     */
+    @Test
+    fun `원자재를 설정 순서로 싣는다`() {
+        stubCommodities(
+            commodityQuote("COPPER", date = LocalDate.of(2026, 6, 1), unit = "USD/MT", frequency = "M"),
+            commodityQuote("ALL_INDEX", date = LocalDate.of(2026, 7, 1), unit = "index", frequency = "M"),
+            commodityQuote("WTI", date = LocalDate.of(2026, 8, 13)),
+        )
+
+        val commodities = service().snapshot().commodities!!
+
+        assertThat(commodities.map { it.code }).containsExactly("WTI", "COPPER", "ALL_INDEX")
+        // 기준일 정렬(오름·내림 어느 쪽이든)로 바뀌는 변이도 함께 잡는다
+        assertThat(commodities.map { it.tradeDate }).containsExactly(
+            LocalDate.of(2026, 8, 13), LocalDate.of(2026, 6, 1), LocalDate.of(2026, 7, 1),
+        )
+    }
+
+    /**
+     * **단위와 주기를 저장된 값 그대로 내보낸다.** 화면이 섹션을 가르고(D/M) 숫자 옆에 단위를
+     * 붙이는 근거가 이 둘이다. `USc/lb`를 `USD/lb`로 "정리"하는 정규화가 들어오면 한 글자 차이에
+     * 100배가 틀리고, 숫자는 그럴듯해서 눈으로는 안 걸린다.
+     */
+    @Test
+    fun `단위와 주기와 가격을 그대로 싣는다`() {
+        stubCommodities(
+            commodityQuote("WTI", price = "70.1234"),
+            commodityQuote("COPPER", date = LocalDate.of(2026, 6, 1), price = "9000.0000", unit = "USc/lb", frequency = "M"),
+        )
+
+        val commodities = service().snapshot().commodities!!
+
+        assertThat(commodities[0].unit).isEqualTo("USD/bbl")
+        assertThat(commodities[0].frequency).isEqualTo("D")
+        assertThat(commodities[0].price).isEqualByComparingTo("70.1234")
+        assertThat(commodities[1].unit).isEqualTo("USc/lb")
+        assertThat(commodities[1].frequency).isEqualTo("M")
+    }
+
+    /**
+     * **`0`(무변동)을 null로 뭉개지 않는다.** 화면은 이 값을 "보합"으로 찍어야 하고,
+     * null로 바뀌면 "직전 값 없음"이 되어 등락 칸이 통째로 비어 버린다.
+     * 등락률도 함께 본다 — 값 쪽만 살리는 부분 변이가 있을 수 있다.
+     */
+    @Test
+    fun `전일대비가 0인 행은 0으로 나간다`() {
+        stubCommodities(commodityQuote("WTI", changeValue = "0.0000", changeRate = "0.0000"))
+
+        val view = service().snapshot().commodities!!.single()
+
+        assertThat(view.changeValue).isNotNull()
+        assertThat(view.changeValue).isEqualByComparingTo("0")
+        assertThat(view.changeRate).isNotNull()
+        assertThat(view.changeRate).isEqualByComparingTo("0")
+    }
+
+    /**
+     * 첫 관측처럼 비교할 직전 값이 없으면 저장된 값이 null이고, 그대로 null로 나가야 한다.
+     * **`?: BigDecimal.ZERO`로 채우는 변이가 여기서 깨진다** — 0은 "안 움직였다"는 뜻이라
+     * 위 테스트의 진짜 0과 구분되지 않게 된다(AF-104가 이 구분을 놓쳐 사고를 냈다).
+     */
+    @Test
+    fun `직전 값이 없는 원자재는 전일대비가 null이다`() {
+        stubCommodities(commodityQuote("WTI", changeValue = null, changeRate = null))
+
+        val view = service().snapshot().commodities!!.single()
+
+        assertThat(view.changeValue).isNull()
+        assertThat(view.changeRate).isNull()
+    }
+
+    /**
+     * 종목이 몇 종이든 쿼리는 한 번이다. 종목마다 부르면 원격 Postgres 왕복이 16번(금이 붙으면 17번) 난다.
+     *
+     * **설정 목록 셋을 다 열거하는지도 함께 못 박는다.** `fredDaily`만 읽는 구현은 월간 13종이
+     * 조회 대상에 아예 안 들어가고, 증상은 "수집은 되는데 화면에 없다"이다 — 오류도 로그도 안 난다.
+     * (AF-FRED가 금리에서 정확히 이 실수를 했다.)
+     */
+    @Test
+    fun `종목이 여럿이어도 원자재 조회는 한 번으로 끝난다`() {
+        stubCommodities(
+            commodityQuote("WTI"),
+            commodityQuote("COPPER", date = LocalDate.of(2026, 6, 1), unit = "USD/MT", frequency = "M"),
+        )
+
+        service().snapshot()
+
+        verify(commodityRepo, times(1)).findLatestByCodes(anyCollection() ?: emptyList())
+        // 종목별 조회가 끼어들면 여기서 깨진다
+        verifyNoMoreInteractions(commodityRepo)
+        // 픽스처 설정 전량이다(일간 1 + 월간 2). 행이 없는 종목도 조회에는 들어가야 한다
+        assertThat(commodityQueries.single()).containsExactlyInAnyOrder("WTI", "COPPER", "ALL_INDEX")
+    }
+
+    /**
      * 리포지터리가 준 것만 매핑한다 — 스텁에 없는 코드는 결과에서 그냥 빠진다.
      *
      * 넘어온 코드는 [requestedCodes]에 직접 받아 둔다. `ArgumentCaptor.capture()`는 null을
@@ -431,7 +591,30 @@ class MarketQueryServiceTest {
         rateRows += rows
     }
 
-    private fun service(indicesEnabled: Boolean = true): MarketQueryService {
+    /**
+     * 요청한 코드로 걸러 돌려준다 — 리포지터리가 하는 일이 그것이고, 걸러 두면 엉뚱한 코드를
+     * 넘기는 변이(설정 목록 하나만 열거하는 등)가 빈 결과로 드러난다.
+     *
+     * **"코드마다 최신 한 행"이라는 규칙 자체는 여기서 검증되지 않는다.** 그 규칙은 JPQL
+     * (`findLatestByCodes`의 `NOT EXISTS`) 안에만 있고, 이 스텁은 그 의미를 손으로 다시 적는 것이라
+     * 쿼리를 망가뜨려도 여기는 초록이다. 그래서 H2로 도는
+     * `MarketCommodityQuoteJpaRepositoryTest`가 그 규칙을 따로 문다 — 조회 서비스를 고칠 때
+     * 그 파일도 같이 볼 것.
+     */
+    private fun stubCommodityQuery() {
+        `when`(commodityRepo.findLatestByCodes(anyCollection())).thenAnswer { invocation ->
+            val codes = invocation.getArgument<Collection<String>>(0).toList()
+            commodityQueries += codes
+            commodityRows.filter { it.code in codes }
+        }
+    }
+
+    /** 쌓은 순서가 곧 DB가 준 순서다 — 설정 순서와 일부러 다르게 쌓아 정렬 변이를 잡는다 */
+    private fun stubCommodities(vararg rows: MarketCommodityQuoteEntity) {
+        commodityRows += rows
+    }
+
+    private fun service(indicesEnabled: Boolean = true, commoditiesEnabled: Boolean = true): MarketQueryService {
         val properties = MarketIndexProperties().apply {
             domestic = listOf(MarketIndexProperties.DomesticIndex().apply { code = "KOSPI" })
             overseas = listOf(MarketIndexProperties.OverseasIndex().apply { code = "SPX" })
@@ -450,9 +633,41 @@ class MarketQueryServiceTest {
             // "수집은 되는데 화면에 없다"이고 오류도 로그도 안 난다
             fred = listOf(MarketRateProperties.FredSeries().apply { code = "US_FFR" })
         }
-        val queryProperties = MarketQueryProperties().apply { this.indicesEnabled = indicesEnabled }
-        return MarketQueryService(indexRepo, properties, fxRepo, rateRepo, rateProperties, queryProperties)
+        // **설정 순서를 사전순과 반대로 둔다** — 운영 설정(WTI·BRENT·NATGAS → 금속 → 농산물 →
+        // 종합지수)도 사전순이 아니고, 사전순 정렬 변이가 통과하지 않아야 한다.
+        // **월간 목록을 반드시 함께 채운다**: 설정이 목록 셋으로 갈려 있어 fredDaily만 채운
+        // 픽스처로는 `fredDaily`만 열거하는 구현이 전부 초록이다(증상은 "수집은 되는데 화면에 없다").
+        // fsc는 운영과 같이 비워 둔다 — 금이 붙어도 이 코드가 안 바뀌는 것이 요구사항이다.
+        val commodityProperties = CommodityProperties().apply {
+            fredDaily = listOf(commodityItem("WTI", "USD/bbl", "D"))
+            fredMonthly = listOf(
+                commodityItem("COPPER", "USD/MT", "M"),
+                commodityItem("ALL_INDEX", "index", "M"),
+            )
+        }
+        val queryProperties = MarketQueryProperties().apply {
+            this.indicesEnabled = indicesEnabled
+            this.commoditiesEnabled = commoditiesEnabled
+        }
+        return MarketQueryService(
+            indexRepo,
+            properties,
+            fxRepo,
+            rateRepo,
+            rateProperties,
+            commodityRepo,
+            commodityProperties,
+            queryProperties,
+        )
     }
+
+    private fun commodityItem(code: String, unit: String, frequency: String) =
+        CommodityProperties.CommodityItem().apply {
+            this.code = code
+            this.seriesId = "SERIES_$code"
+            this.unit = unit
+            this.frequency = frequency
+        }
 
     private fun indexQuote(
         code: String,
@@ -489,6 +704,35 @@ class MarketQueryServiceTest {
         rateValue = BigDecimal(value),
         source = source,
         collectedAt = LocalDateTime.of(2026, 8, 13, 18, 10),
+    )
+
+    /**
+     * `unit`·`frequency`는 **행에 저장된 값**이지 설정값이 아니다 — 조회가 설정에서 다시 가져오면
+     * 단위 표기를 고친 날 과거 행이 새 단위로 둔갑한다. 그래서 픽스처의 기본 단위도 설정과 같은
+     * 값을 쓰되, 다르게 주는 테스트를 함께 둔다.
+     */
+    private fun commodityQuote(
+        code: String,
+        date: LocalDate = LocalDate.of(2026, 8, 13),
+        price: String = "70.0000",
+        unit: String = "USD/bbl",
+        frequency: String = "D",
+        changeValue: String? = "1.0000",
+        changeRate: String? = "1.4493",
+    ) = MarketCommodityQuoteEntity(
+        id = UUID.randomUUID(),
+        code = code,
+        tradeDate = date,
+        price = BigDecimal(price),
+        unit = unit,
+        frequency = frequency,
+        // price와 **다른 값**이어야 한다. 같게 두면 뷰가 price를 prevClose에서 가져오도록
+        // 잘못 바뀌어도 테스트가 통과한다 (지수 픽스처가 같은 이유로 같은 장치를 둔다)
+        prevClose = BigDecimal("69.0000"),
+        changeValue = changeValue?.let { BigDecimal(it) },
+        changeRate = changeRate?.let { BigDecimal(it) },
+        source = "FRED",
+        collectedAt = LocalDateTime.of(2026, 8, 13, 18, 20),
     )
 
     private fun fxQuote(currency: String, baseDate: LocalDate, roundNo: Int, rate: String) = HanaFxQuoteEntity(

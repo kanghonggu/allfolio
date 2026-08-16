@@ -15,6 +15,12 @@ export interface MarketSnapshot {
   /** null = 데이터 없음 */
   fx: FxSnapshot | null
   rates: RateView[]
+  /**
+   * null = 플래그 off(서버가 안 실었다), [] = 켜져 있고 데이터 없음.
+   * **지수와 같은 관례다** — `?? []`로 합치면 재배포 약관 때문에 감춘 탭이 빈 화면으로 노출된다.
+   * 탭을 띄울지는 [MarketFlags.commoditiesEnabled]로 가른다.
+   */
+  commodities: CommodityQuoteView[] | null
   flags: MarketFlags
 }
 
@@ -60,6 +66,40 @@ export interface RateView {
   changeBp: number | null
 }
 
+/**
+ * 원자재 한 종 (AF-108).
+ *
+ * **`unit`·`frequency`가 행에 실려 온다.** 코드로 매핑해 상수로 들고 있으면 설정이 바뀐 날
+ * 저장은 멀쩡한데 화면만 조용히 틀린다 — `USD/lb`(우라늄)와 `USc/lb`(설탕·커피)는
+ * 한 글자 차이에 100배 차이다. 섹션을 가르는 것도 소스 이름이 아니라 `frequency`로 한다
+ * (금이 나중에 붙어도 화면 코드가 안 바뀐다).
+ */
+export interface CommodityQuoteView {
+  code: string
+  /** **월간 관측의 거래일은 그 달의 1일이다**(IMF 관측일 규약). 그 날 하루 값이 아니라 그 달의 평균이다 */
+  tradeDate: string
+  /** 백엔드는 BigDecimal(scale 4)이고 JSON에는 number로 실린다 — string이 아니다 */
+  price: number
+  /** USD/bbl · USD/MMBtu · USD/MT · USD/lb · USc/lb · index · KRW/g. 설정 표기 그대로다 */
+  unit: string
+  /**
+   * 설정상 `D` | `M`. 화면이 「시세」·「월간 지표」 두 섹션을 가르는 근거다.
+   *
+   * **`'D' | 'M'` 유니언으로 좁히지 않는다.** 백엔드 필드가 `String`(length 1)이라 설정 오타
+   * 한 번이면 `'d'`가 실려 오는데, 선언만 좁혀 봐야 런타임은 안 걸러진다 — AF-104가 그걸로
+   * 사고를 냈다(선언은 string이 아니라고 말했지만 백엔드는 number를 보냈다).
+   * 좁은 선언은 그 자체로 해롭기도 하다: `commoditySection`의 세 번째 갈래가 타입상 도달 불가로
+   * 보여 죽은 코드처럼 읽히고, 지우고 싶어진다. 선언을 코드가 실제로 하는 방어에 맞춘다.
+   */
+  frequency: string
+  /** null = 비교할 직전 값 없음. **0(무변동)과 다르다** — `!= null`로 가를 것 */
+  changeValue: number | null
+  /** % (직전 값이 0이면 계산 불가라 null). 0과 null은 다르다 */
+  changeRate: number | null
+}
+
 export interface MarketFlags {
   indicesEnabled: boolean
+  /** false면 서버가 원자재를 아예 안 싣는다. **탭 표시 여부는 이 값으로 가른다** */
+  commoditiesEnabled: boolean
 }

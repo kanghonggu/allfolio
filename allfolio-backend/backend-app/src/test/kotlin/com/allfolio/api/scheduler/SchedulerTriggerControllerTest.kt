@@ -1,5 +1,6 @@
 package com.allfolio.api.scheduler
 
+import com.allfolio.api.admin.CommodityAdminController
 import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.api.admin.MarketRateAdminController
@@ -11,6 +12,9 @@ import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
 import com.allfolio.fx.hana.HanaCollectSummary
 import com.allfolio.fx.hana.HanaFxCollectService
+import com.allfolio.market.commodity.CommodityCollectService
+import com.allfolio.market.commodity.CommodityCollectSummary
+import com.allfolio.market.commodity.CommodityProperties
 import com.allfolio.market.index.DomesticIndexCollectSummary
 import com.allfolio.market.index.IndexCollectService
 import com.allfolio.market.index.IndexSlot
@@ -51,6 +55,7 @@ class SchedulerTriggerControllerTest {
     private val admin: FxRateAdminController = mock(FxRateAdminController::class.java)
     private val indexAdmin: MarketIndexAdminController = mock(MarketIndexAdminController::class.java)
     private val rateAdmin: MarketRateAdminController = mock(MarketRateAdminController::class.java)
+    private val commodityAdmin: CommodityAdminController = mock(CommodityAdminController::class.java)
     private val stepExecutor: WfStepExecutor = mock(WfStepExecutor::class.java)
 
     private val summary = HanaCollectSummary(
@@ -68,7 +73,7 @@ class SchedulerTriggerControllerTest {
     // 응답으로 풀려, 운영과 다른 경로를 테스트하게 된다. 워크플로가 --fail을 일부러 안 쓰는 이유가
     // 이 본문을 잡 요약에 남기기 위해서라, 본문까지 운영과 같아야 의미가 있다.
     private fun mvc(token: String) = MockMvcBuilders
-        .standaloneSetup(SchedulerTriggerController(admin, indexAdmin, rateAdmin, stepExecutor, token))
+        .standaloneSetup(SchedulerTriggerController(admin, indexAdmin, rateAdmin, commodityAdmin, stepExecutor, token))
         .setControllerAdvice(GlobalExceptionHandler())
         .build()
 
@@ -176,7 +181,7 @@ class SchedulerTriggerControllerTest {
             mock(CashFlowRecomputeService::class.java),
         )
 
-        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, stepExecutor, "secret"))
+        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, commodityAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -302,7 +307,7 @@ class SchedulerTriggerControllerTest {
             mock(OverseasIndexCollectService::class.java),
         )
 
-        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin, rateAdmin, stepExecutor, "secret"))
+        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin, rateAdmin, commodityAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -347,6 +352,7 @@ class SchedulerTriggerControllerTest {
                         mock(OverseasIndexCollectService::class.java),
                     ),
                     rateAdmin,
+                    commodityAdmin,
                     stepExecutor,
                     "secret",
                 )
@@ -503,7 +509,7 @@ class SchedulerTriggerControllerTest {
         )
 
         MockMvcBuilders
-            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, stepExecutor, "secret"))
+            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, commodityAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -531,7 +537,7 @@ class SchedulerTriggerControllerTest {
         )
 
         MockMvcBuilders
-            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, stepExecutor, "secret"))
+            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, commodityAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -557,7 +563,7 @@ class SchedulerTriggerControllerTest {
         ).thenThrow(KisIndexException("KIS 해외 응답에 output2가 없습니다"))
 
         MockMvcBuilders
-            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, stepExecutor, "secret"))
+            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, commodityAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -729,7 +735,7 @@ class SchedulerTriggerControllerTest {
             mock(CashFlowRecomputeService::class.java),
         )
 
-        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, stepExecutor, "secret"))
+        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, commodityAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -869,6 +875,7 @@ class SchedulerTriggerControllerTest {
                 admin,
                 indexAdmin,
                 MarketRateAdminController(rateCollectServiceReturning(summary), mock(EcosStatListClient::class.java)),
+                commodityAdmin,
                 stepExecutor,
                 "secret",
             )
@@ -903,6 +910,165 @@ class SchedulerTriggerControllerTest {
             any(LocalDate::class.java) ?: LocalDate.EPOCH,
             any(LocalDate::class.java) ?: LocalDate.EPOCH,
         )
+    }
+
+    // ── 원자재 트리거 (AF-108) ─────────────────────────────────────────────────
+
+    private val commoditySummary = CommodityCollectSummary(
+        from = LocalDate.of(2026, 5, 18),
+        to = LocalDate.of(2026, 8, 16),
+        requested = 16,
+        collected = 200,
+        inserted = 3,
+        updated = 1,
+        unchanged = 196,
+        skippedRows = 0,
+        outOfRange = 0,
+        emptySeries = emptyList(),
+        failed = 0,
+        failures = emptyList(),
+    )
+
+    // 날짜를 노출하지 않는 게 이 엔드포인트의 설계다. null이 그대로 넘어가야 끝점이 KST 오늘로,
+    // 시작점이 주기별 기본 창으로 잡힌다 — 러너의 UTC 시계가 아니라.
+    // 창이 주기별로 갈리는 이유는 월간 계열의 공표 지연이다(한 창으로 뭉개면 일간과 월간 중
+    // 한쪽이 반드시 틀린다). 길이는 CommodityCollectServiceTest가 잰다.
+    @Test
+    fun `토큰이 맞으면 원자재 수집을 위임한다`() {
+        `when`(commodityAdmin.collect(null, null)).thenReturn(ResponseEntity.ok(commoditySummary))
+
+        mvc("secret").perform(
+            post("/api/internal/scheduler/commodity").header("X-Scheduler-Token", "secret")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.collected").value(200))
+            // updated와 unchanged가 갈려 남아야 "소스가 값을 정정했다"는 신호가
+            // 매일 나오는 unchanged 더미에 안 묻힌다
+            .andExpect(jsonPath("$.updated").value(1))
+            .andExpect(jsonPath("$.unchanged").value(196))
+
+        verify(commodityAdmin).collect(null, null)
+    }
+
+    @Test
+    fun `원자재 트리거도 토큰이 틀리면 401이고 수집을 부르지 않는다`() {
+        mvc("secret").perform(
+            post("/api/internal/scheduler/commodity").header("X-Scheduler-Token", "wrong")
+        )
+            .andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.error").exists())
+
+        verifyNoCommodityCollect()
+    }
+
+    // 앞의 트리거들과 같은 authorize를 **재사용**하는지 본다. 경로마다 검사를 새로 짜면
+    // 새 경로 하나만 fail-open이 되어도 다른 테스트가 전부 통과해버린다.
+    @Test
+    fun `설정 토큰이 비어 있으면 원자재 트리거도 503으로 닫는다`() {
+        mvc("").perform(
+            post("/api/internal/scheduler/commodity").header("X-Scheduler-Token", "anything")
+        )
+            .andExpect(status().isServiceUnavailable)
+            .andExpect(jsonPath("$.error").exists())
+
+        verifyNoCommodityCollect()
+    }
+
+    @Test
+    fun `설정 토큰이 비어 있고 헤더도 없으면 원자재 트리거도 503으로 닫는다`() {
+        mvc("").perform(post("/api/internal/scheduler/commodity"))
+            .andExpect(status().isServiceUnavailable)
+
+        verifyNoCommodityCollect()
+    }
+
+    @Test
+    fun `원자재 트리거는 GET으로는 열리지 않는다`() {
+        mvc("secret").perform(
+            get("/api/internal/scheduler/commodity").header("X-Scheduler-Token", "secret")
+        ).andExpect(status().isMethodNotAllowed)
+
+        verifyNoCommodityCollect()
+    }
+
+    // 크론이 실제로 때리는 건 이 경로다. CommodityCollectService는 종목이 전부 터져도 예외 대신
+    // 요약을 돌려주므로, 어드민이 502로 바꿔주지 않으면 전면 중단이 200으로 나가 잡이 초록으로
+    // 끝난다. 목을 쓰면 그 변환이 한 번도 실행되지 않아 어드민 쪽 분기를 통째로 지워도 통과한다.
+    // 배포 직후 이 형태가 나오는 가장 흔한 원인은 마이그레이션 미적용(테이블 부재)이다.
+    @Test
+    fun `원자재를 한 건도 못 모으면 트리거도 502를 낸다`() {
+        val mvc = mvcWithRealCommodityAdmin(
+            commoditySummary.copy(
+                collected = 0,
+                inserted = 0,
+                updated = 0,
+                unchanged = 0,
+                failed = 16,
+                failures = listOf("WTI: ERROR: relation \"market_commodity_quote\" does not exist"),
+            )
+        )
+
+        mvc.perform(post("/api/internal/scheduler/commodity").header("X-Scheduler-Token", "secret"))
+            .andExpect(status().isBadGateway)
+            // 잡 요약에 남는 건 본문이다. 사유가 없으면 502만 보고 원인을 다시 찾아야 한다.
+            .andExpect(jsonPath("$.error").exists())
+    }
+
+    // 502와 갈라지는 쪽. 상류는 정상 응답을 줬는데 전 종목이 0건이면 틀린 건 우리가 넣은
+    // 시리즈 ID다 — 상류 장애(502)로 부르면 운영자를 멀쩡한 세인트루이스 연은으로 보내게 된다.
+    @Test
+    fun `원자재도 전 종목이 0건이면 트리거는 502가 아니라 500을 낸다`() {
+        val mvc = mvcWithRealCommodityAdmin(
+            commoditySummary.copy(
+                requested = 2,
+                collected = 0,
+                inserted = 0,
+                updated = 0,
+                unchanged = 0,
+                emptySeries = listOf("WTI", "BRENT"),
+            )
+        )
+
+        mvc.perform(post("/api/internal/scheduler/commodity").header("X-Scheduler-Token", "secret"))
+            .andExpect(status().isInternalServerError)
+            .andExpect(jsonPath("$.error").exists())
+    }
+
+    private fun mvcWithRealCommodityAdmin(summary: CommodityCollectSummary) = MockMvcBuilders
+        .standaloneSetup(
+            SchedulerTriggerController(
+                admin,
+                indexAdmin,
+                rateAdmin,
+                CommodityAdminController(commodityCollectServiceReturning(summary), CommodityProperties()),
+                stepExecutor,
+                "secret",
+            )
+        )
+        .setControllerAdvice(GlobalExceptionHandler())
+        .build()
+
+    private fun commodityCollectServiceReturning(summary: CommodityCollectSummary): CommodityCollectService {
+        val service = mock(CommodityCollectService::class.java)
+        // any(...)는 매처를 등록하고 null을 돌려주는데, CommodityCollectService는 Kotlin 파이널
+        // 클래스라 원본 바이트코드의 non-null 파라미터 검사가 남아 NPE가 난다.
+        // 엘비스로 아무 값이나 채우면 매처는 그대로 등록된 채 검사만 통과한다.
+        `when`(
+            service.collect(
+                // 트리거는 from을 null로 내려보낸다(주기별 기본 창). any(LocalDate::class.java)는
+                // null을 매칭하지 않아 스텁이 안 걸린다
+                any(),
+                any(LocalDate::class.java) ?: LocalDate.EPOCH,
+                any(LocalDateTime::class.java) ?: LocalDateTime.MIN,
+            )
+        ).thenReturn(summary)
+        return service
+    }
+
+    // 맨 any()를 쓴다. any(LocalDate::class.java)는 Mockito 2.1부터 null을 매칭하지 않아
+    // 트리거가 실제로 부르는 collect(null, null)을 놓친다 — never() 검증이 통째로 장식이 된다.
+    private fun verifyNoCommodityCollect() {
+        verify(commodityAdmin, never()).collect(any(), any())
     }
 
     // ── 마감 트리거 (AF-107) ───────────────────────────────────────────────────

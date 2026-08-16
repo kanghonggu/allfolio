@@ -9,15 +9,17 @@ import { ErrorState, LoadingState } from '@/components/ui/states'
 import IndexCards from '@/components/market/IndexCards'
 import FxPanel from '@/components/market/FxPanel'
 import RatePanel from '@/components/market/RatePanel'
+import CommodityPanel from '@/components/market/CommodityPanel'
 import { cx } from '@/lib/cx'
 
-type TabKey = 'domestic' | 'overseas' | 'fx' | 'rates'
+type TabKey = 'domestic' | 'overseas' | 'fx' | 'rates' | 'commodities'
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'domestic', label: '국내' },
   { key: 'overseas', label: '해외' },
   { key: 'fx', label: '환율' },
   { key: 'rates', label: '금리' },
+  { key: 'commodities', label: '원자재' },
 ]
 
 export default function MarketPage() {
@@ -25,7 +27,7 @@ export default function MarketPage() {
   const router = useRouter()
   const params = useSearchParams()
 
-  // 네 탭이 쿼리 하나를 나눠 쓴다. 키가 고정이라 탭을 바꿔도 다시 안 부른다.
+  // 다섯 탭이 쿼리 하나를 나눠 쓴다. 키가 고정이라 탭을 바꿔도 다시 안 부른다.
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['market', 'snapshot'],
     queryFn: () => api!.snapshot(),
@@ -39,7 +41,14 @@ export default function MarketPage() {
   // (아래 렌더 참고) — 로딩 중에 환율/금리만 먼저 그리면 선택이 환율에 붙었다가
   // 응답이 오면서 국내가 생겨 선택이 국내로 튄다. 사용자 눈에는 내용이 저 혼자 바뀐 것으로 보인다.
   const indicesOn = data?.flags.indicesEnabled ?? false
-  const visibleTabs = TABS.filter((t) => indicesOn || (t.key !== 'domestic' && t.key !== 'overseas'))
+  // 원자재는 플래그가 따로다(소스가 달라 약관 판단도 따로다 — MarketQueryProperties).
+  // **`data.commodities`의 null 여부로 유도하지 않는다.** 그건 조회 결과고 플래그는 설정이다.
+  const commoditiesOn = data?.flags.commoditiesEnabled ?? false
+  const visibleTabs = TABS.filter((t) => {
+    if (t.key === 'domestic' || t.key === 'overseas') return indicesOn
+    if (t.key === 'commodities') return commoditiesOn
+    return true
+  })
 
   // 탭 상태를 URL에 둔다 — 안 그러면 뒤로가기가 화면을 통째로 벗어난다.
   // 모르는 값이거나 지금 안 보이는 탭(플래그 off인데 `?tab=domestic`)이면 첫 탭으로 되돌린다.
@@ -57,7 +66,7 @@ export default function MarketPage() {
 
   return (
     <div className="border border-line-card bg-surface">
-      <PageHeader className="px-5 pt-4 sm:px-7" title="시장" meta="지수 · 환율 · 금리" />
+      <PageHeader className="px-5 pt-4 sm:px-7" title="시장" meta="지수 · 환율 · 금리 · 원자재" />
 
       {/* **응답이 온 뒤에 한 번만 그린다.** 로딩 중에 미리 그리면 그때의 구성(환율·금리)이
           최종 구성과 달라 선택이 튄다. 본문이 이미 LoadingState라 탭 막대가 잠깐 없어도
@@ -95,6 +104,10 @@ export default function MarketPage() {
             {tab === 'fx' && <FxPanel fx={data.fx} />}
             {/* rates는 빈 배열로 온다 — 빈 상태는 패널 안에서 그린다 */}
             {tab === 'rates' && <RatePanel rates={data.rates} />}
+            {/* 지수와 같은 관례다 — **`data.commodities ?? []`를 쓰지 말 것.**
+                null은 플래그 off라 이 탭 자체가 없고, []는 켜져 있고 데이터가 없다는 뜻이라
+                패널이 빈 상태를 그린다. 합치면 약관 때문에 감춘 탭이 빈 표로 노출된다 */}
+            {tab === 'commodities' && data.commodities && <CommodityPanel quotes={data.commodities} />}
           </>
         )}
       </div>
