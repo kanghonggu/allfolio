@@ -14,12 +14,14 @@ import com.allfolio.unifiedasset.domain.asset.AssetSourceType
 import com.allfolio.unifiedasset.domain.asset.AssetType
 import com.allfolio.unifiedasset.domain.asset.ValuationMethod
 import com.allfolio.unifiedasset.domain.sync.SyncLog
+import com.allfolio.unifiedasset.domain.sync.SyncTrigger
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import java.math.BigDecimal
 import java.time.LocalDate
@@ -73,10 +75,59 @@ class SyncAccountUseCaseNavTest {
         }
     }
 
+    /**
+     * 마감 워크플로우 S010(`DailyAccountSyncer.syncAll`)이 이 경로를 그대로 쓴다. 그때 스냅샷까지
+     * 쓰면 날짜가 **워크플로우의 업무일자가 아니라 실행 시각의 KST 오늘**로 적힌다 — S030이
+     * `ctx.ymd.minusDays(1)`로 D−1을 쓰는 동안 같은 실행이 D 행을 하나 더 만든다.
+     *
+     * 2026-08-16 운영 로그에 12초 간격으로 두 날짜가 그대로 찍혔다:
+     * ```
+     * 16:05:58 userId=3e055c70… date=2026-08-16 nav=37484059.00   ← S010 (이 경로)
+     * 16:06:05 userId=3e055c70… date=2026-08-15 nav=37484060.00   ← S030
+     * ```
+     * D 행에 앉는 값은 00:05 KST에 읽은 것이라 실질적으로 D−1 종가인데 D로 라벨된다. 다음 밤
+     * S030이 같은 UPSERT 키로 덮어 자가 치유되지만, 그 말은 **가장 최근 행은 항상 틀린 행**이라는
+     * 뜻이고 `GetReturnsAnalysisUseCase`가 `[from,to]`의 `to` 끝점으로 잡는 게 정확히 그 행이다.
+     *
+     * 그래서 마감 중 기록자는 S030 하나여야 한다. `SCHEDULED`를 쓰는 호출자는
+     * `DailyAccountSyncer` 뿐이라 사용자 경로(MANUAL·AUTO)는 영향을 받지 않는다 —
+     * 그쪽이 여전히 기록한다는 것은 위 `records NAV converted to KRW…`가 지킨다.
+     */
+    @Test
+    fun `SCHEDULED 동기화는 스냅샷을 쓰지 않는다 — 마감의 기록자는 S030 하나여야 한다`() {
+        val userId = UUID.randomUUID()
+        val account = Account.create(
+            userId = userId,
+            provider = AccountProvider.BINANCE,
+            accountType = AccountType.EXCHANGE,
+            accountName = "binance",
+        )
+        val assets = listOf(asset(userId, account.id, BigDecimal("1000000"), "KRW"))
+
+        val snapshot = mock(PerformanceSnapshotService::class.java)
+        val service = SyncAccountUseCase(
+            accountRepository = FixedAccountRepository(account),
+            assetRepository = FixedAssetRepository(assets),
+            adapters = listOf(EmptySyncAdapter(account.provider)),
+            snapshotService = snapshot,
+            fx = fx,
+            syncLogRepository = NoopSyncLogRepository(),
+            reconMutex = NoopReconMutex(),
+            cashFlowRepository = org.mockito.Mockito.mock(com.allfolio.unifiedasset.application.port.CashFlowRepository::class.java),
+            stockTradeRepository = FakeStockTradeRepository(),
+        )
+
+        service.execute(account.id, SyncTrigger.SCHEDULED)
+
+        verify(snapshot, never()).record(anyUuid(), anyBd(), anyDate())
+    }
+
     // Kotlin non-null 파라미터에 Mockito matcher를 쓰기 위한 null-safe 래퍼.
     private fun eqUuid(v: UUID): UUID = eq(v) ?: v
     private fun captureBd(c: ArgumentCaptor<BigDecimal>): BigDecimal = c.capture() ?: BigDecimal.ZERO
     private fun anyDate(): LocalDate = any(LocalDate::class.java) ?: LocalDate.EPOCH
+    private fun anyUuid(): UUID = any(UUID::class.java) ?: UUID.randomUUID()
+    private fun anyBd(): BigDecimal = any(BigDecimal::class.java) ?: BigDecimal.ZERO
 
     private fun asset(userId: UUID, accountId: UUID, value: BigDecimal, currency: String): Asset =
         Asset.create(
