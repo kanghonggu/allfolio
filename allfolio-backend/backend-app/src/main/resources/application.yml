@@ -369,6 +369,33 @@ market-rate:
     - { code: UST_10Y, series-id: DGS10 }
     - { code: UST_30Y, series-id: DGS30 }
 
+# 원자재 시세. 신선도가 층마다 다르다 — 화면이 섹션을 가르는 근거가 frequency다.
+# 일간(EIA)은 영업일 3일, 월간(IMF)은 두 달 지연이다(2026-08-16 실측).
+#
+# 단위를 여기 적는 이유: FRED 응답에 단위가 없다. 코드에 상수로 두면 소스가 바꾼 날
+# 저장은 멀쩡한데 화면만 틀린다. 값 정책(PRICE)이 상한을 안 걸어 자동으로는 못 잡는다.
+market-commodity:
+  fred-daily:
+    - { code: WTI,    series-id: DCOILWTICO,   unit: "USD/bbl",   frequency: D }
+    - { code: BRENT,  series-id: DCOILBRENTEU, unit: "USD/bbl",   frequency: D }
+    - { code: NATGAS, series-id: DHHNGSP,      unit: "USD/MMBtu", frequency: D }
+  fred-monthly:
+    - { code: COPPER,    series-id: PCOPPUSDM,     unit: "USD/MT",   frequency: M }
+    - { code: NICKEL,    series-id: PNICKUSDM,     unit: "USD/MT",   frequency: M }
+    - { code: ZINC,      series-id: PZINCUSDM,     unit: "USD/MT",   frequency: M }
+    - { code: ALUMINUM,  series-id: PALUMUSDM,     unit: "USD/MT",   frequency: M }
+    - { code: IRON_ORE,  series-id: PIORECRUSDM,   unit: "USD/MT",   frequency: M }
+    - { code: COAL_AU,   series-id: PCOALAUUSDM,   unit: "USD/MT",   frequency: M }
+    # USD/lb — 아래 설탕·커피의 USc/lb와 한 글자 차이에 100배 차이다. 맞추지 말 것
+    - { code: URANIUM,   series-id: PURANUSDM,     unit: "USD/lb",   frequency: M }
+    - { code: WHEAT,     series-id: PWHEAMTUSDM,   unit: "USD/MT",   frequency: M }
+    - { code: CORN,      series-id: PMAIZMTUSDM,   unit: "USD/MT",   frequency: M }
+    - { code: SOYBEANS,  series-id: PSOYBUSDM,     unit: "USD/MT",   frequency: M }
+    - { code: SUGAR,     series-id: PSUGAISAUSDM,  unit: "USc/lb",   frequency: M }
+    - { code: COFFEE,    series-id: PCOFFOTMUSDM,  unit: "USc/lb",   frequency: M }
+    - { code: ALL_INDEX, series-id: PALLFNFINDEXM, unit: "index",    frequency: M }
+  fsc: []   # 금은 Task 4에서 채운다 (현재 FSC_API_KEY 미설정으로 보류 중)
+
 # 암호화폐 거래소 WebSocket (국내)
 upbit:
   ws-enabled: ${UPBIT_WS_ENABLED:false}
