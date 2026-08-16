@@ -239,10 +239,15 @@ export default function ReturnsReportPage() {
           </Button>
         </div>
 
+        {/*
+          **"매일 자정"을 다시 쓰지 말 것** — 대시보드 빈 상태(app/unified/page.tsx)에 같은 경고를
+          적어 뒀다. 자정 적재가 운영에서 성립한 적이 없어서, 그 문장은 이 경고를 보는 사용자에게
+          정확히 거짓이다(그 경고가 떠 있다는 것 자체가 안 쌓였다는 뜻이다).
+        */}
         {insufficientData && (
           <div className="mt-6 border border-warn-line bg-warn-bg px-4 py-3.5 text-[13px] leading-relaxed text-warn">
             이 기간에는 일별 NAV 스냅샷이 2건 미만이라 수익률을 계산할 수 없습니다.
-            계좌를 연동하면 매일 자정 스냅샷이 쌓입니다. 입출금 기록은 지금도 남길 수 있고, 스냅샷이 쌓이면 자동 반영됩니다.
+            동기화할 때마다 그날의 스냅샷이 기록됩니다. 입출금 기록은 지금도 남길 수 있고, 스냅샷이 쌓이면 자동 반영됩니다.
           </div>
         )}
 
