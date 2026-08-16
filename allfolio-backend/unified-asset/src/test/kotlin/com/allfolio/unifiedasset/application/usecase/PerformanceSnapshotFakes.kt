@@ -64,6 +64,16 @@ class RecordingNavCurrencyStore : NavCurrencyStore {
     }
 }
 
+/**
+ * replace()가 항상 실패하는 fake — 통화 행 쓰기 실패 시 record()가 예외를 삼키지 않고
+ * 그대로 전파하는지 [PerformanceSnapshotTransactionTest]가 못 박는 데 쓴다.
+ */
+class ThrowingNavCurrencyStore : NavCurrencyStore {
+    override fun replace(portfolioId: UUID, date: LocalDate, values: List<CurrencyValue>) {
+        throw RuntimeException("nav_currency_daily 쓰기 실패 (시뮬레이션)")
+    }
+}
+
 fun snapshotService(
     jdbc: JdbcTemplate,
     store: NavCurrencyStore = RecordingNavCurrencyStore(),
