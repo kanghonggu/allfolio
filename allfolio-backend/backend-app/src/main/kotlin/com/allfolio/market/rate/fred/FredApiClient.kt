@@ -49,7 +49,18 @@ class FredApiClient(
      */
     internal var connector: ClientHttpConnector? = null
 
-    fun fetch(seriesId: String, from: LocalDate, to: LocalDate): RateFetch {
+    /**
+     * @param valuePolicy 값을 받아들일지 판정하는 규칙. **기본이 [RateValuePolicy.PERCENT]인 것은
+     * 의도다** — 이 클라이언트는 금리용으로 태어났고 기존 호출자가 전부 금리라, 기본을 상한 없는
+     * [RateValuePolicy.PRICE]로 두면 금리 쪽 단위 오인 방어(연 3.5%를 350으로 주는 계열)가
+     * 조용히 사라진다. 원자재 호출자는 [RateValuePolicy.PRICE]를 명시한다.
+     */
+    fun fetch(
+        seriesId: String,
+        from: LocalDate,
+        to: LocalDate,
+        valuePolicy: RateValuePolicy = RateValuePolicy.PERCENT,
+    ): RateFetch {
         // 설정 누락은 서버 문제다 — NO_KEY로 던져 GlobalExceptionHandler가 500으로 내보내게 한다.
         // 502로 나가면 운영자가 멀쩡한 세인트루이스 연은을 확인하러 간다
         if (properties.apiKey.isBlank()) {
@@ -102,7 +113,7 @@ class FredApiClient(
         // 거쳐 미리보기를 남기지만, 그건 키가 경로에 있어 정규식으로 통째 지울 수 있어서다.
         // 쿼리 파라미터는 인코딩 형태가 여러 가지라 같은 보장을 못 하므로, 진단 이득보다 유출 위험을 크게 본다.
         return try {
-            parser.parse(body, RateValuePolicy.PERCENT)
+            parser.parse(body, valuePolicy)
         } catch (e: JsonProcessingException) {
             log.warn("[FRED] 응답이 JSON이 아닙니다 seriesId={} reason={}", seriesId, e.javaClass.simpleName)
             throw FredApiException("MALFORMED", "응답 본문이 올바른 JSON이 아닙니다")

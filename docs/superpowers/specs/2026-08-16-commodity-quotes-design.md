@@ -46,11 +46,15 @@
 
 ### 일간 (FRED/EIA) — 지연 영업일 3일
 
-| 코드 | series_id | 단위 |
-|---|---|---|
-| `WTI` | `DCOILWTICO` | USD/bbl |
-| `BRENT` | `DCOILBRENTEU` | USD/bbl |
-| `NATGAS` | `DHHNGSP` | USD/MMBtu |
+| 코드 | series_id | 단위 | 2026-08-11 실측 |
+|---|---|---|---|
+| `WTI` | `DCOILWTICO` | USD/bbl | 84.77 |
+| `BRENT` | `DCOILBRENTEU` | USD/bbl | 93.26 |
+| `NATGAS` | `DHHNGSP` | USD/MMBtu | 2.79 |
+
+> **WTI가 84.77이다.** 설계 당시 "~70"으로 적었던 것보다 이미 높고, `PERCENT`(≤100)의 상한에
+> 15달러밖에 안 남았다. 유가가 100달러를 넘는 것은 흔한 일이므로, 정책을 안 갈랐다면 WTI마저
+> 예고 없이 사라졌을 것이다 — "WTI는 우연히 통과한다"는 진단이 실측으로 확인됐다.
 
 정제유 9종(경유 3·휘발유 3·난방유·항공유·프로판)은 **뺀다.** 미국 걸프 경유 가격이 이 화면 사용자에게 줄 정보가 없다.
 
@@ -62,21 +66,21 @@
 
 ### 월간 (FRED/IMF) — **지연 2개월** (2026-08-16 기준 최신 관측 2026-06-01)
 
-| 코드 | series_id | 단위 |
-|---|---|---|
-| `COPPER` | `PCOPPUSDM` | USD/MT |
-| `NICKEL` | `PNICKUSDM` | USD/MT |
-| `ZINC` | `PZINCUSDM` | USD/MT |
-| `ALUMINUM` | `PALUMUSDM` | USD/MT |
-| `IRON_ORE` | `PIORECRUSDM` | USD/MT |
-| `COAL_AU` | `PCOALAUUSDM` | USD/MT |
-| `URANIUM` | `PURANUSDM` | USD/lb |
-| `WHEAT` | `PWHEAMTUSDM` | USD/MT |
-| `CORN` | `PMAIZMTUSDM` | USD/MT |
-| `SOYBEANS` | `PSOYBUSDM` | USD/MT |
-| `SUGAR` | `PSUGAISAUSDM` | US cents/lb |
-| `COFFEE` | `PCOFFOTMUSDM` | US cents/lb |
-| `ALL_INDEX` | `PALLFNFINDEXM` | Index 2016=100 |
+| 코드 | series_id | 단위 | 2026-06 실측 |
+|---|---|---|---|
+| `COPPER` | `PCOPPUSDM` | USD/MT | 13,552.04 |
+| `NICKEL` | `PNICKUSDM` | USD/MT | 17,588.29 |
+| `ZINC` | `PZINCUSDM` | USD/MT | 3,538.74 |
+| `ALUMINUM` | `PALUMUSDM` | USD/MT | 3,438.85 |
+| `IRON_ORE` | `PIORECRUSDM` | USD/MT | 103.79 |
+| `COAL_AU` | `PCOALAUUSDM` | USD/MT | 150.36 |
+| `URANIUM` | `PURANUSDM` | USD/lb | 69.11 |
+| `WHEAT` | `PWHEAMTUSDM` | USD/MT | 199.65 |
+| `CORN` | `PMAIZMTUSDM` | USD/MT | 195.78 |
+| `SOYBEANS` | `PSOYBUSDM` | USD/MT | 414.54 |
+| `SUGAR` | `PSUGAISAUSDM` | US cents/lb | 13.91 |
+| `COFFEE` | `PCOFFOTMUSDM` | US cents/lb | 307.83 |
+| `ALL_INDEX` | `PALLFNFINDEXM` | Index 2016=100 | 194.85 |
 
 IMF 월간은 63품목이 있으나 50종(새우·양모·원목·바나나 등)은 **뺀다.** 화면이 시세판이 아니라 통계표가 된다. 목록은 확보돼 있으므로 필요해지면 설정 몇 줄로 늘린다.
 
@@ -131,14 +135,14 @@ interface CommoditySource {
 | 품목 | 값 | 통과 |
 |---|---|---|
 | 천연가스 ~3 · WTI ~70 | 100 이하 | ✅ **우연히** |
-| 구리 ~9,000 · 금 ~150,000 · 종합지수 ~180 | 100 초과 | ❌ |
+| 구리 13,552 · 금 ~150,000 · 종합지수 194.9 | 100 초과 | ❌ |
 
 **WTI가 우연히 통과하는 것이 더 나쁘다** — 유가가 100달러를 넘는 날 조용히 사라진다.
 
 그래서 `fetch(seriesId, from, to, valuePolicy)`로 **정책을 인자로 받게** 하고, `RateValuePolicy`에 원자재용을 더한다:
 
 ```kotlin
-/** 시세 — 0 이하는 파싱 사고다. 상한은 걸지 않는다 (구리 9,000·금 150,000·지수 180이 다 정상) */
+/** 시세 — 0 이하는 파싱 사고다. 상한은 걸지 않는다 (구리 13,552·금 150,000·지수 194.9가 다 정상) */
 PRICE { override fun accepts(value: BigDecimal) = value > BigDecimal.ZERO }
 ```
 
