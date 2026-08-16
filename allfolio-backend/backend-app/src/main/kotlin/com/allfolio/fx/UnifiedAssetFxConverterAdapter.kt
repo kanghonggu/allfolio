@@ -84,7 +84,7 @@ class UnifiedAssetFxConverterAdapter(
 
     /**
      * **[normalized]를 쓴다 — [canonical]이 아니다.**
-     * [canonical]은 USDT를 USD로 접는 과거 환율 경로 전용이고, 이 클래스의 KDoc이
+     * [canonical]은 USDT를 USD로 접는 과거 환율 경로 전용이고, [canonical]의 KDoc이
      * "현재 환율 경로는 AF-99부터 둘을 구분하므로 통일하지 말 것"이라고 못박아 뒀다.
      * 여기서 접으면 USDT 보유가 USD 환율로 기록되는데 [toKrw]는 거래소 시세를 쓰므로
      * AF-106의 합계 불변식이 USDT 보유 사용자에게만 깨진다.
