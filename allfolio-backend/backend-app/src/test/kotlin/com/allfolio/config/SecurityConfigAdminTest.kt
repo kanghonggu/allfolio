@@ -325,7 +325,8 @@ class SecurityConfigAdminTest {
                 overseas = null,
                 fx = null,
                 rates = emptyList(),
-                flags = MarketFlags(indicesEnabled = true),
+                commodities = null,
+                flags = MarketFlags(indicesEnabled = true, commoditiesEnabled = true),
             ),
         )
 

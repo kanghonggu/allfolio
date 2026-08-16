@@ -49,3 +49,12 @@ services:
       # 긴급 차단이 대시보드 수정 + 재시작으로 끝나고 재빌드가 필요 없다는 점은 그대로다.
       - key: MARKET_INDICES_ENABLED
         sync: false
+      # 원자재 노출 스위치 (AF-108 원자재 탭). 미설정이면 application.yml의 기본값 true가 쓰인다.
+      #
+      # **위 지수 스위치와 같은 이유로 value: 가 아니라 sync: false다.** blueprint에 value로 적으면
+      # 대시보드에서 끈 것이 다음 sync 때 조용히 되살아난다 — 커밋도 배포도 로그도 없이.
+      # 원자재는 FRED(미국 정부·IMF 재배포분)라 지수보다 근거가 단단하지만, 그래서 지수와 한
+      # 스위치로 묶지 않았다: 한쪽 약관 답이 "불가"로 왔을 때 다른 쪽까지 끄면 멀쩡한 탭을 잃는다.
+      # 여기서도 끄는 일은 대시보드 수정 + 재시작으로 끝나고 재빌드가 필요 없다.
+      - key: MARKET_COMMODITIES_ENABLED
+        sync: false

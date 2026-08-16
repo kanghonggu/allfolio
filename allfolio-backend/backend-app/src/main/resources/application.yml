@@ -228,8 +228,13 @@ kis:
 # 지수 두 탭이 화면에서 사라진다 — 서버가 응답에 아예 안 싣고, 조회조차 하지 않는다.
 # 아래 market-index(수집 대상)와는 다른 설정이다. 이건 노출만 끄는 스위치라 off로 둬도
 # 수집은 계속 돈다 — 수집까지 멈추려면 GitHub Actions cron 쪽을 따로 손봐야 한다.
+#
+# commodities-enabled도 같은 성격의 스위치다(원자재 탭). 지수와 한 플래그로 묶지 않은 이유는
+# 소스가 달라서다 — 지수는 KIS 개인용 오픈API고 원자재는 FRED(미국 정부·IMF 재배포분)다.
+# 한쪽 답이 "불가"로 왔을 때 다른 쪽까지 끄면 멀쩡한 탭을 잃는다.
 market:
   indices-enabled: ${MARKET_INDICES_ENABLED:true}
+  commodities-enabled: ${MARKET_COMMODITIES_ENABLED:true}
 
 # 지수 수집 — AF-101
 # 코드를 소스에 박지 않는 이유: KIS 공식 샘플이 문서화한 FID_INPUT_ISCD는

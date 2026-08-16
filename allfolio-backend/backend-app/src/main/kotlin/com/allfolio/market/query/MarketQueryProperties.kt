@@ -36,6 +36,19 @@ class MarketQueryProperties {
     var indicesEnabled: Boolean = true
 
     /**
+     * 원자재 노출 스위치 (AF-108 원자재 탭).
+     *
+     * **[indicesEnabled]와 같은 이유로 있고 같은 실패 방식을 갖는다** — 바인딩이 어떻게 깨지든
+     * 기본값 `true` 때문에 "그래도 나간다"로 떨어진다. 그래서 [logResolved]가 함께 찍고
+     * `MarketQueryPropertiesBindingTest`가 환경변수 이름까지 못 박는다.
+     *
+     * **지수와 한 플래그로 묶지 않는다.** 소스가 다르다 — 지수는 KIS 개인용 오픈API(재배포 미결),
+     * 원자재는 FRED(미국 정부·IMF 재배포분)다. 한쪽 답이 "불가"로 왔을 때 다른 쪽까지 끄면
+     * 멀쩡한 탭을 잃고, 반대로 한쪽을 살리려다 막아야 할 쪽이 새어 나간다.
+     */
+    var commoditiesEnabled: Boolean = true
+
+    /**
      * 기동 시 **해석된** 값을 한 줄 남긴다.
      *
      * 이 플래그를 뒤집는 순간은 대개 사고 대응 중이고(AF-108 답이 "불가"로 온 날),
@@ -49,6 +62,7 @@ class MarketQueryProperties {
     @PostConstruct
     fun logResolved() {
         log.info("[AF-104] market.indices-enabled={} (env MARKET_INDICES_ENABLED)", indicesEnabled)
+        log.info("[AF-108] market.commodities-enabled={} (env MARKET_COMMODITIES_ENABLED)", commoditiesEnabled)
     }
 
     companion object {

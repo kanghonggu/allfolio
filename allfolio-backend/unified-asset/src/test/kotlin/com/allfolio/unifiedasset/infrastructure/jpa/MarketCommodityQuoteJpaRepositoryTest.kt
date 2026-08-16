@@ -148,6 +148,45 @@ class MarketCommodityQuoteJpaRepositoryTest {
         assertThat(saved.changeRate).isNull()
     }
 
+    /**
+     * **화면(AF-108 원자재 탭)이 보는 것이 이 쿼리 하나다.**
+     *
+     * `MarketQueryServiceTest`는 이 리포지터리를 목으로 세우고 스텁이 코드로 걸러 주므로,
+     * "코드마다 최신 한 행"이라는 규칙은 **거기서 검증되지 않는다** — `NOT EXISTS`를 통째로
+     * 지워 전체 행을 돌려주게 만들어도 그쪽은 전부 초록이다. 그 변이의 운영 증상은 조용하다:
+     * 조회 서비스가 `associateBy`로 접으므로 오류 없이, DB가 준 순서에 따라 **묵은 행이 최신인 척**
+     * 화면에 뜬다. 그래서 여기서 문다.
+     *
+     * 여러 날짜 + 여러 종목 + 요청 밖 종목을 한꺼번에 깔아 세 가지를 함께 본다.
+     */
+    @Test
+    fun `최신 조회는 종목마다 가장 최근 한 행씩만 준다`() {
+        save(quote("WTI", LocalDate.of(2026, 8, 10), "68.00"))
+        save(quote("WTI", LocalDate.of(2026, 8, 13), "70.00")) // 이게 나와야 한다
+        save(quote("WTI", LocalDate.of(2026, 8, 11), "69.00"))
+        // 월간 계열 — 최신 관측이 두 달 묵어도 빠지면 안 된다(조회 창을 두는 구현이 여기서 깨진다)
+        save(quote("COPPER", LocalDate.of(2026, 5, 1), "8800.0000", frequency = "M", unit = "USD/MT"))
+        save(quote("COPPER", LocalDate.of(2026, 6, 1), "9000.0000", frequency = "M", unit = "USD/MT"))
+        // 요청 밖 종목 — 코드 필터가 빠지면 이게 딸려 온다
+        save(quote("BRENT", LocalDate.of(2026, 8, 13), "74.00"))
+
+        val found = repository.findLatestByCodes(listOf("WTI", "COPPER", "NATGAS"))
+
+        assertThat(found.map { it.code to it.tradeDate }).containsExactlyInAnyOrder(
+            "WTI" to LocalDate.of(2026, 8, 13),
+            "COPPER" to LocalDate.of(2026, 6, 1),
+        )
+        assertThat(found.single { it.code == "WTI" }.price).isEqualByComparingTo("70.00")
+        // 수집된 적 없는 코드(NATGAS)는 예외가 아니라 그냥 빠진다 — 호출부가 설정으로 가려낸다
+        assertThat(found.map { it.code }).doesNotContain("NATGAS", "BRENT")
+    }
+
+    /** 한 종목도 수집된 적 없으면 빈 목록이다. 화면 쪽에서 `[]`(데이터 없음)로 나가는 경로다 */
+    @Test
+    fun `최신 조회는 행이 없으면 빈 목록이다`() {
+        assertThat(repository.findLatestByCodes(listOf("WTI"))).isEmpty()
+    }
+
     @Test
     fun `조회해 온 행을 고쳐 다시 저장하면 행이 늘지 않고 값만 바뀐다`() {
         // Task 5의 멱등성 전체가 이 한 가지 JPA 동작에 기대고 있다 — id가 할당식이라

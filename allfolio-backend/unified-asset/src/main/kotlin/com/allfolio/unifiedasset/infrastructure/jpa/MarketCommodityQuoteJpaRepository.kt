@@ -2,10 +2,43 @@ package com.allfolio.unifiedasset.infrastructure.jpa
 
 import com.allfolio.unifiedasset.infrastructure.entity.MarketCommodityQuoteEntity
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 import java.time.LocalDate
 import java.util.UUID
 
 interface MarketCommodityQuoteJpaRepository : JpaRepository<MarketCommodityQuoteEntity, UUID> {
+
+    /**
+     * 여러 종목의 가장 최근 한 건씩을 **쿼리 한 번으로** 준다. 시장 화면(AF-108)이 쓴다.
+     *
+     * **최신 판정 규칙이 이 JPQL 안에만 있다.** 코틀린에서 정렬해 고르면 같은 규칙이 두 벌이 되고,
+     * 한쪽만 고쳐지는 순간 화면이 묵은 값을 최신이라고 말한다
+     * (`MarketIndexQuoteJpaRepository.findLatestByCodes`와 같은 자리·같은 이유다.
+     *  여기에 슬롯 분기가 없는 것은 원자재가 하루/한 달에 한 값이라 OPEN/MID/CLOSE가 없어서다).
+     *
+     * **조회 창을 두지 않는다.** 금리 조회는 최근 30일을 긁어 직전 값까지 함께 만들지만,
+     * 원자재는 전일대비가 수집 시점에 이미 행에 저장돼 있어 최신 한 행이면 화면이 완성된다.
+     * 게다가 월간 계열(FRED/IMF)은 최신 관측이 두 달 넘게 묵는 것이 정상이라
+     * (실측: 2026-08-16 시점 최신 관측이 2026-06-01) 창을 두면 그 13종이 통째로 사라진다.
+     *
+     * **`DISTINCT ON`이나 윈도 함수를 쓰지 말 것** — 이 리포지터리 테스트는 H2에서 돈다.
+     * 벤더 전용 문법으로 바꾸면 최신 판정 검증이 통째로 테스트에서 빠진다.
+     * 그래서 이식 가능한 상관 서브쿼리 `NOT EXISTS`("나보다 최신인 행이 없다")로 짰다.
+     *
+     * 수집된 적 없는 코드는 결과에 **그냥 없다.** 호출부가 설정 코드로 매핑해 빠진 것을 가려낸다.
+     */
+    @Query(
+        """
+        SELECT q FROM MarketCommodityQuoteEntity q
+        WHERE q.code IN :codes
+          AND NOT EXISTS (
+            SELECT 1 FROM MarketCommodityQuoteEntity o
+            WHERE o.code = q.code AND o.tradeDate > q.tradeDate
+          )
+        """,
+    )
+    fun findLatestByCodes(@Param("codes") codes: Collection<String>): List<MarketCommodityQuoteEntity>
 
     /**
      * 그 종목의 구간 내 기존 행. 수집은 구간을 통째로 받아 덮으므로 한 번에 읽는다 —
