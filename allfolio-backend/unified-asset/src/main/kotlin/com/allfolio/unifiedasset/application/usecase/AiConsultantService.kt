@@ -15,6 +15,8 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
@@ -197,7 +199,7 @@ class AiConsultantService(
             userId,
         )
 
-        val thisYear = LocalDate.now().year
+        val thisYear = LocalDate.now(KST).year
         val dividendRow = jdbc.query(
             """SELECT COALESCE(SUM(total_amount),0) AS total, COUNT(*) AS cnt
                FROM ua_stock_trades
@@ -236,7 +238,7 @@ class AiConsultantService(
         }
 
         return """
-당신은 사용자의 개인 금융 자문 AI입니다. 오늘 날짜: ${LocalDate.now()}
+당신은 사용자의 개인 금융 자문 AI입니다. 오늘 날짜: ${LocalDate.now(KST)}
 사용자의 실제 포트폴리오 데이터를 기반으로 구체적이고 실용적인 조언을 제공하세요.
 
 ## 포트폴리오 요약
@@ -256,7 +258,7 @@ $topAssetRows
 ## 올해 배당 수령액
 총 ${dividendRow.first.toLong()}원 (${dividendRow.second}회)
 
-데이터 기준 시각: ${LocalDateTime.now()}
+데이터 기준 시각: ${OffsetDateTime.now(KST)}
 """.trimIndent()
     }
 
@@ -273,4 +275,20 @@ $topAssetRows
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class CompletionMessage(val content: String? = null)
+
+    companion object {
+        /**
+         * 프롬프트에 박히는 날짜·시각을 찍는 시계. **서버 기본 타임존을 쓰면 안 된다** — Render
+         * 컨테이너에 TZ 설정이 없어 벽시계가 UTC이고, KST 00:00~09:00에는 맨 [LocalDate.now]가
+         * **어제**를 돌려준다. 배경은 [ReportService.Companion] 참고.
+         *
+         * 여기서 어긋나는 건 화면이 아니라 **모델의 전제**다. 모델은 프롬프트에 적힌 날짜를 그대로
+         * 믿으므로("올해 배당"이 몇 년치인지도 여기서 갈린다) 하루 밀린 날짜를 주면 틀린 근거로
+         * 답하고, 사용자에게는 그게 그냥 자신 있는 오답으로 보인다.
+         *
+         * `데이터 기준 시각`은 [OffsetDateTime]으로 찍는다 — 오프셋 없는 시각을 주면 모델이 어느
+         * 존인지 추측해야 한다. 읽는 쪽이 사람이 아니라 모델일 뿐, `generatedAt`과 같은 이유다.
+         */
+        private val KST: ZoneId = ZoneId.of("Asia/Seoul")
+    }
 }
