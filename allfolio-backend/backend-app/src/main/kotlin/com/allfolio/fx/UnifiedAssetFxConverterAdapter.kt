@@ -82,6 +82,22 @@ class UnifiedAssetFxConverterAdapter(
     override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
         currencyConverter.toKrw(amount, normalized(currency))
 
+    /**
+     * **[normalized]를 쓴다 — [canonical]이 아니다.**
+     * [canonical]은 USDT를 USD로 접는 과거 환율 경로 전용이고, [canonical]의 KDoc이
+     * "현재 환율 경로는 AF-99부터 둘을 구분하므로 통일하지 말 것"이라고 못박아 뒀다.
+     * 여기서 접으면 USDT 보유가 USD 환율로 기록되는데 [toKrw]는 거래소 시세를 쓰므로
+     * AF-106의 합계 불변식이 USDT 보유 사용자에게만 깨진다.
+     *
+     * `?: ONE`이 [toKrw]의 실제 동작과 같다 — sourceOf는 KRW와 미지원 통화에 둘 다
+     * null을 주고, CurrencyConverter는 그 경우 원금을 그대로 돌려준다.
+     *
+     * 크립토 시세가 없을 때 sourceOf가 던지는 예외는 삼키지 않는다 — 의도적이다.
+     * [toKrw]도 같은 상황에서 던지므로 두 경로의 동작이 어긋나지 않는다.
+     */
+    override fun rateOf(currency: String): BigDecimal =
+        currencyConverter.sourceOf(normalized(currency))?.rate ?: BigDecimal.ONE
+
     override fun toKrwOn(amount: BigDecimal, currency: String, date: LocalDate): KrwConversion {
         val code = canonical(currency)
 

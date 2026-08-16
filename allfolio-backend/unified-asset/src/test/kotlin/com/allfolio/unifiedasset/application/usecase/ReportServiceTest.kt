@@ -34,6 +34,7 @@ class ReportServiceTest {
     // 기존 집계 로직 검증용: USD를 1:1로 두는 항등 환산기 (환율 왜곡 없이 합산 로직만 확인).
     private val identityFx = object : FxConverter {
         override fun toKrw(amount: BigDecimal, currency: String) = amount
+        override fun rateOf(currency: String): BigDecimal = BigDecimal.ONE
     }
 
     private val emptyBenchmarkStore = object : com.allfolio.unifiedasset.application.port.BenchmarkDailyStore {
@@ -293,6 +294,9 @@ class ReportServiceTest {
         val fx = object : FxConverter {
             override fun toKrw(amount: BigDecimal, currency: String) =
                 if (currency.uppercase() == "KRW") amount else amount.multiply(bd("1300"))
+
+            override fun rateOf(currency: String): BigDecimal =
+                if (currency.uppercase() == "KRW") BigDecimal.ONE else bd("1300")
         }
 
         val result = svc(fx).summary(userId)
@@ -412,6 +416,9 @@ class ReportServiceTest {
         val fx1300 = object : FxConverter {
             override fun toKrw(amount: BigDecimal, currency: String) =
                 if (currency.uppercase() == "KRW") amount else amount.multiply(bd("1300"))
+
+            override fun rateOf(currency: String): BigDecimal =
+                if (currency.uppercase() == "KRW") BigDecimal.ONE else bd("1300")
         }
         `when`(assetRepository.findByUserId(userId)).thenReturn(listOf(usdStock(currentValue = bd("200"))))
         `when`(accountRepository.findByUserId(userId)).thenReturn(emptyList())

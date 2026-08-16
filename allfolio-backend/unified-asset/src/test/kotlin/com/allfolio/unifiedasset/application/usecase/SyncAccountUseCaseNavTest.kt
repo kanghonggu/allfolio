@@ -33,6 +33,9 @@ class SyncAccountUseCaseNavTest {
     private val fx = object : FxConverter {
         override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
             if (currency.uppercase() == "KRW") amount else amount.multiply(BigDecimal("1300"))
+
+        override fun rateOf(currency: String): BigDecimal =
+            if (currency.uppercase() == "KRW") BigDecimal.ONE else BigDecimal("1300")
     }
 
     @Test
@@ -66,12 +69,24 @@ class SyncAccountUseCaseNavTest {
 
         service.execute(account.id)
 
-        val navCaptor = ArgumentCaptor.forClass(BigDecimal::class.java)
+        @Suppress("UNCHECKED_CAST")
+        val navCaptor = ArgumentCaptor.forClass(Map::class.java) as ArgumentCaptor<Map<String, BigDecimal>>
         // 날짜는 이 테스트의 관심사가 아니다(PerformanceSnapshotDateTest가 못 박는다) — 매처만 채운다
-        verify(snapshot).record(eqUuid(userId), captureBd(navCaptor), anyDate())
+        verify(snapshot).record(eqUuid(userId), captureMap(navCaptor), anyDate())
+        val captured = navCaptor.value
+
+        // 총액이 아니라 통화별 원통화 합계가 넘어가야 한다 (AF-106) — 여기서 접어 넘기면
+        // record()가 nav_currency_daily에 쓸 내역이 사라진다
+        assertEquals(setOf("KRW", "USD"), captured.keys) { "통화별로 갈라지지 않았다: $captured" }
+        assertEquals(0, BigDecimal("1000000").compareTo(captured.getValue("KRW")))
+        assertEquals(0, BigDecimal("1000").compareTo(captured.getValue("USD")))
+
         // 1,000,000 + 1,000 * 1,300 = 2,300,000 (raw sum would be a meaningless 1,001,000)
-        assertEquals(0, BigDecimal("2300000").compareTo(navCaptor.value)) {
-            "expected KRW-converted NAV 2,300,000 but was ${navCaptor.value}"
+        val navKrw = captured.entries.fold(BigDecimal.ZERO) { acc, (currency, value) ->
+            acc + fx.toKrw(value, currency)
+        }
+        assertEquals(0, BigDecimal("2300000").compareTo(navKrw)) {
+            "expected KRW-converted NAV 2,300,000 but was $navKrw (from $captured)"
         }
     }
 
@@ -119,15 +134,18 @@ class SyncAccountUseCaseNavTest {
 
         service.execute(account.id, SyncTrigger.SCHEDULED)
 
-        verify(snapshot, never()).record(anyUuid(), anyBd(), anyDate())
+        verify(snapshot, never()).record(anyUuid(), anyMap(), anyDate())
     }
 
     // Kotlin non-null 파라미터에 Mockito matcher를 쓰기 위한 null-safe 래퍼.
     private fun eqUuid(v: UUID): UUID = eq(v) ?: v
-    private fun captureBd(c: ArgumentCaptor<BigDecimal>): BigDecimal = c.capture() ?: BigDecimal.ZERO
+    private fun captureMap(c: ArgumentCaptor<Map<String, BigDecimal>>): Map<String, BigDecimal> =
+        c.capture() ?: emptyMap()
     private fun anyDate(): LocalDate = any(LocalDate::class.java) ?: LocalDate.EPOCH
     private fun anyUuid(): UUID = any(UUID::class.java) ?: UUID.randomUUID()
-    private fun anyBd(): BigDecimal = any(BigDecimal::class.java) ?: BigDecimal.ZERO
+    @Suppress("UNCHECKED_CAST")
+    private fun anyMap(): Map<String, BigDecimal> =
+        any(Map::class.java) as Map<String, BigDecimal>? ?: emptyMap()
 
     private fun asset(userId: UUID, accountId: UUID, value: BigDecimal, currency: String): Asset =
         Asset.create(

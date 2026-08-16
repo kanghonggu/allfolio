@@ -50,6 +50,9 @@ class SyncAccountUseCaseBackdatedInflowTest {
     private val fx = object : FxConverter {
         override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
             if (currency.uppercase() == "KRW") amount else amount.multiply(BigDecimal("1300"))
+
+        override fun rateOf(currency: String): BigDecimal =
+            if (currency.uppercase() == "KRW") BigDecimal.ONE else BigDecimal("1300")
     }
 
     @Test
@@ -294,6 +297,9 @@ class SyncAccountUseCaseBackdatedInflowTest {
     ) : FxConverter {
         override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
             if (currency.uppercase() == "KRW") amount else amount.multiply(now)
+
+        override fun rateOf(currency: String): BigDecimal =
+            if (currency.uppercase() == "KRW") BigDecimal.ONE else now
 
         override fun toKrwOn(amount: BigDecimal, currency: String, date: LocalDate) = when {
             currency.uppercase() == "KRW" -> KrwConversion(amount, null, false)

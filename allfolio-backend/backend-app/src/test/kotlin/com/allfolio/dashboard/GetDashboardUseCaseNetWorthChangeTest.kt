@@ -144,6 +144,7 @@ class GetDashboardUseCaseNetWorthChangeTest {
             assetRepository, performanceRepo, riskRepo, benchmarkRepo,
             object : FxConverter {
                 override fun toKrw(amount: BigDecimal, currency: String): BigDecimal = amount
+                override fun rateOf(currency: String): BigDecimal = BigDecimal.ONE
             },
             FixedCashFlows(flows),
             // 이 테스트의 자산은 전부 KRW라 출처가 실리지 않는다. 환율을 1로 두는 것은

@@ -1,5 +1,7 @@
 package com.allfolio.snapshot
 
+import com.allfolio.unifiedasset.application.port.CurrencyValue
+import com.allfolio.unifiedasset.application.port.NavCurrencyStore
 import org.slf4j.LoggerFactory
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
@@ -10,16 +12,13 @@ import java.util.UUID
 /** 자산 하나의 원통화 시세 — 환산 전 */
 data class NativePrice(val price: BigDecimal, val currency: String)
 
-/** 통화 하나의 그날 평가액 */
-data class CurrencyValue(val currency: String, val valueNative: BigDecimal, val fxRate: BigDecimal)
-
 /**
  * 통화별 일간 평가액 저장 (AF-106).
  *
  * `performance_daily` 옆에 세운다 — 스냅샷 모듈(ABOR 이식분)은 건드리지 않는다.
  */
 @Component
-class NavCurrencyDailyStore(private val jdbc: JdbcTemplate) {
+class NavCurrencyDailyStore(private val jdbc: JdbcTemplate) : NavCurrencyStore {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -54,10 +53,12 @@ class NavCurrencyDailyStore(private val jdbc: JdbcTemplate) {
     /**
      * DELETE 후 INSERT — 스냅샷 모듈의 재계산 멱등성 패턴과 같은 모양.
      *
+     * [NavCurrencyStore]의 구현이다 — unified-asset의 스냅샷 경로도 이 메서드로 들어온다.
+     *
      * **호출자가 예외를 삼킨다.** 여기서 던지는 건 정상이다 — 스냅샷은 이미 커밋됐고,
      * 통화 분해가 없어도 NAV는 정확하다.
      */
-    fun replace(portfolioId: UUID, date: LocalDate, values: List<CurrencyValue>) {
+    override fun replace(portfolioId: UUID, date: LocalDate, values: List<CurrencyValue>) {
         jdbc.update("DELETE FROM nav_currency_daily WHERE portfolio_id = ? AND date = ?", portfolioId, date)
         if (values.isEmpty()) return
         jdbc.batchUpdate(

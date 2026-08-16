@@ -19,6 +19,7 @@ import com.allfolio.trade.domain.TradeType
 import com.allfolio.trade.infrastructure.entity.TradeRawEntity
 import com.allfolio.trade.infrastructure.outbox.OutboxRepository
 import com.allfolio.trade.infrastructure.repository.TradeRawJpaRepository
+import com.allfolio.unifiedasset.application.port.CurrencyValue
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull

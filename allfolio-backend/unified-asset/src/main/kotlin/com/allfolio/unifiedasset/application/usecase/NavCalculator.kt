@@ -25,3 +25,21 @@ fun Asset.loanAmountInKrw(fx: FxConverter): BigDecimal = fx.toKrw(loanAmount ?: 
  */
 fun Collection<Asset>.navInKrw(fx: FxConverter): BigDecimal =
     fold(BigDecimal.ZERO) { acc, asset -> acc + asset.currentValueInKrw(fx) }
+
+/**
+ * 여러 통화가 섞인 자산 목록을 **통화별 원통화 합계**로 묶는다 (AF-106).
+ *
+ * **위 [navInKrw]의 경고("통화를 무시하고 raw 합산하면 KRW와 USD를 그대로 더해 의미 없는
+ * 숫자가 나온다")에 걸리지 않는다** — 여기서는 통화로 *묶은 뒤* 같은 통화끼리만 더하기
+ * 때문이다. 그 경고를 보고 이 함수를 "고치려" 들지 말 것.
+ *
+ * 키는 `trim().uppercase()`로 정규화한다. `FxConverter.toKrw`·`rateOf`가 같은 방식으로
+ * 통화를 정규화하므로, 여기서 맞춰 두지 않으면 `"usd"`와 `"USD"`가 별개 행으로 저장되고
+ * 환율 조회가 어긋난다.
+ *
+ * [navInKrw]와 달리 환산하지 않는다 — 환산은 `PerformanceSnapshotService.record()`가
+ * 통화별로 한 번씩 하고, 그 값이 곧 `nav_currency_daily.value_native`가 된다.
+ */
+fun Collection<Asset>.navByCurrency(): Map<String, BigDecimal> =
+    groupingBy { it.currency.trim().uppercase() }
+        .fold(BigDecimal.ZERO) { acc, asset -> acc + asset.currentValue }

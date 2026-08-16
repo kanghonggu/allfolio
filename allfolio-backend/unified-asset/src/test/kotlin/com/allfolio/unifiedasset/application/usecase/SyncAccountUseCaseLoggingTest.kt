@@ -25,6 +25,8 @@ class SyncAccountUseCaseLoggingTest {
 
     private val fx = object : FxConverter {
         override fun toKrw(amount: BigDecimal, currency: String): BigDecimal = amount
+
+        override fun rateOf(currency: String): BigDecimal = BigDecimal.ONE
     }
 
     private class InMemorySyncLogRepository : SyncLogRepository {

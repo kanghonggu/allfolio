@@ -5,6 +5,7 @@ import com.allfolio.common.crypto.SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
+import com.allfolio.unifiedasset.application.port.NavCurrencyStore
 import com.allfolio.unifiedasset.application.port.SyncAdapter
 import com.allfolio.unifiedasset.domain.account.Account
 import com.allfolio.unifiedasset.domain.account.AccountProvider
@@ -20,6 +21,12 @@ import java.util.UUID
 
 class SyncAccountUseCaseSensitiveDataTest {
 
+    /** 환산이 이 테스트의 관심사가 아니라 1:1로 둔다. */
+    private val fxStub = object : FxConverter {
+        override fun toKrw(amount: java.math.BigDecimal, currency: String) = amount
+        override fun rateOf(currency: String): java.math.BigDecimal = java.math.BigDecimal.ONE
+    }
+
     @Test
     fun `legacy plaintext account credentials return reconnect-required sync result`() {
         val accountId = UUID.randomUUID()
@@ -29,10 +36,12 @@ class SyncAccountUseCaseSensitiveDataTest {
             accountRepository = accountRepository,
             assetRepository = NoopAssetRepository(),
             adapters = listOf(adapter),
-            snapshotService = PerformanceSnapshotService(mock(JdbcTemplate::class.java)),
-            fx = object : FxConverter {
-                override fun toKrw(amount: java.math.BigDecimal, currency: String) = amount
-            },
+            snapshotService = PerformanceSnapshotService(
+                mock(JdbcTemplate::class.java),
+                fxStub,
+                mock(NavCurrencyStore::class.java),
+            ),
+            fx = fxStub,
             syncLogRepository = NoopSyncLogRepository(),
             reconMutex = NoopReconMutex(),
         cashFlowRepository = org.mockito.Mockito.mock(com.allfolio.unifiedasset.application.port.CashFlowRepository::class.java),

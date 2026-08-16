@@ -35,6 +35,9 @@ class GetDashboardUseCaseFxTest {
     private val fx = object : FxConverter {
         override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
             if (currency.uppercase() == "KRW") amount else amount * BigDecimal("1400")
+
+        override fun rateOf(currency: String): BigDecimal =
+            if (currency.uppercase() == "KRW") BigDecimal.ONE else BigDecimal("1400")
     }
 
     // AF-105 — 출처 표기가 쓰는 환율. 위 fx 스텁과 **일부러 같은 1400**이다.

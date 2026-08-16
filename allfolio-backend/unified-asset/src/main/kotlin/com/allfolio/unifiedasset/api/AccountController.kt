@@ -4,7 +4,6 @@ import com.allfolio.common.crypto.SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE
 import com.allfolio.common.crypto.requiresSensitiveDataReconnection
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
-import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.application.port.StockTradeRepository
 import com.allfolio.unifiedasset.application.port.SyncLogRepository
 import com.allfolio.unifiedasset.application.usecase.*
@@ -120,7 +119,6 @@ class AccountController(
     private val autoSyncTrigger: AutoSyncTrigger,
     private val snapshotService: PerformanceSnapshotService,
     private val authorizationService: AuthorizationService,
-    private val fx: FxConverter,
 ) {
     @PostMapping("/test-connection")
     fun testConnection(
@@ -263,8 +261,11 @@ class AccountController(
             areaPyeong      = if (isAreaType) req.areaPyeong else null,
         )
         val saved = assetRepository.save(asset)
-        val nav = assetRepository.findByUserId(userId).navInKrw(fx)
-        snapshotService.record(userId, nav, LocalDate.now(java.time.ZoneId.of("Asia/Seoul")))
+        snapshotService.record(
+            userId,
+            assetRepository.findByUserId(userId).navByCurrency(),
+            LocalDate.now(java.time.ZoneId.of("Asia/Seoul")),
+        )
         return saved.toResponse()
     }
 
@@ -279,8 +280,11 @@ class AccountController(
         if (account.userId != userId) throw NoSuchElementException("Account not found: $id")
         val content = file.inputStream.bufferedReader().readText()
         val result = importCsvUseCase.execute(userId, id, content)
-        val nav = assetRepository.findByUserId(userId).navInKrw(fx)
-        snapshotService.record(userId, nav, LocalDate.now(java.time.ZoneId.of("Asia/Seoul")))
+        snapshotService.record(
+            userId,
+            assetRepository.findByUserId(userId).navByCurrency(),
+            LocalDate.now(java.time.ZoneId.of("Asia/Seoul")),
+        )
         return result
     }
 

@@ -37,6 +37,17 @@ interface FxConverter {
     fun toKrw(amount: BigDecimal, currency: String): BigDecimal
 
     /**
+     * 이 통화를 KRW로 바꿀 때 [toKrw]가 쓰는 환율. KRW와 미지원 통화는 1.
+     *
+     * `toKrw(1, c)`로 역산할 수 없어서 필요하다 — 구현이 환산 결과를 원 단위로
+     * 반올림하므로 환율 1400.5가 1401이 된다.
+     *
+     * **[toKrw]와 같은 환율을 돌려줘야 한다.** AF-106의 합계 불변식
+     * `Σ value_native × fx_rate ≈ nav`가 이 일치에 기대고 있다.
+     */
+    fun rateOf(currency: String): BigDecimal
+
+    /**
      * 지정한 날짜의 환율로 환산한다. 현금흐름(cash_flow.amount_krw)에 쓴다.
      *
      * 자산 평가는 오늘 환율, 현금흐름은 발생일 환율 — 이 경계를 지켜야

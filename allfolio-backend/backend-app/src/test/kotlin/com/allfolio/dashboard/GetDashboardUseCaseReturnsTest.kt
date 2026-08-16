@@ -37,6 +37,7 @@ class GetDashboardUseCaseReturnsTest {
     private val benchmarkRepo = mock(BenchmarkDailyJpaRepository::class.java)
     private val fx = object : FxConverter {
         override fun toKrw(amount: BigDecimal, currency: String): BigDecimal = amount
+        override fun rateOf(currency: String): BigDecimal = BigDecimal.ONE
     }
 
     /** 항등 환산 — 위 FxConverter 스텁과 같은 환율(1)을 본다. 이 테스트는 자산이 없어 출처도 없다. */

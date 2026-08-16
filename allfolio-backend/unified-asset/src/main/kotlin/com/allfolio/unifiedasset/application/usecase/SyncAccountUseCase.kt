@@ -94,7 +94,9 @@ class SyncAccountUseCase(
                 recordInitialInflow(account, assets)
             }
 
-            // 이 계좌 유저의 전체 NAV를 스냅샷으로 기록 (통화 혼재 → KRW 환산 후 합산)
+            // 이 계좌 유저의 전체 NAV를 스냅샷으로 기록.
+            // 통화별 원통화 합계를 넘기고 환산은 record()가 통화별로 한 번씩 한다 (AF-106) —
+            // 그래야 performance_daily와 nav_currency_daily가 같은 숫자에서 나온다.
             //
             // **SCHEDULED는 제외한다 — 마감 중 기록자는 S030 하나여야 한다.** 이 경로는 마감
             // 워크플로우 S010(`DailyAccountSyncer.syncAll`)도 그대로 쓰는데, 그쪽은 워크플로우의
@@ -112,8 +114,11 @@ class SyncAccountUseCase(
             // 경로(MANUAL·AUTO)는 그대로 기록한다. **이 분기를 "정리"하지 말 것.**
             if (trigger != SyncTrigger.SCHEDULED) {
                 val allAssets = assetRepository.findByUserId(account.userId)
-                val nav = allAssets.navInKrw(fx)
-                snapshotService.record(account.userId, nav, LocalDate.now(ZoneId.of("Asia/Seoul")))
+                snapshotService.record(
+                    account.userId,
+                    allAssets.navByCurrency(),
+                    LocalDate.now(ZoneId.of("Asia/Seoul")),
+                )
             }
 
             log.info("Synced ${assets.size} assets for account $accountId (${account.provider})")
