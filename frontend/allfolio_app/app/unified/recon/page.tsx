@@ -12,6 +12,7 @@ import Num from '@/components/ui/Num'
 import Field, { Input, Select } from '@/components/ui/Field'
 import { EmptyState } from '@/components/ui/states'
 import type { ReconDiffDetail, ReconKd, ReconRun, ReconSummary, RegisterKdPayload } from '@/types/recon'
+import { todayIso } from '@/lib/date'
 
 const RUN_STATUS: Record<string, { label: string; variant: BadgeVariant }> = {
   RUNNING:   { label: '실행 중', variant: 'warn' },
@@ -40,8 +41,9 @@ const DIFF_TYPE_KO: Record<ReconDiffDetail['diffType'], string> = {
 function fmt(ts: string | null | undefined) {
   return ts ? new Date(ts).toLocaleString('ko-KR') : '-'
 }
+// 로컬 달력 기준 — UTC 포맷이면 KST 09시 전에 어제 대사를 돌린다 (lib/date 참조)
 function today() {
-  return new Date().toISOString().slice(0, 10)
+  return todayIso()
 }
 
 // ── 실행·결과 탭 ─────────────────────────────────────────────

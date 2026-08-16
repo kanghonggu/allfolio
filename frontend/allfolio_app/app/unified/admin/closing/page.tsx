@@ -13,6 +13,7 @@ import Num from '@/components/ui/Num'
 import Field, { Input, Textarea } from '@/components/ui/Field'
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/states'
 import type { ClosingStepEvent, WfDayView, WfRollup, WfStepDetail, WfSubStepView } from '@/types/closing'
+import { todayIso } from '@/lib/date'
 
 const ROLLUP_BADGE: Record<WfRollup, BadgeVariant> = {
   STANDBY: 'muted', FINISH: 'ok', ERROR: 'danger', RUNNING: 'warn', PAUSED: 'warn',
@@ -28,7 +29,8 @@ const JOB_STATUS_KO: Record<string, string> = {
   PENDING: '대기', RUNNING: '실행중', SUCCESS: '성공', ERROR: '오류', PAUSED: '중지',
 }
 
-function todayStr() { return new Date().toISOString().slice(0, 10) }
+// 로컬 달력 기준 — UTC 포맷을 쓰면 KST 09시 전에 어제 마감일을 보여준다 (lib/date 참조)
+function todayStr() { return todayIso() }
 function thisMonth() { return todayStr().slice(0, 7) }
 function fmt(ts: string | null | undefined) { return ts ? new Date(ts).toLocaleString('ko-KR') : '-' }
 
