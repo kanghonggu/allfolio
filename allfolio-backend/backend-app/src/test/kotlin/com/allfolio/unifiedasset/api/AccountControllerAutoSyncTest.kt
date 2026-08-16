@@ -3,7 +3,6 @@ package com.allfolio.unifiedasset.api
 import com.allfolio.config.GlobalExceptionHandler
 import com.allfolio.unifiedasset.application.port.AccountRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
-import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.application.port.StockTradeRepository
 import com.allfolio.unifiedasset.application.port.SyncLogRepository
 import com.allfolio.unifiedasset.application.usecase.AuthorizationService
@@ -68,10 +67,6 @@ class AccountControllerAutoSyncTest {
         autoSyncTrigger,
         snapshotService,
         AuthorizationService(accountRepository),
-        object : FxConverter {
-            override fun toKrw(amount: BigDecimal, currency: String) = amount
-            override fun rateOf(currency: String): BigDecimal = BigDecimal.ONE
-        },
     )
 
     private val mockMvc = MockMvcBuilders

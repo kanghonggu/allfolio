@@ -94,10 +94,9 @@ class SyncAccountUseCase(
                 recordInitialInflow(account, assets)
             }
 
-            // 이 계좌 유저의 전체 NAV를 스냅샷으로 기록 (통화 혼재 → KRW 환산 후 합산)
+            // 이 계좌 유저의 전체 NAV를 스냅샷으로 기록 (통화별 원통화 합계 → 환산은 record()가 한다)
             val allAssets = assetRepository.findByUserId(account.userId)
-            val nav = allAssets.navInKrw(fx)
-            snapshotService.record(account.userId, nav, LocalDate.now(ZoneId.of("Asia/Seoul")))
+            snapshotService.record(account.userId, allAssets.navByCurrency(), LocalDate.now(ZoneId.of("Asia/Seoul")))
 
             log.info("Synced ${assets.size} assets for account $accountId (${account.provider})")
             SyncResult(accountId, assets.size, AccountStatus.ACTIVE)

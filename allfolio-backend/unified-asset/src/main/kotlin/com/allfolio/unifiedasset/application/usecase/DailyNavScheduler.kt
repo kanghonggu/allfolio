@@ -1,6 +1,5 @@
 package com.allfolio.unifiedasset.application.usecase
 
-import com.allfolio.unifiedasset.application.port.FxConverter
 import org.slf4j.LoggerFactory
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
@@ -20,15 +19,13 @@ import java.util.UUID
  * **이 패스가 남기는 건 그 날의 첫 값이지 최종값이 아니다.** 자정 KST 실행이 쓰는 일자는
  * 그날 자신(ctx.ymd)이라, 이후 같은 날 도는 sync가 (tenant,portfolio,date) UPSERT로 계속
  * 덮어쓴다. 그래서 하루가 끝난 뒤 performance_daily에 남는 값은 그날 마지막 sync의 것이다.
- * (sync 부수효과의 자산별 환산 합과 여기 통화별 환산 합은 KRW 라운딩 방식 차이로 수 원 다를
- * 수 있다. 통화별 1회 환산인 이 패스 쪽이 더 정확하지만, 덮이는 쪽이라 그 이점은 첫 값에만
- * 남는다 — syncable 계좌가 없어 덮일 일이 없는 사용자에게는 그대로 남는다.)
+ * (AF-106 이후로는 sync 경로도 통화별 내역을 넘기고 환산은 record()가 통화별로 한 번씩
+ * 하므로, 두 경로의 KRW 라운딩이 같아져 덮어써도 값이 어긋나지 않는다.)
  */
 @Component
 class DailyNavScheduler(
     private val jdbc: JdbcTemplate,
     private val snapshotService: PerformanceSnapshotService,
-    private val fx: FxConverter,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -49,23 +46,26 @@ class DailyNavScheduler(
             )
         }
 
-        val navByUser = perCurrency
+        // 환산은 record()가 통화별로 한 번씩 한다 — 여기서 접으면 통화 내역이 사라져
+        // nav_currency_daily에 쓸 게 없어진다 (AF-106).
+        val byUser: Map<UUID, Map<String, BigDecimal>> = perCurrency
             .groupBy { it.first }
             .mapValues { (_, rows) ->
-                rows.fold(BigDecimal.ZERO) { acc, (_, currency, value) -> acc + fx.toKrw(value, currency) }
+                // 같은 (user, currency)는 SQL이 이미 GROUP BY로 합쳤으므로 키 충돌이 없다
+                rows.associate { (_, currency, value) -> currency.trim().uppercase() to value }
             }
 
-        if (navByUser.isEmpty()) {
+        if (byUser.isEmpty()) {
             log.debug("[DailyNavScheduler] no users with assets, skipping")
             return 0
         }
 
-        log.info("[DailyNavScheduler] recording snapshots for {} users", navByUser.size)
-        navByUser.forEach { (userId, nav) ->
-            runCatching { snapshotService.record(userId, nav, ymd) }
+        log.info("[DailyNavScheduler] recording snapshots for {} users", byUser.size)
+        byUser.forEach { (userId, navByCurrency) ->
+            runCatching { snapshotService.record(userId, navByCurrency, ymd) }
                 .onFailure { e -> log.error("[DailyNavScheduler] failed userId={}", userId, e) }
         }
         log.info("[DailyNavScheduler] done")
-        return navByUser.size
+        return byUser.size
     }
 }
