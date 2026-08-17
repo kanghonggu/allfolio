@@ -1,6 +1,8 @@
 package com.allfolio.market.commodity
 
 import com.allfolio.market.commodity.fred.FredCommoditySource
+import com.allfolio.market.commodity.fsc.FscCommodityClient
+import com.allfolio.market.commodity.fsc.FscCommoditySource
 import com.allfolio.market.rate.fred.FredApiClient
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -17,14 +19,14 @@ import org.springframework.boot.test.mock.mockito.MockBean
  * 수집만 조용히 "대상 0건"으로 끝난다. 둘 다 실제 컨텍스트로만 보인다.
  * (`RateCollectSourceWiringTest`가 같은 이유로 존재한다.)
  *
- * **FSC(금)가 붙는 날 이 파일에 소스를 하나 더 적을 것.** 지금 `market-commodity.fsc`는 비어 있고
- * 담당 소스도 없다 — 소스가 늘어도 수집 루프는 안 바뀌지만, 새 소스가 컬렉션에 들어왔는지는
- * 여기서만 보인다.
+ * **소스가 또 늘면 이 파일에 한 줄 더 적을 것.** 소스가 늘어도 수집 루프는 안 바뀌지만,
+ * 새 소스가 컬렉션에 들어왔는지는 여기서만 보인다. (금/FSC가 그렇게 붙었다.)
  */
 @SpringBootTest(
     classes = [
         CommodityCollectSourceWiringTest.TestApplication::class,
         FredCommoditySource::class,
+        FscCommoditySource::class,
         CommodityCollectService::class,
     ],
     properties = [
@@ -39,17 +41,27 @@ import org.springframework.boot.test.mock.mockito.MockBean
         "market-commodity.fred-monthly[0].series-id=PCOPPUSDM",
         "market-commodity.fred-monthly[0].unit=USD/MT",
         "market-commodity.fred-monthly[0].frequency=M",
+        // series-id는 문자열이다 — @SpringBootTest properties는 이미 문자열이라 여기서는
+        // 앞의 0이 살지만, 실제 yml의 따옴표는 CommodityPropertiesYamlTest가 따로 지킨다
+        "market-commodity.fsc[0].code=GOLD_KRX",
+        "market-commodity.fsc[0].series-id=04020000",
+        "market-commodity.fsc[0].unit=KRW/g",
+        "market-commodity.fsc[0].frequency=D",
     ],
 )
 class CommodityCollectSourceWiringTest {
 
     @MockBean private lateinit var fredClient: FredApiClient
 
+    @MockBean private lateinit var fscClient: FscCommodityClient
+
     @MockBean private lateinit var store: CommodityCollectService.Store
 
     @Autowired private lateinit var service: CommodityCollectService
 
     @Autowired private lateinit var fredSource: FredCommoditySource
+
+    @Autowired private lateinit var fscSource: FscCommoditySource
 
     @Autowired private lateinit var properties: CommodityProperties
 
@@ -61,13 +73,14 @@ class CommodityCollectSourceWiringTest {
      * 등록하기 때문이다. 이 파일이 보는 건 컬렉션 주입이 성립하는지까지다.
      */
     @Test
-    fun `수집 서비스는 FRED 원자재 소스를 주입받는다`() {
+    fun `수집 서비스는 원자재 소스 둘을 모두 주입받는다`() {
         val sources = CommodityCollectService::class.java
             .getDeclaredField("sources")
             .apply { isAccessible = true }
             .get(service)
 
-        assertThat(sources as List<*>).containsExactly(fredSource)
+        // 순서는 보지 않는다 — 수집 루프가 소스 순서에 기대지 않는다
+        assertThat(sources as List<*>).containsExactlyInAnyOrder(fredSource, fscSource)
     }
 
     /**
@@ -82,6 +95,17 @@ class CommodityCollectSourceWiringTest {
     }
 
     /**
+     * **담당이 겹치면 안 된다.** 두 소스가 같은 코드를 담당하면 수집 루프가 그 코드를 두 번 돌고,
+     * 값도 `source` 열도 뒤에 도는 쪽으로 매 실행 뒤집힌다 — 제약조건도 요약도 조용하다.
+     */
+    @Test
+    fun `금은 FSC가 담당하고 FRED와 겹치지 않는다`() {
+        assertThat(fscSource.codes).containsExactly("GOLD_KRX")
+        assertThat(fscSource.sourceName).isEqualTo("FSC")
+        assertThat(fredSource.codes).doesNotContainAnyElementsOf(fscSource.codes)
+    }
+
+    /**
      * 서비스가 단위·주기를 되찾는 통로가 [CommodityProperties.allItems]다 —
      * 바인딩이 깨지면 전 종목이 "설정에 없는 코드"로 실패한다.
      */
@@ -91,6 +115,7 @@ class CommodityCollectSourceWiringTest {
             .containsExactly(
                 Triple("WTI", "USD/bbl", "D"),
                 Triple("COPPER", "USD/MT", "M"),
+                Triple("GOLD_KRX", "KRW/g", "D"),
             )
     }
 

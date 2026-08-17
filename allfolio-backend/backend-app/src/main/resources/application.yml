@@ -399,7 +399,16 @@ market-commodity:
     - { code: SUGAR,     series-id: PSUGAISAUSDM,  unit: "USc/lb",   frequency: M }
     - { code: COFFEE,    series-id: PCOFFOTMUSDM,  unit: "USc/lb",   frequency: M }
     - { code: ALL_INDEX, series-id: PALLFNFINDEXM, unit: "index",    frequency: M }
-  fsc: []   # 금은 Task 4에서 채운다 (현재 FSC_API_KEY 미설정으로 보류 중)
+  # 금(KRX 금시장, 공공데이터포털 금융위 일반상품시세정보).
+  #
+  # series-id는 FRED의 시리즈 ID가 아니라 **종목 단축코드(srtnCd)** 다. KRX 금시장에는
+  # 04020000(금 99.99_1kg)과 04020100(미니금 99.99_100g)이 상장돼 있고 둘 다 원/g이라
+  # 값이 거의 같다 — 유동성이 10배인 1kg을 대표 시세로 쓴다.
+  #
+  # **따옴표를 떼지 말 것.** YAML이 04020000을 숫자로 읽으면 앞의 0이 날아가고,
+  # 그러면 종목이 안 맞아 필터에서 전부 걸려 조용히 0건이 된다.
+  fsc:
+    - { code: GOLD_KRX, series-id: "04020000", unit: "KRW/g", frequency: D }
 
 # 암호화폐 거래소 WebSocket (국내)
 upbit:

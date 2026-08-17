@@ -80,7 +80,8 @@ class FredCommoditySourceTest {
     @Test
     fun `FSC 항목은 담당하지 않는다`() {
         val properties = properties().apply {
-            fsc = listOf(item("GOLD_KRX", "getGoldPriceInfo", "KRW/g", "D"))
+            // FSC의 series-id는 종목 단축코드(srtnCd)다 — 오퍼레이션 이름이 아니다
+            fsc = listOf(item("GOLD_KRX", "04020000", "KRW/g", "D"))
         }
 
         val source = FredCommoditySource(FakeClient(), properties)
