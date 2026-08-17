@@ -198,6 +198,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 4. 종목 하나가 터져도 나머지가 저장된다(실패 격리) — 요약의 `failures`에 남는다
 5. 실패 사유는 200자로 자른다
 6. `upsert`가 실패하면 `saved` 계수가 부풀지 않는다 (**AF-102 회귀**)
+7. **`type`이 `BenchmarkType`에 없는 값이면 그 지수만 실패하고 나머지는 저장된다** (🔴 함정)
 
 - [ ] **Step 2: 실행 — 실패 확인**
 
@@ -243,7 +244,10 @@ data class BenchmarkCollectSummary(
 |---|---|---|
 | 1 | `saved` 누산을 `upsert` **앞**으로 | 6 |
 | 2 | 지수별 `catch`를 벗겨 첫 실패가 전체를 죽이게 | 4 |
-| 3 | 구간 필터 제거 | 1 |
+| 3 | **`valueOf`를 `try` 밖으로** | 7 |
+| 4 | 구간 필터 제거 | 1 |
+
+> 변이 3이 본문의 🔴 요구(`valueOf`를 `try` 안에)와 짝이다. **표만 보고 넘어가면 이 변이를 빠뜨린다** — 초안이 실제로 그랬다.
 
 - [ ] **Step 6: 커밋**
 
