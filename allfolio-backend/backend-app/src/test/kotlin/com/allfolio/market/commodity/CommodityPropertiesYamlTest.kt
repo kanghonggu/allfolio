@@ -13,7 +13,7 @@ import org.springframework.boot.test.context.SpringBootTest
  *
  * **이 테스트가 YAML 오타를 잡는 유일한 그물이다.** 시리즈 ID 한 글자가 틀리면 그 종목만
  * 조용히 0건이 되고, 종목 하나를 빠뜨리면 목록이 조용히 짧아질 뿐 기동도 수집도 초록이다.
- * 그래서 16종의 시리즈 ID를 전부 단언한다.
+ * 그래서 17종(FRED 16 + 금 1)의 시리즈 ID를 전부 단언한다.
  */
 @SpringBootTest(
     classes = [
@@ -30,9 +30,29 @@ class CommodityPropertiesYamlTest {
     private lateinit var properties: CommodityProperties
 
     @Test
-    fun `일간 3종과 월간 13종이 바인딩된다`() {
+    fun `일간 3종과 월간 13종과 금 1종이 바인딩된다`() {
         assertThat(properties.fredDaily).hasSize(3)
         assertThat(properties.fredMonthly).hasSize(13)
+        assertThat(properties.fsc).hasSize(1)
+    }
+
+    /**
+     * **`series-id`는 문자열이어야 한다.** `04020000`의 따옴표를 떼면 YAML(SnakeYAML/1.1)이
+     * 숫자로 읽어 앞의 0이 날아간다 — **실측: 따옴표를 떼면 `1056768`로 바인딩된다**(8진수).
+     * `FscCommoditySource`의 종목 필터에 안 걸려 **조용히 0건**이 되고,
+     * 요약은 `emptySeries=[GOLD_KRX]`로 "정상적으로 빈 계열"처럼 보인다.
+     *
+     * 그래서 "비어 있지 않다"가 아니라 **문자열 값을 그대로** 단언한다.
+     */
+    @Test
+    fun `금 종목코드가 앞의 0을 지킨 문자열이다`() {
+        val gold = properties.fsc.single()
+
+        assertThat(gold.code).isEqualTo("GOLD_KRX")
+        // 04020000 = 금 99.99_1kg. 04020100(미니금 100g)이 아니다 — 유동성이 10배 차이다
+        assertThat(gold.seriesId).isEqualTo("04020000")
+        assertThat(gold.unit).isEqualTo("KRW/g")
+        assertThat(gold.frequency).isEqualTo("D")
     }
 
     /**
@@ -75,8 +95,9 @@ class CommodityPropertiesYamlTest {
      * 뒤 항목이 앞 항목을 덮어쓸 뿐 제약조건은 안 걸리고, 요약은 초록인 채 종목 하나가 사라진다.
      */
     @Test
-    fun `allCodes가 16종이고 중복이 없다`() {
-        assertThat(properties.allCodes).hasSize(16)
+    fun `allCodes가 17종이고 중복이 없다`() {
+        // FRED 16종 + 금 1종. 이 수가 줄면 목록 하나가 통째로 빠진 것이다
+        assertThat(properties.allCodes).hasSize(17)
         assertThat(properties.allCodes).doesNotHaveDuplicates()
     }
 
@@ -85,7 +106,11 @@ class CommodityPropertiesYamlTest {
      *
      * **주기는 비어 있지 않은 것으로 부족하고 한 글자여야 한다.** DB 컬럼이 `VARCHAR(1)`이라
      * `Daily`가 들어오면 CI는 초록이고 운영 insert에서 길이 초과로 터진다. `allItems`로 도는
-     * 이유는 Task 4에서 채울 fsc까지 같은 그물에 들어오게 하려는 것이다.
+     * 이유는 fsc(금)까지 같은 그물에 들어오게 하려는 것이다.
+     *
+     * [CommodityProperties.validate]가 기동 시점에 같은 규칙을 강제하므로 이 단언은 이제
+     * 이중 그물이다 — 그래도 남긴다. 저쪽은 "설정이 규칙을 지키나"를 보고,
+     * 여기는 "실제 yml이 무엇으로 채워져 있나"를 본다.
      */
     @Test
     fun `모든 항목에 단위와 한 글자 주기가 있다`() {
