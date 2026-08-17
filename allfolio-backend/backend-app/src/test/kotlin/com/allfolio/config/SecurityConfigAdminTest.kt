@@ -1,11 +1,14 @@
 package com.allfolio.config
 
+import com.allfolio.api.admin.BenchmarkIndexAdminController
 import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.api.admin.CommodityAdminController
 import com.allfolio.api.admin.MarketRateAdminController
 import com.allfolio.api.market.MarketQueryController
 import com.allfolio.api.scheduler.SchedulerTriggerController
+import com.allfolio.market.benchmark.BenchmarkIndexProperties
+import com.allfolio.market.benchmark.FscIndexCollectService
 import com.allfolio.market.index.IndexCollectService
 import com.allfolio.market.index.KisIndexClient
 import com.allfolio.market.index.OverseasIndexCollectService
@@ -53,6 +56,7 @@ import java.math.BigDecimal
         MarketIndexAdminController::class,
         MarketRateAdminController::class,
         CommodityAdminController::class,
+        BenchmarkIndexAdminController::class,
         SchedulerTriggerController::class,
         // AF-104. 어드민이 아니지만 이 컨텍스트에 함께 둔다 — 이 파일이 보는 건 SecurityConfig의
         // 경로 규칙 전체이고(스케줄러 트리거도 여기 있다), 컨텍스트를 하나 더 띄우는 값이 안 된다.
@@ -108,6 +112,16 @@ class SecurityConfigAdminTest {
 
     @MockBean
     private lateinit var commodityProperties: CommodityProperties
+
+    // 벤치마크 지수도 같다 — SchedulerTriggerController가 BenchmarkIndexAdminController를,
+    // 그쪽이 이 둘을 요구한다 (AF-107). **위 overseasIndexCollectService와 같은 함정이다**:
+    // 빠뜨리면 이 파일의 테스트가 실패하는 게 아니라 컨텍스트가 아예 안 떠서,
+    // DefaultCacheAwareContextLoaderDelegate라는 이 파일과 무관해 보이는 메시지가 전 테스트에 걸린다.
+    @MockBean
+    private lateinit var fscIndexCollectService: FscIndexCollectService
+
+    @MockBean
+    private lateinit var benchmarkIndexProperties: BenchmarkIndexProperties
 
     // 마감 트리거는 어드민에 위임하지 않고 WfStepExecutor를 직접 요구한다.
     // 위 overseasIndexCollectService와 같은 함정이다 — 빠뜨리면 이 파일의 테스트가 실패하는 게
@@ -238,6 +252,20 @@ class SecurityConfigAdminTest {
     }
 
     /**
+     * AF-107: 벤치마크 지수 수집도 같은 와일드카드 아래 있어야 한다.
+     *
+     * 여기가 열리면 아무나 공공데이터포털 호출을 돌릴 수 있고, 그 호출은 우리 인증키를 달고 간다 —
+     * 무료 키의 일일 호출 한도를 제3자가 태울 수 있다는 뜻이다.
+     * 바로 아래 스케줄러 트리거가 permitAll이라 "지수 수집은 열려 있다"는 착각이 쉬운데,
+     * 이쪽을 지키는 건 토큰이 아니라 `hasRole("ADMIN")`이다.
+     */
+    @Test
+    fun `admin 벤치마크 지수 수집은 토큰 없이 403으로 차단된다`() {
+        mockMvc.post("/api/admin/benchmark-index/collect")
+            .andExpect { status { isForbidden() } }
+    }
+
+    /**
      * AF-103: 스케줄러 트리거는 Security를 통과해 컨트롤러까지 도달해야 한다.
      *
      * 이 컨텍스트에는 scheduler.trigger-token 프로퍼티가 없어 기본값 빈 문자열이 주입되고,
@@ -274,6 +302,21 @@ class SecurityConfigAdminTest {
     @Test
     fun `원자재 트리거도 Security를 통과해 컨트롤러까지 도달한다`() {
         mockMvc.post("/api/internal/scheduler/commodity")
+            .andExpect { status { isServiceUnavailable() } }
+    }
+
+    /**
+     * AF-107: 벤치마크 지수 트리거도 같은 규칙 아래 있는지. 위 셋과 같은 이유로 503이 곧
+     * "컨트롤러까지 닿았다"는 증거다 — 이 경로만 Security에 막히면 크론이 401을 받고
+     * KOSPI가 한 건도 안 쌓인다. Yahoo 동기화에서 이미 뺐으므로 그때는 **아무도** 채우지 않는다.
+     *
+     * **503은 `authorize(token)`이 있어야만 나온다.** 그 한 줄을 지우면 토큰 없는 요청이 그대로
+     * 어드민 위임까지 내려가 다른 상태 코드가 되고, 그 순간 이 테스트가 잡는다 —
+     * 이 경로가 permitAll이라 그 검사가 유일한 인증이다.
+     */
+    @Test
+    fun `벤치마크 지수 트리거도 Security를 통과해 컨트롤러까지 도달한다`() {
+        mockMvc.post("/api/internal/scheduler/benchmark-index")
             .andExpect { status { isServiceUnavailable() } }
     }
 
