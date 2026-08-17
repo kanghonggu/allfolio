@@ -33,7 +33,7 @@ data class CommodityConfigItemView(
     val frequency: String,
 )
 
-/** @param total 항목 수. 배포 후 "16종이 다 실렸나"를 한 눈에 본다 */
+/** @param total 항목 수. 배포 후 "17종이 다 실렸나"를 한 눈에 본다 (FRED 16 + 금 1) */
 data class CommodityConfigView(
     val total: Int,
     val items: List<CommodityConfigItemView>,
