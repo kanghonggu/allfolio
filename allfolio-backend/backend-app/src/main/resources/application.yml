@@ -410,6 +410,16 @@ market-commodity:
   fsc:
     - { code: GOLD_KRX, series-id: "04020000", unit: "KRW/g", frequency: D }
 
+# 벤치마크 지수 — Yahoo 비공식 엔드포인트 대체 (AF-107).
+# KOSPI만 여기서 온다. SPX·BTC는 여전히 BenchmarkSyncService(Yahoo)가 채운다 —
+# 옮겨도 KIS·Upbit 약관이 미결이라 얻는 게 없고 이력만 닷새치로 줄기 때문이다.
+#
+# idx-csf를 함께 적는 이유: idx-nm만으로는 유일하지 않다("IT 서비스"가 KOSPI시리즈와
+# KOSDAQ시리즈에 둘 다 있다). 지수를 더할 때 쌍으로 적을 것.
+benchmark-index:
+  fsc:
+    - { type: KOSPI, idx-nm: "코스피", idx-csf: "KOSPI시리즈" }
+
 # 암호화폐 거래소 WebSocket (국내)
 upbit:
   ws-enabled: ${UPBIT_WS_ENABLED:false}

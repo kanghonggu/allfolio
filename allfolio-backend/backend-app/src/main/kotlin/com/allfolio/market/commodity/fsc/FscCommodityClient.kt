@@ -1,5 +1,6 @@
 package com.allfolio.market.commodity.fsc
 
+import com.allfolio.market.fsc.FscApiException
 import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -13,10 +14,6 @@ import java.math.BigDecimal
 import java.time.Duration
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-
-/** 공공데이터포털 호출 실패. `FredApiException`과 같은 모양이다 — 코드로 갈리고 본문을 싣지 않는다 */
-class FscApiException(val code: String, val detail: String) :
-    RuntimeException("FSC 오류 [$code] $detail")
 
 /**
  * 금시세 응답 한 행.
