@@ -28,6 +28,8 @@
 
 **5. `items`가 0건이면 빈 문자열로 온다.** 공공데이터포털 관례다. 배열이 아닐 때 예외로 죽지 말고 빈 목록을 줄 것.
 
+**8. `FscApiException`은 `com.allfolio.market.fsc`에 있다** — 포털 공용이라 원자재 도메인에서 꺼냈다(Task 1 리뷰). 오퍼레이션마다 예외 타입을 새로 만들지 말 것 — 수집 서비스가 그만큼을 다 알아야 한다.
+
 **7. 이 브랜치는 `origin/main` 위에 있어야 한다.** 이 작업은 #178(`FscCommodityClient`)·#179를 토대로 삼는다. 브랜치가 그보다 뒤면 **읽으라고 지시한 파일이 존재하지 않는다.** 시작 전에 `git log --oneline HEAD..origin/main`이 비어 있는지 확인할 것.
 
 **6. 실측값(2026-08-17)**: 경로 `GetMarketIndexInfoService/getStockMarketIndex`, 날짜 `basDt`(`yyyyMMdd`), 종가 `clpr`. 2026-08-13 KOSPI 종가 = **6,813.34**. 1년 범위 조회가 242영업일을 **한 페이지**로 준다(`numOfRows=3000` 존중).
@@ -228,6 +230,8 @@ data class BenchmarkCollectSummary(
 - `filter { it.first in from..to }` → `outOfRange` 누산
 - `associate { }`로 날짜 중복 접기
 - 비면 `emptySeries += type`, 아니면 `store.upsert(BenchmarkType.valueOf(item.type), rows)`
+
+> **🔴 `BenchmarkType.valueOf`를 지수별 `try/catch` 안에 둘 것.** 밖에 두면 설정에 오타 하나(`type: KOSPPI`)로 **수집 전체가 죽는다.** `BenchmarkIndexItem.type`의 KDoc이 *"값이 틀리면 그 지수 하나만 실패로 남는다"*고 약속했으므로, 밖에 두면 그 주석이 거짓이 된다.
 - **`saved`는 `upsert` 뒤에 누산**
 - 지수별 `try/catch`로 격리, 사유는 200자 절단
 
@@ -359,6 +363,8 @@ cd /Users/hong9/IdeaProjects/allfolio/allfolio-backend && ./gradlew :unified-ass
 - **벤치마크·대시보드** — FSC, D+1 확정 종가(`benchmark_daily`), 이력 정합성 우선
 
 두 곳에 남긴다:
+
+> **⚠️ 1번은 Task 1에서 이미 넣었다.** `BenchmarkIndexProperties`의 클래스 KDoc을 열어 확인하고 **중복으로 또 쓰지 말 것.** 없으면 그때 쓴다.
 
 1. `BenchmarkIndexProperties`의 클래스 KDoc — *"같은 KOSPI가 `market_index_quote`에도 있다. 그쪽은 KIS 실시간이고 이쪽은 D+1 확정 종가다. 용도가 달라 값이 다를 수 있고, 그건 정상이다."*
 2. `frontend/allfolio_app/app/unified/reports/benchmark/page.tsx` — 화면에 **기준 표기 한 줄**. 사용자가 시장 탭의 KOSPI와 다른 숫자를 봤을 때 답이 화면에 있어야 한다
