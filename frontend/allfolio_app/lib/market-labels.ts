@@ -48,8 +48,9 @@ const US_RATES = ['US_FFR', 'UST_2Y', 'UST_10Y', 'UST_30Y']
  * **단위를 여기 안 적는다.** 단위는 관측과 함께 행에 실려 오므로(CommodityQuoteView.unit)
  * 그쪽을 쓴다 — 여기 상수로 두면 설정이 바뀐 날 저장은 멀쩡한데 화면만 조용히 틀린다.
  *
- * `GOLD_KRX`는 아직 수집이 없다(FSC 인증키 보류, Task 4). **그래도 미리 넣어 둔다** —
- * 붙는 날 라벨만 없어서 표에 `GOLD_KRX`가 그대로 노출되는 걸 막는다.
+ * `GOLD_KRX`는 FRED 16종보다 늦게 붙었는데(FSC 인증키 문제로 보류됐다가 2026-08-17 합류)
+ * **그 전에 라벨을 미리 넣어 뒀다.** 덕분에 소스가 붙던 날 화면 코드를 한 줄도 안 고쳤다 —
+ * 라벨이 없었으면 표에 `GOLD_KRX`가 그대로 노출됐을 것이다. 종목이 늘 때 여기부터 채울 것.
  */
 const COMMODITY_LABELS: Record<string, string> = {
   WTI: 'WTI 원유',

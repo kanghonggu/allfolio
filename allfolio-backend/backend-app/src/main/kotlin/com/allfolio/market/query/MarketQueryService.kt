@@ -164,7 +164,7 @@ class MarketQueryService(
 
     /**
      * 설정에 있는 전 종목의 **최신 한 행씩을 쿼리 한 번으로** 긁는다.
-     * 종목마다 부르면 원격 Neon 왕복이 종목 수(현재 16종, 금이 붙으면 17종)만큼 난다.
+     * 종목마다 부르면 원격 Neon 왕복이 종목 수(현재 17종)만큼 난다.
      *
      * **전일대비를 여기서 계산하지 않는다.** 금리·환율과 갈리는 지점이다 —
      * 원자재는 `prev_close`·`change_*`가 수집 시점에 이미 행에 저장돼 있다(소스가 전일 종가를
@@ -183,8 +183,9 @@ class MarketQueryService(
         // 나머지 종목은 조회 대상에 아예 안 들어간다 — 수집은 되고 DB에도 쌓이는데 화면에만 없고,
         // 오류도 로그도 안 난다(AF-FRED가 금리에서 실제로 겪은 실수다).
         val codes = commodityProperties.allCodes
-        // 빈 목록을 그대로 넘기면 `IN ()`이라 벤더에 따라 문법 오류다 — 금(fsc)이 지금 비어 있듯
-        // 설정 전체가 비는 구성도 문법적으로 가능하다. 지수·금리 구간과 같은 방어다.
+        // 빈 목록을 그대로 넘기면 `IN ()`이라 벤더에 따라 문법 오류다. 지금은 17종이 다 차 있지만
+        // 설정 전체가 비는 구성이 문법적으로 가능하고(목록 셋을 전부 지우거나 env로 덮어쓰는 경우),
+        // 그때 조회가 죽으면 원자재만이 아니라 시장 화면 전체가 500이 된다. 지수·금리와 같은 방어다.
         if (codes.isEmpty()) return emptyList()
 
         val latestByCode = commodityRepository.findLatestByCodes(codes).associateBy { it.code }

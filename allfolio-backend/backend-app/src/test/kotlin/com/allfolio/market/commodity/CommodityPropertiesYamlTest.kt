@@ -96,7 +96,7 @@ class CommodityPropertiesYamlTest {
      */
     @Test
     fun `allCodes가 17종이고 중복이 없다`() {
-        // FRED 16종 + 금 1종. 이 수가 줄면 목록 하나가 통째로 빠진 것이다
+        // FRED 16종 + 금 1종 = 17. 이 수가 줄면 목록 하나가 통째로 빠진 것이다
         assertThat(properties.allCodes).hasSize(17)
         assertThat(properties.allCodes).doesNotHaveDuplicates()
     }
