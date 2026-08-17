@@ -465,13 +465,89 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - 전일대비·등락률 필드가 응답에 있는지 (있으면 우리가 계산하지 않는다)
 - 상품이 여러 개 상장돼 있는지(금 99.99% 1kg / 100g 등) — **어느 종목을 쓸지 정해야 한다**
 
-- [ ] **Step 2~7**
+> **✅ Step 1 완료 (2026-08-17 실측).** 아래는 추측이 아니라 실제 응답에서 읽은 것이다.
+> 이 태스크를 열어 두었던 이유는 *"모르는 것을 아는 척하지 않는다"*였고, 이제 안다.
 
-**Step 1의 결과가 나온 뒤에 이어서 작성한다.** 응답 모양을 모르는 상태로 파서 코드를 계획에 적으면 그 코드가 틀린 추측이 되고, 구현자가 그것을 근거로 삼는다.
+### Step 1 결과 — 확정 사실
 
-Step 1을 마치면 **보고하고 멈출 것.** 계획 작성자가 나머지 단계를 채운다.
+**경로**: `GET {BASE}/GetGeneralProductInfoService/getGoldPriceInfo`
+**파라미터**: `serviceKey` · `resultType=json` · `numOfRows` · `pageNo` · `beginBasDt` · `endBasDt`(둘 다 `yyyyMMdd`, 범위 조회 동작)
 
-> 이 태스크만 이렇게 열어 두는 이유: FRED는 응답 규약을 AF-FRED가 이미 겪어 파서가 있고, 공공데이터포털 금시세는 이 저장소가 한 번도 부른 적이 없다. **모르는 것을 아는 척하지 않는 것이 이 계획의 규칙이다.**
+**응답 필드 12개** (한 행):
+`basDt` `srtnCd` `isinCd` `itmsNm` `clpr` `vs` `fltRt` `mkp` `hipr` `lopr` `trqu` `trPrc`
+
+| 쓸 필드 | 뜻 | 실측 예 |
+|---|---|---|
+| `basDt` | 기준일 `yyyyMMdd` | `20260813` |
+| `clpr` | **종가 (원/g)** | `200570` |
+| `vs` | 전일대비 (원/g, 부호 있음) | `100` · `-380` |
+| `fltRt` | 등락률 (%, 부호 있음) | `.05` · `-.19` · `1.4` |
+
+**단위가 원/g인 근거 — 추론이 아니라 교차 검증이다.** 같은 날 `금 99.99_1kg`과 `미니금 99.99_100g`의 `clpr`이 **거의 같다**(200,570 vs 200,240, 비율 1.0016). 계약당 가격이면 1kg이 100g의 10배여야 한다. 그램당이므로 같은 것이다.
+
+**종목은 둘. `04020000`(금 99.99_1kg)을 쓴다.**
+
+| srtnCd | itmsNm | isinCd | 9일 누적 거래대금 |
+|---|---|---|---|
+| `04020000` | 금 99.99_1kg | `KRD040200002` | **330,570,930,170** |
+| `04020100` | 미니금 99.99_100g | `KRD040201000` | 33,675,800,210 |
+
+거래대금이 **10배** 차이다. 유동성이 큰 쪽이 대표 시세다.
+
+**신선도**: 2026-08-17(월) 시점 최신 관측이 **2026-08-13**. 8/14(금)이 없다 — 휴장인지 공표 지연인지 **한 시점만 봐서는 확정 못 한다.** 그래서 창을 D+1에 맞추지 않고 **일간 기본 창(14일)** 을 그대로 쓴다.
+
+---
+
+- [ ] **Step 2: 클라이언트** — `.../market/commodity/fsc/FscCommodityClient.kt`
+
+`unified-asset/.../infrastructure/adapter/FscStockClient.kt`를 **먼저 읽고** 인증·베이스·에러 처리 관례를 그대로 따를 것. 특히 `isConfigured()`로 키 미설정을 다루는 방식.
+
+**🔴 인증키가 쿼리 파라미터에 실린다.** `FredApiClient`와 같은 방어 셋을 지킬 것 — 전체 URL 로깅 금지 · 예외에 `cause` 금지 · 응답 본문 미리보기 금지.
+
+**`fltRt`는 앞의 0이 없다**(`.05`, `-.19`). `BigDecimal(".05")`은 유효하지만, 정규식 검증을 넣는다면 그 형태를 반드시 포함할 것. **이 형식을 테스트에 고정한다.**
+
+**응답이 두 겹이다**: `response.body.items.item[]`. `totalCount=0`이면 `items`가 빈 문자열 `""`로 오는 경우가 공공데이터포털에 흔하므로, 배열이 아닐 때 빈 목록으로 처리하고 예외로 죽지 말 것.
+
+- [ ] **Step 3: 소스** — `.../market/commodity/fsc/FscCommoditySource.kt`
+
+`FredCommoditySource`와 **같은 모양**(`CommoditySource` 구현). `sourceName = "FSC"`.
+
+- `properties.fsc`에서 코드를 찾는다. 없으면 `IllegalArgumentException`(FRED 쪽과 같은 문구 틀)
+- `CommodityItem.seriesId`에 **`srtnCd`(`04020000`)** 를 담는다 — FRED의 series-id 자리를 종목코드로 쓴다
+- 응답에서 **그 `srtnCd` 행만** 고른다. 두 종목이 함께 오므로 **안 거르면 같은 날짜에 값이 둘**이 되고, 수집 서비스의 `deduped[date] = value`가 뒤에 온 것으로 덮어써 **미니금 값이 조용히 들어간다**
+- 구간 밖 날짜 필터링은 하지 않는다 — 서비스가 한다
+
+- [ ] **Step 4: 설정** — `application.yml`의 `market-commodity.fsc`
+
+```yaml
+  fsc:
+    - { code: GOLD_KRX, series-id: "04020000", unit: "KRW/g", frequency: D }
+```
+
+`series-id`를 **따옴표로 감쌀 것** — `04020000`을 YAML이 숫자로 읽으면 앞의 0이 날아가 `4020000`이 된다. **그러면 종목이 안 맞아 조용히 0건이 된다.**
+
+- [ ] **Step 5: `@PostConstruct validate()`** — `CommodityProperties`
+
+Task 3 리뷰가 *"fsc 항목이 생기는 Task 4에서는 반드시 넣어야 한다"*고 판정한 것이다. `MarketRateProperties.validate()`를 읽고 같은 방식으로:
+- `code`·`seriesId`·`unit` 공백 검사
+- **`frequency !in ("D","M")`** — DB가 `VARCHAR(1)`이라 `Daily` 같은 오타는 CI 초록인데 운영 insert에서 터진다
+- `allCodes` 중복 검사
+
+- [ ] **Step 6: 테스트**
+
+1. `srtnCd`가 다른 행(미니금)을 **걸러낸다** — 두 종목이 섞인 응답을 주고 1kg 값만 나오는지
+2. `fltRt`의 `.05`·`-.19` 형식이 파싱된다
+3. `basDt` → `LocalDate` 변환 (`yyyyMMdd`)
+4. `items`가 배열이 아닐 때(0건) 빈 목록을 준다
+5. 설정에 없는 코드는 예외
+6. `validate()`가 빈 code·중복 code·`frequency="Daily"`를 각각 잡는다
+7. YAML 바인딩에서 `series-id`가 **문자열 `"04020000"`** 으로 들어온다 (앞의 0 보존)
+
+**변이**: ① `srtnCd` 필터를 지운다 → 1번 실패 ② `series-id`의 따옴표를 뗀다 → 7번 실패 ③ `validate()`의 frequency 검사를 뺀다 → 6번 실패
+
+- [ ] **Step 7: 커밋 + PR + 라이브 검증**
+
+배포 후 수집을 한 번 돌리고 **값을 눈으로 대조**: 금 종가가 **20만 원/g대**여야 한다(2026-08-13 실측 200,570). 5만이면 원/돈을 잘못 읽은 것이고, 2억이면 원/kg이다.
 
 ---
 
