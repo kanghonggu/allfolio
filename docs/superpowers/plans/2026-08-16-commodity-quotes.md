@@ -296,6 +296,8 @@ interface CommoditySource {
 }
 ```
 
+> **⚠️ 아래 스니펫의 `seriesId` 주석은 틀렸다 (2026-08-17 정정).** `FSC는 오퍼레이션 코드`라고 적혀 있지만 실제로는 **종목 단축코드(`srtnCd`, `04020000`)** 다 — 오퍼레이션 코드(`getGoldPriceInfo`)는 클라이언트가 경로에 고정으로 들고 있다. **Task 4의 Step 1 실측이 뒤집었다.** 이 자리를 남겨 두는 것은 "측정 전 추정이 무엇이었는지"의 기록이고, 구현할 때는 Task 4를 따를 것. 그대로 옮겨 적으면 yml을 `series-id: getGoldPriceInfo`로 쓰게 되고 그러면 조용히 0건이 된다.
+
 - [ ] **Step 2: 설정 바인딩**
 
 `MarketRateProperties`를 열어 `@ConfigurationProperties` 바인딩 방식과 `allCodes` 관례를 확인하고 같은 모양으로 만든다.
@@ -309,7 +311,7 @@ import org.springframework.stereotype.Component
 /** 원자재 한 종목의 수집 설정 */
 class CommodityItem {
     lateinit var code: String
-    lateinit var seriesId: String   // FRED series_id. FSC는 오퍼레이션 코드
+    lateinit var seriesId: String   // FRED series_id. FSC는 오퍼레이션 코드  ← ⚠️ 틀렸다, Task 4 참조
     lateinit var unit: String       // USD/bbl · USD/MT · KRW/g · index
     lateinit var frequency: String  // D | M
 }
