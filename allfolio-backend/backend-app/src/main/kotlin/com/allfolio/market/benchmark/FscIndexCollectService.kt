@@ -52,7 +52,7 @@ data class BenchmarkCollectSummary(
  * **소스와 무관하게 옳다.** 한쪽만 고쳐진 판본이 생기지 않도록, 고칠 일이 생기면 같이 볼 것.
  *
  * **원자재보다 작다.** 전일대비(`prevClose`·`changeValue`·`changeRate`)를 계산하지 않고
- * 단위·주기도 없다 — `benchmark_daily`가 (index_type, date, close_value) 셋뿐이라
+ * 단위·주기도 없다 — `benchmark_daily`가 (index_type, date, close_value, created_at)뿐이고 그중 값은 close_value 하나이라
  * 저장 포트가 (날짜, 종가) 쌍만 받는다. 그래서 사다리도, 기존 행 조회도, 설정 조회도 없다.
  *
  * 일일 수집과 백필이 같은 경로를 쓴다 — 둘 다 "이 구간을 소스가 준 값으로 맞춘다"이고
