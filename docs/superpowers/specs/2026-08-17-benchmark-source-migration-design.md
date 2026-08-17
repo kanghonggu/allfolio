@@ -51,144 +51,132 @@ AF-108 검토 문서가 이것을 명시적으로 미결로 남겼다.
 직접 읽어 KOSPI YTD를 만든다(`GetDashboardUseCase.kt:111`). 이관 시 여기도 같이 옮겨야 한다 —
 안 옮기면 대시보드만 옛 테이블을 보고 값이 갈린다.
 
-## 결정
+## 결정 (2026-08-17 확정)
 
-**Yahoo 의존을 완전히 걷어내고, 벤치마크 3종을 이미 수집 중인 데이터로 공급한다.**
+**KOSPI만 옮긴다. SPX·BTC는 Yahoo에 둔다.**
 
-| 벤치마크 | 읽는 곳 | 출처 | 약관 |
+| 벤치마크 | 이번에 | 출처 | 이유 |
 |---|---|---|---|
-| `KOSPI` | `benchmark_daily` | **신규 FSC 수집기** (공공데이터포털 지수시세정보) | ✅ 이용허락 제한 없음 |
-| `SPX` | `market_index_quote` (`index_code='SPX'`, `slot='CLOSE'`) | 이미 수집 중 (KIS, AF-110) | ⚠️ KIS 미결 — 노출이 늘지 않을 뿐 |
-| `BTC` | `fx_rate_daily` (`currency='BTC'`) | 이미 수집 중 (Upbit 일봉, AF-113) | ⚠️ 성격 검토 미결 |
+| `KOSPI` | **옮긴다** | 신규 FSC 수집기 → `benchmark_daily` | 약관 깨끗 + **백필 확인됨**(아래) |
+| `SPX` | **안 옮긴다** | Yahoo 유지 | 옮겨도 KIS 약관이 미결이라 **얻는 게 없고**, 이력이 닷새치로 줄어 화면이 나빠진다 |
+| `BTC` | **안 옮긴다** | Yahoo 유지 | 같음 (Upbit 약관 미결) |
 
-`BenchmarkType`의 이름이 `market_index_quote.index_code`와 그대로 일치한다(`KOSPI`·`SPX`) —
-매핑 표를 따로 만들 필요가 없다.
+### 셋을 다 옮기지 않기로 한 근거
 
-### 왜 `benchmark_daily`를 남기는가
+초안은 "Yahoo 클라이언트를 통째로 걷어낸다"였다. 그 대가를 재 보니 **SPX·BTC는 손해만 남는다.**
 
-**DB 마이그레이션을 0으로 두기 위해서다.** 원자재(#176)는 마이그레이션을 배포 전에 적용하지 않으면
-시장 엔드포인트 전체가 500이 되는 구조였다. 같은 위험을 만들지 않는다.
+- **약관 이득이 없다.** Yahoo(비공식) → KIS·Upbit(**둘 다 미결**)은 미해결을 미해결로 바꾸는 것이다. 깨끗해지는 건 FSC로 가는 KOSPI뿐이다.
+- **이력을 잃는다.** `market_index_quote`·`fx_rate_daily`가 2026-08-12부터라 닷새치다. 옮기면 `vs S&P 500`·`vs Bitcoin`의 YTD·1Y가 **당분간 빈다.** KOSPI는 백필이 되므로 이 문제가 없다.
 
-`benchmark_daily`는 `(index_type, date, close_value)` — 확정 종가 창고로 쓰기에 이미 맞는 모양이다.
-테이블을 그대로 두고 **채우는 주체만 Yahoo에서 FSC로 바꾼다.**
+**남은 Yahoo 의존은 KIS·Upbit 약관이 정리되거나 이력이 쌓인 뒤에 걷는다.** 그때는 잃는 것이 없다.
 
-### 왜 FSC 종가를 `market_index_quote`에 넣지 않는가
+### 이 결정이 설계를 크게 줄인다
 
-슬롯 우선순위 규칙(`CLOSE > MID > OPEN`)이 `MarketIndexQuoteJpaRepository.findLatestByCodes`의
-JPQL 한 곳에 있고, 시장 화면이 그걸로 "지금 값"을 고른다. 확정 종가를 새 슬롯으로 끼워 넣으면
-**시장 화면이 오염된다.** 유니크 키가 `(index_code, trade_date, slot)`이라 `CLOSE`로 넣으면 KIS 행과
-충돌한다.
+`benchmark_daily`를 **읽는 쪽은 아무것도 안 바뀐다.** 셋 다 같은 표를 계속 보고, 바뀌는 것은 KOSPI 행을 **채우는 주체**뿐이다. 초안의 다음 항목이 전부 불필요해진다:
 
-### 두 개의 KOSPI — 결함이 아니라 역할 분리
-
-이관 후 KOSPI 값이 두 곳에서 나온다.
-
-- **시장 화면** — KIS, 하루 세 슬롯, 실시간성 우선
-- **벤치마크·대시보드** — FSC, D+1 확정 종가, 이력 정합성 우선
-
-**용도가 실제로 다르다.** 벤치마크는 수익률 비교를 위한 종가 시계열이 필요하고, 화면은 지금 값이
-필요하다. 이 구분을 코드 주석과 화면 표기에 남긴다.
-
-국내 지수 5종 전체를 FSC로 옮기는 일(#175 권고)은 **이 문서 범위 밖**이다. 시장 화면이 D+1로
-후퇴하고 AF-101이 #147에서 감수하기로 한 결정을 뒤집는 일이라 별도 티켓이 맞다.
+- `BenchmarkSeriesSource` 읽기 포트 신설 · `CompositeBenchmarkSeriesSource` — 분기할 대상이 없다
+- 소비자 3곳(`ReportService`·`GetReturnsAnalysisUseCase`·`GetDashboardUseCase`) 재배선
+- `GetDashboardUseCase`가 포트를 안 거치고 JPA로 직접 읽는 문제 — 사실이지만(실측 확인) **이번 범위 밖**이다. 읽는 표가 안 바뀌므로 값이 갈릴 일이 없다
+- `YahooBenchmarkHistoryClient`·`BenchmarkHistoryClient`·`BenchmarkType.yahooTicker` 제거 — SPX·BTC가 계속 쓴다
+- **BTC 기준 표기 변경(BTC-USD → BTC-KRW)** — BTC가 Yahoo에 남으므로 기준이 안 바뀐다. 초안의 「표기 변경」 절은 통째로 무효다
 
 ## 구조
 
-**읽기 포트를 읽기 전용으로 좁힌다.** `latestDate`·`upsert`는 Yahoo 동기화 전용이었다. 동기화가
-사라지면 소비자에게 필요한 것은 `series`뿐이다.
-
-쓰기는 없어지지 않고 **주인이 바뀐다.** `benchmark_daily`에 KOSPI 종가를 넣는 것은 이제 FSC
-수집기의 일이므로, UPSERT는 수집기 쪽 저장 포트로 옮긴다. 리포트·대시보드는 쓰기를 볼 수 없다.
-
 ```
-BenchmarkSeriesSource                     (읽기 전용 포트)
-  └─ CompositeBenchmarkSeriesSource       (타입으로 분기)
-       ├─ KOSPI → JdbcBenchmarkDailyStore (benchmark_daily)
-       ├─ SPX   → MarketIndexQuote 조회   (slot='CLOSE')
-       └─ BTC   → FxRateDaily 조회        (currency='BTC')
-
-FscIndexCollectService → benchmark_daily  (KOSPI 확정 종가, UPSERT 멱등)
+BenchmarkSyncService (Yahoo)  →  benchmark_daily   [SPX · BTC]   ← 그대로
+FscIndexCollectService (신규) →  benchmark_daily   [KOSPI]       ← 새로
+                                       ↓
+        ReportService · GetReturnsAnalysisUseCase · GetDashboardUseCase   ← 안 바뀜
 ```
 
-**소비자 3곳을 모두 새 포트로 옮긴다**: `ReportService`, `GetReturnsAnalysisUseCase`,
-`GetDashboardUseCase`(현재 JPA 직접 접근).
+바꿀 것은 넷뿐이다.
 
-**제거**: `YahooBenchmarkHistoryClient`, `BenchmarkHistoryClient` 포트, `BenchmarkSyncService`,
-`BenchmarkType.yahooTicker`, 포트의 `upsert`·`latestDate`.
+1. **`FscIndexCollectService` 신설** — 공공데이터포털 지수시세정보에서 KOSPI 확정 종가를 `benchmark_daily`에 UPSERT
+2. **`BenchmarkSyncService`가 KOSPI를 건너뛴다** — 지금은 `BenchmarkType.entries`를 전부 돈다. 안 막으면 **두 소스가 같은 행을 번갈아 덮어써** 값이 실행마다 흔들린다
+3. **KOSPI 1회 삭제 + 백필** (아래)
+4. `BenchmarkType.KOSPI.yahooTicker`가 쓰이지 않게 된다 — **지우지 말 것.** enum이 셋을 함께 들고 있고 SPX·BTC는 계속 쓴다. 안 쓰인다는 사실을 KDoc에 남긴다
 
 ## FSC 수집기
 
 원자재의 `CommoditySource` 패턴을 따른다 — **가져오기만 소스별이고 저장은 공용이다.**
 
-### 경로를 추측하지 않는다
+### 실측으로 확정 (2026-08-17, 직접 호출)
 
-원자재 때 오퍼레이션 경로를 명명 규약으로 추측했다가 `getGoldPrcInfo`·`getGoldMarketPriceInfo`가
-**둘 다 오답**이었고, 실측으로만 `getGoldPriceInfo`가 확정됐다. 포털은 경로가 없으면 키를 보기 전에
-`NO_OPENAPI_SERVICE_ERROR`(12)를 내고, 있으면 키 검증까지 간다 — 이 차이로 경로를 가릴 수 있다.
+초안은 이 절을 "구현 1단계에서 실측한다"로 열어 뒀다. **실측했고 아래는 추측이 아니다.**
 
-**구현 1단계는 실측이다.** 아래를 실제 응답으로 확인한 뒤 코드에 박는다.
+```
+GET {BASE}/GetMarketIndexInfoService/getStockMarketIndex
+    ?serviceKey=… &resultType=json &numOfRows=3000 &pageNo=1
+    &idxNm=코스피 &beginBasDt=YYYYMMDD &endBasDt=YYYYMMDD
+```
 
-1. 오퍼레이션 경로
-2. 과거 조회 파라미터명과 지원 여부 (`basDt` 단건인지 `beginBasDt`/`endBasDt` 범위인지)
-3. KOSPI를 고르는 필드 (`idxNm` 등)와 정확한 값
-4. 종가 필드명
+| 항목 | 값 |
+|---|---|
+| 날짜 필드 | `basDt` (`yyyyMMdd`) |
+| 종가 필드 | `clpr` — 2026-08-13 = **6,813.34** |
+| KOSPI 선별 | `idxNm=코스피` (**정확 일치**, `totalCount=1`, `idxCsf='KOSPI시리즈'`) |
+| 범위 조회 | **지원.** 1년 = 242영업일이 **한 페이지**에 (`numOfRows=3000` 존중, 잘림 없음) |
 
-### 지수 선별은 이름 매칭 + 설정화
+### 🔴 `idxNm`만으로는 지수가 유일하지 않다
 
-AF-110에서 해외 지수 이름 검사를 강화한 전례(#162)를 따른다. 코드에 문자열을 흩지 않고
-`application.yml`에 둔다.
+같은 응답에 **`"IT 서비스"`가 `KOSPI시리즈`와 `KOSDAQ시리즈`에 둘 다** 있었다(1주 조회에 `totalCount=672`). `idxNm=코스피`가 지금 1건인 것은 그 이름이 마침 유일해서다.
+
+**설정 단위는 `(idxNm, idxCsf)` 쌍으로 둔다.** 이름만으로 고르면 지수를 하나 더할 때 **잘못된 시리즈를 집는다** — 값이 그럴듯해서 숫자로는 못 알아챈다. AF-110이 해외 지수 이름 검사를 강화한 것(#162)과 같은 방향이다.
+
+### 🔴 `fltRt`가 앞의 0을 생략한다
+
+원문이 `.73` · `-.6`이다. **금 수집기(#178)와 똑같은 함정**이고 그쪽에 이미 방어와 테스트가 있다 — 파서를 재사용하거나 같은 형식을 테스트로 고정할 것. (등락률을 저장하진 않지만 파싱 단계에서 죽으면 행이 통째로 버려진다.)
 
 ### 스케줄
 
-기존 수집 스케줄러(AF-103, GitHub Actions cron)에 붙인다. D+1 데이터이므로 하루 1회면 충분하다.
+기존 수집 스케줄러(AF-103, GitHub Actions cron)에 붙인다. D+1 확정 종가라 하루 1회면 충분하다.
 
-## 백필 — 조건부, 실패해도 설계가 무너지지 않는다
+## 백필 — 조건부가 아니다, 된다
 
-과거 기간 조회가 되면 **1년치를 채워 YTD·1Y를 살린다.** 실행 경로는 기존 백필 전례
-(`scripts/fx-backfill.sh` + admin 엔드포인트)를 따른다.
+**초안의 "지원하지 않으면 오늘부터 쌓인다" 분기는 무효다.** 범위 조회가 실측으로 확인됐다 — 2025-08-18 ~ 2026-08-13 요청에 **242영업일이 한 페이지로** 돌아왔다.
 
-**지원하지 않으면 KOSPI도 오늘부터 쌓인다.** 그 경우 SPX·BTC와 같은 처지가 되고, 이미 있는 규약이
-그대로 받아낸다 — `ReportService.benchmark()`는 데이터가 없는 벤치마크를 목록에서 제외한다(QA P1 #10).
-빈 값이 화면에 0으로 뜨지 않는다.
+1년치를 채워 YTD·1Y를 살린다. 실행 경로는 기존 백필 전례(`scripts/fx-backfill.sh` + admin 엔드포인트)를 따른다.
 
-## Yahoo 행 1회 정리
+### 교차 검증 — 소스를 바꿔도 숫자가 안 흔들린다
 
-`benchmark_daily`는 `(index_type, date)`가 키다. FSC 백필은 **겹치는 날짜만** 덮는다. 범위 밖 옛
-Yahoo 행이 남으면 **한 시계열 안에 두 소스가 말없이 섞인다.**
+FSC 데이터로 KOSPI YTD를 계산하니 **61.68%**, 현재 화면(Yahoo 기반)이 **+61.92%**. **차이 0.24%p**다. 61% 움직임에서 상대 오차 0.4%이고, 기준일 규약 차이로 설명된다(역산한 화면의 기준값 4,207.84 vs FSC의 2025년 마지막 종가 4,214.17).
 
-→ 백필 전에 `DELETE FROM benchmark_daily WHERE index_type = 'KOSPI'`를 1회 실행한다.
+**이관 후 사용자가 보는 숫자가 사실상 그대로라는 뜻이다.** 이 검증 없이 소스를 바꾸면 값이 달라졌을 때 그게 이관 탓인지 원래 차이인지 가릴 수 없다.
 
-`SPX`·`BTC` 행은 이관 후 아무도 읽지 않으므로 그대로 둔다(삭제해도 무방하나 이득이 없다).
+## Yahoo 행 1회 정리 — KOSPI만
 
-## 표기 변경
+`benchmark_daily`는 `(index_type, date)`가 키다. FSC 백필은 **겹치는 날짜만** 덮는다. 범위 밖 옛 Yahoo 행이 남으면 **한 시계열 안에 두 소스가 말없이 섞인다.**
 
-**BTC 기준이 바뀐다 — BTC-USD → BTC-KRW.** Upbit 일봉은 원화 가격이다. 원화 포트폴리오와 비교하는
-맥락에서는 오히려 맞지만 **숫자가 달라지므로 밝혀야 한다.** 라벨과 화면 각주에 표기한다.
+→ 백필 전에 **`DELETE FROM benchmark_daily WHERE index_type = 'KOSPI'`** 를 1회 실행한다.
 
-`BenchmarkType.yahooTicker`는 의미를 잃으므로 지운다.
+**`SPX`·`BTC` 행은 절대 지우지 않는다.** 그쪽은 Yahoo가 계속 채우는 살아 있는 시계열이다. (초안은 "아무도 안 읽으니 그대로 둔다"고 적었는데, 셋을 다 옮긴다는 전제에서 나온 문장이라 지금은 틀렸다.)
 
-가격지수/TR 각주(티켓이 경고한 배당 문제)는 **오버레이 본체 몫이라 이번 범위에 넣지 않는다.**
+**순서가 안전한 이유**: 백필이 된다는 것이 실측으로 확인됐다. 안 됐다면 지우고 채울 것이 없어졌을 것이다 — 지우기 전에 백필 한 번을 드라이런해 건수를 확인할 것.
+
+## 표기 변경 — 이번엔 없다
+
+초안은 **BTC 기준이 BTC-USD → BTC-KRW로 바뀌므로 각주가 필요하다**고 적었다. **BTC를 안 옮기기로 했으므로 무효다.** 기준이 안 바뀌니 라벨도 각주도 그대로 둔다.
+
+`BenchmarkType.yahooTicker`도 **지우지 않는다** — SPX·BTC가 계속 쓴다. KOSPI 것만 쓰이지 않게 되므로 그 사실을 KDoc에 남긴다.
+
+가격지수/TR 각주(배당 문제)는 오버레이 본체 몫이라 이번 범위 밖이다.
 
 ## 테스트
 
-- 합성 어댑터: 타입 라우팅, 빈 데이터, 날짜 경계(from·to 포함 여부)
-- SPX: 같은 날 여러 슬롯이 있을 때 `CLOSE`만 고르는지
-- BTC: `currency` 필터가 BTC 외 통화를 안 집어오는지
-- FSC 파서: 이름 매칭, 결측 행, 숫자 파싱. **런타임 검증을 넣는다** — AF-104에서 타입 선언이
-  런타임을 검사하지 않아 자릿수가 날아가고 0이 대시로 표시된 전례가 있다
-- 회귀: Yahoo 제거 후 기존 리포트 테스트 5종이 그대로 통과하는지 —
-  `ReportServiceTest` · `GetReturnsAnalysisUseCaseTest` · `MonthlyReportGeneratorTest` ·
-  `ReportControllerReturnsPercentTest` · `GetDashboardUseCase*Test`
+- **FSC 파서**: `(idxNm, idxCsf)` 쌍으로 고르는지 — **두 시리즈에 같은 이름이 섞인 픽스처**를 쓸 것. 한 종목만 있으면 필터를 지워도 통과한다(#178에서 같은 함정을 겪었다)
+- `fltRt`의 `.73`·`-.6` 형식 파싱
+- `basDt` → `LocalDate` (`yyyyMMdd`)
+- `items`가 배열이 아닐 때(0건) 빈 목록 — 공공데이터포털 관례
+- **숫자 런타임 검증**: AF-104에서 타입 선언이 런타임을 검사하지 않아 자릿수가 날아가고 0이 대시로 표시된 전례가 있다
+- **`BenchmarkSyncService`가 KOSPI를 안 건드리는지** — 이게 이번 변경의 핵심 회귀다. 안 막으면 두 소스가 같은 행을 번갈아 덮어써 값이 실행마다 흔들린다. **변이로 확인할 것**: 건너뛰기를 지우면 실패해야 한다
+- 회귀: `ReportServiceTest` · `GetReturnsAnalysisUseCaseTest` · `MonthlyReportGeneratorTest` · `ReportControllerReturnsPercentTest` · `GetDashboardUseCase*Test` — **이번 설계는 읽는 쪽을 안 건드리므로 전부 그대로 통과해야 한다.** 하나라도 깨지면 범위를 넘은 것이다
 
 ## 미결 — 설계로 없앨 수 없는 것
 
-1. **FSC 지수 오퍼레이션 경로·파라미터 미확인.** 구현 1단계에서 실측한다
-2. 🔴 **`FSC_API_KEY`의 15094807 활용신청 승인이 따로 필요하다 — 사용자 작업이다.**
-   공공데이터포털은 데이터셋별로 활용신청이 별개다. 기존 키가 15094805(일반상품)에만 승인돼 있으면
-   지수는 `SERVICE_KEY_IS_NOT_REGISTERED_ERROR`가 계속 난다. **승인 전에는 KOSPI 수집이 0건이다**
-3. **SPX·BTC 이력이 2026-08-12부터**다. 당분간 YTD·1Y는 짧거나 빈다. 백필 경로가 없다
-4. **KIS·Upbit의 약관 미결은 이 작업으로 닫히지 않는다.** SPX·BTC가 거기 걸려 있고, 노출 표면이
-   늘지 않을 뿐이다
+1. ~~FSC 지수 오퍼레이션 경로·파라미터 미확인~~ → **닫힘.** 2026-08-17 실측
+2. ~~`FSC_API_KEY`의 15094807 활용신청 승인~~ → **닫힘.** 2026-08-17 승인 완료, 호출 성공
+3. **KIS·Upbit 약관 미결은 이 작업으로 안 닫힌다.** SPX·BTC가 Yahoo에 남으므로 **Yahoo 비공식 엔드포인트 의존도 남는다.** 이번 결정은 그것을 없애는 대신 **미루는** 것이고, 미루는 이유는 지금 옮기면 손해만 나기 때문이다(결정 절 참조)
+4. **KOSPI가 두 곳에서 나온다** — 시장 화면은 KIS(하루 세 슬롯, 실시간성), 벤치마크·대시보드는 FSC(D+1 확정 종가, 이력 정합성). 용도가 실제로 달라 결함이 아니지만, 코드 주석과 화면 표기에 남긴다
 
 ## 범위 밖
 
