@@ -2,6 +2,7 @@ package com.allfolio.app
 
 import com.allfolio.broker.samsung.SamsungProperties
 import com.allfolio.broker.toss.TossProperties
+import com.allfolio.dart.DartProperties
 import com.allfolio.external.crypto.BinanceProperties
 import com.allfolio.fx.EcosProperties
 import com.allfolio.fx.exchange.ExchangeFxProperties
@@ -29,6 +30,7 @@ import org.springframework.scheduling.annotation.EnableScheduling
     OkxWsProperties::class, CoinoneWsProperties::class,
     EcosProperties::class,
     ExchangeFxProperties::class,
+    DartProperties::class,
 )
 class BackendApplication
 

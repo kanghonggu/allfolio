@@ -504,6 +504,15 @@ fred:
   api-key: ${FRED_API_KEY:}
   base-url: ${FRED_BASE_URL:https://api.stlouisfed.org}
 
+# D1 공시 연동 — OpenDART
+# 인증키가 쿼리 파라미터(crtfc_key=)에 실린다. FRED·공공데이터포털과 같은 방어를 지킬 것:
+# 전체 URL을 로그에 찍지 않는다 · 예외에 cause를 붙이지 않는다 · 응답 본문 미리보기를 남기지 않는다.
+dart:
+  api-key: ${DART_API_KEY:}
+  base-url: ${DART_BASE_URL:https://opendart.fss.or.kr/api}
+  page-count: 100
+  timeout-seconds: 30
+
 logging:
   level:
     root: INFO
