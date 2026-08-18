@@ -72,7 +72,7 @@ data class DisclosureInsert(
  * "컬럼 정렬이 맞다"의 증거로 여기지 말 것.
  */
 @Component
-class JdbcDisclosureStore(private val jdbc: JdbcTemplate) {
+class JdbcDisclosureStore(private val jdbc: JdbcTemplate) : DartDisclosureCollectService.Store {
 
     companion object {
         /** 근거는 클래스 KDoc "청크 크기" 절. 상한 4,681행의 4배 이상 여유. */
@@ -83,7 +83,7 @@ class JdbcDisclosureStore(private val jdbc: JdbcTemplate) {
     }
 
     @Transactional
-    fun insertIgnoringConflicts(rows: List<DisclosureInsert>, collectedAt: LocalDateTime): List<String> {
+    override fun insertIgnoringConflicts(rows: List<DisclosureInsert>, collectedAt: LocalDateTime): List<String> {
         if (rows.isEmpty()) return emptyList()
         val deduped = rows.associateBy { it.rceptNo }.values.toList()
 
