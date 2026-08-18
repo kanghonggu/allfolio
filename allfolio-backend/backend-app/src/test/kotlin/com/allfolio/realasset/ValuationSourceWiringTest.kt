@@ -1,6 +1,8 @@
 package com.allfolio.realasset
 
 import com.allfolio.unifiedasset.infrastructure.jpa.MarketCommodityQuoteJpaRepository
+import com.allfolio.unifiedasset.infrastructure.jpa.RealAssetJpaRepository
+import com.allfolio.unifiedasset.infrastructure.jpa.RealAssetValuationJpaRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -31,8 +33,14 @@ import org.springframework.context.annotation.ComponentScan
 )
 class ValuationSourceWiringTest {
 
-    // 레포는 이 테스트의 관심사가 아니다 — 배선만 본다. 진짜 쿼리는 리포지터리 테스트가 문다
-    @MockBean private lateinit var repository: MarketCommodityQuoteJpaRepository
+    // 레포는 이 테스트의 관심사가 아니다 — 배선만 본다. 진짜 쿼리는 리포지터리 테스트가 문다.
+    // **패키지 전체를 스캔하므로 이 패키지의 빈이 늘면 그 의존도 여기 세워 줘야 한다** —
+    // 안 그러면 배선 테스트가 "어댑터가 빠졌다"가 아니라 "레포 빈이 없다"로 빨개져 신호가 흐려진다.
+    @MockBean private lateinit var quoteRepository: MarketCommodityQuoteJpaRepository
+
+    @MockBean private lateinit var assetRepository: RealAssetJpaRepository
+
+    @MockBean private lateinit var valuationRepository: RealAssetValuationJpaRepository
 
     @Autowired private lateinit var sources: List<ValuationSource>
 

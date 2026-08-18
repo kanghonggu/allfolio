@@ -6,6 +6,7 @@ import com.allfolio.api.admin.DartAdminController
 import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.api.admin.MarketRateAdminController
+import com.allfolio.api.admin.RealAssetValuationAdminController
 import com.allfolio.dart.DartRunResult
 import com.allfolio.dart.corp.CorpMapSummary
 import com.allfolio.fx.BackfillSummary
@@ -17,6 +18,7 @@ import com.allfolio.market.index.IndexSlot
 import com.allfolio.market.index.OverseasIndexCollectSummary
 import com.allfolio.market.index.OverseasSchedule
 import com.allfolio.market.rate.RateCollectSummary
+import com.allfolio.realasset.RealAssetValuationSummary
 import com.allfolio.workflow.application.WfRunSummary
 import com.allfolio.workflow.application.WfStepExecutor
 import org.slf4j.LoggerFactory
@@ -58,6 +60,7 @@ class SchedulerTriggerController(
     private val commodityAdmin: CommodityAdminController,
     private val benchmarkAdmin: BenchmarkIndexAdminController,
     private val dartAdmin: DartAdminController,
+    private val realAssetAdmin: RealAssetValuationAdminController,
     private val stepExecutor: WfStepExecutor,
     @Value("\${scheduler.trigger-token:}") private val configuredToken: String,
 ) {
@@ -270,6 +273,31 @@ class SchedulerTriggerController(
     ): ResponseEntity<CorpMapSummary> {
         authorize(token)
         return dartAdmin.refreshCorpMap()
+    }
+
+    /**
+     * POST /api/internal/scheduler/real-asset/valuate — 실물자산 평가 스냅샷 트리거 (A1 · G5)
+     *
+     * **날짜를 노출하지 않는다.** [RealAssetValuationAdminController.valuate]가 KST 오늘로 잡는다.
+     * 워크플로가 날짜를 계산해 실어 보내면 러너의 UTC 시계가 그대로 데이터에 새겨진다.
+     *
+     * **여기는 "수집"이 아니라 "평가"다 — 다른 트리거들과 성격이 갈리는 지점이 셋 있다.**
+     *  1. **상류를 안 부른다.** 우리 DB(`market_commodity_quote`)만 읽으므로 502가 나올 자리가
+     *     없다. 전량 실패는 우리 문제(마이그레이션 미적용·코드 오류)이고 500으로 나간다.
+     *  2. **평일이 아니라 매일 돈다.** 휴장일에도 폴백해서 스냅샷을 만들어야 자산 추이 그래프에
+     *     구멍이 안 생긴다. 그래서 워크플로 cron에 요일 필터가 없다.
+     *  3. **대상 0건이 정상이다.** 평가 대상은 설정이 아니라 사용자가 등록한 자산이라,
+     *     아무도 실물자산을 안 넣었으면 0건이 맞다. 이걸 실패로 내면 배포 첫날부터 매일 빨개진다.
+     *
+     * 어드민 컨트롤러에 위임하는 이유는 형제 트리거들과 같다 — 상태 코드가 담는 "운영자를 어디로
+     * 보낼지"가 Actions 로그를 읽는 사람에게 그대로 필요하다. **이 위임을 "정리"하지 말 것.**
+     */
+    @PostMapping("/real-asset/valuate")
+    fun valuateRealAssets(
+        @RequestHeader(name = TOKEN_HEADER, required = false) token: String?,
+    ): ResponseEntity<RealAssetValuationSummary> {
+        authorize(token)
+        return realAssetAdmin.valuate(null)
     }
 
     /**
