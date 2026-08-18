@@ -802,6 +802,32 @@ git commit -m "feat(d1): OpenDART 설정 바인딩"
 
 ## Task 6: `list.json` 클라이언트
 
+> ### ⚠️ 테스트 방식 — MockWebServer를 쓰지 않는다
+>
+> **이 레포는 JDK 내장 `com.sun.net.httpserver.HttpServer`로 루프백 스텁을 띄운다.**
+> MockWebServer도 WireMock도 의존성에 없고, 추가하지 않는다. 모범 사례를 그대로 따를 것:
+>
+> - 테스트 예시: `allfolio-backend/backend-app/src/test/kotlin/com/allfolio/market/commodity/fsc/FscCommodityClientTest.kt`
+> - 커넥터 헬퍼: `allfolio-backend/backend-app/src/test/kotlin/com/allfolio/test/StubServerConnector.kt`의 `dedicatedConnector()`
+>
+> **`dedicatedConnector()`를 반드시 쓸 것.** 기본 커넥터는 reactor-netty의 JVM 전역 풀인데,
+> 모듈 전체가 JVM 하나로 돌면서 스텁 서버 수십 개가 임시 포트에 떴다 죽는다. 죽은 소켓이
+> 풀에 남아 `Connection prematurely closed`가 산발적으로 난다 — 클래스 격리 실행에서는
+> 재현되지 않아 잡기 어렵다. 그 파일의 주석에 실측 표가 있다.
+>
+> **클라이언트는 커넥터를 주입받을 수 있어야 한다.** `FscCommodityClient`와 같은 모양으로:
+> ```kotlin
+> /** HTTP 커넥터. **운영은 null로 두고 기본값을 쓴다** */
+> internal var connector: ClientHttpConnector? = null
+>
+> private val webClient = WebClient.builder()
+>     .also { b -> connector?.let(b::clientConnector) }
+>     .build()
+> ```
+> 아래 테스트 코드 블록은 **단언할 내용의 목록**으로 읽을 것 — 스텁을 띄우고 응답을 돌려주는
+> 골격은 `FscCommodityClientTest`에서 가져온다.
+
+
 **Files:**
 - Create: `allfolio-backend/backend-app/src/main/kotlin/com/allfolio/dart/list/DartListClient.kt`
 - Test: `allfolio-backend/backend-app/src/test/kotlin/com/allfolio/dart/list/DartListClientTest.kt`
@@ -815,13 +841,15 @@ package com.allfolio.dart.list
 
 import com.allfolio.dart.DartProperties
 import com.fasterxml.jackson.databind.ObjectMapper
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import com.allfolio.test.dedicatedConnector
+import com.sun.net.httpserver.HttpExchange
+import com.sun.net.httpserver.HttpServer
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.net.InetSocketAddress
+import java.net.URLDecoder
 import java.time.LocalDate
 
 /**
@@ -829,32 +857,48 @@ import java.time.LocalDate
  */
 class DartListClientTest {
 
-    private lateinit var server: MockWebServer
-    private lateinit var client: DartListClient
+    private companion object { const val API_KEY = "SUPERSECRETDARTKEY1234" }
 
-    @BeforeEach fun setUp() {
-        server = MockWebServer().apply { start() }
-        client = DartListClient(
-            DartProperties(apiKey = "test-key", baseUrl = server.url("/api").toString().trimEnd('/')),
-            ObjectMapper(),
-        )
+    private var server: HttpServer? = null
+    private val received = java.util.concurrent.atomic.AtomicReference<String>()
+
+    @AfterEach fun tearDown() { server?.stop(0) }
+
+    /** 본문 하나를 200으로 돌려주는 루프백 스텁. 요청 쿼리를 [received]에 남긴다 */
+    private fun serving(body: String): Int {
+        val s = HttpServer.create(InetSocketAddress(0), 0)
+        s.createContext("/") { ex ->
+            received.set(ex.requestURI.rawQuery)
+            val bytes = body.toByteArray()
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        }
+        s.start(); server = s
+        return s.address.port
     }
 
-    @AfterEach fun tearDown() = server.shutdown()
+    // dedicatedConnector를 쓰는 이유는 StubServerConnector.kt 주석에 있다 — 빼면 간헐적으로 깨진다
+    private fun client(port: Int, key: String = API_KEY) = DartListClient(
+        DartProperties(apiKey = key, baseUrl = "http://localhost:$port"),
+        ObjectMapper(),
+    ).apply { connector = dedicatedConnector() }
 
-    private fun enqueue(body: String) =
-        server.enqueue(MockResponse().setBody(body).setHeader("Content-Type", "application/json"))
+    private fun queryOf(raw: String): Map<String, String> =
+        raw.split("&").associate { p ->
+            val (n, v) = p.split("=", limit = 2)
+            URLDecoder.decode(n, "UTF-8") to URLDecoder.decode(v, "UTF-8")
+        }
 
     @Test
     fun `정상 응답을 파싱한다`() {
-        enqueue("""
+        val port = serving("""
             {"status":"000","message":"정상","page_no":1,"page_count":10,"total_count":95,"total_page":10,
              "list":[{"corp_code":"00152880","corp_name":"코오롱글로벌","stock_code":"003070","corp_cls":"Y",
                       "report_nm":"단일판매ㆍ공급계약체결              ","rcept_no":"20260818800172",
                       "flr_nm":"코오롱글로벌","rcept_dt":"20260818","rm":"유"}]}
         """.trimIndent())
 
-        val page = client.fetchPage(LocalDate.of(2026, 8, 18), LocalDate.of(2026, 8, 18), 1)
+        val page = client(port).fetchPage(LocalDate.of(2026, 8, 18), LocalDate.of(2026, 8, 18), 1)
 
         assertThat(page.totalPage).isEqualTo(10)
         assertThat(page.rows).hasSize(1)
@@ -869,14 +913,14 @@ class DartListClientTest {
     @Test
     fun `stock_code 빈 문자열은 null이 된다`() {
         // 실측 3,273건이 이 형태다(전부 corp_cls=E). NULL로 안 바꾸면 부분 인덱스가 죽는다.
-        enqueue("""
+        val port = serving("""
             {"status":"000","total_page":1,
              "list":[{"corp_code":"01888779","corp_name":"제이엠밸브","stock_code":"","corp_cls":"E",
                       "report_nm":"감사보고서 (2025.12)","rcept_no":"20260818000094",
                       "flr_nm":"모두공인회계사감사반(제547호)","rcept_dt":"20260818","rm":""}]}
         """.trimIndent())
 
-        val page = client.fetchPage(LocalDate.of(2026, 8, 18), LocalDate.of(2026, 8, 18), 1)
+        val page = client(port).fetchPage(LocalDate.of(2026, 8, 18), LocalDate.of(2026, 8, 18), 1)
 
         assertThat(page.rows.first().stockCode).isNull()
         assertThat(page.rows.first().rm).isNull()
@@ -886,7 +930,7 @@ class DartListClientTest {
     fun `status 013은 실패가 아니라 빈 결과다`() {
         // 공휴일 응답. 2026-08-17(광복절 대체공휴일)이 이것이었다.
         // 실패로 다루면 대체공휴일마다 배치가 빨갛게 된다.
-        enqueue("""{"status":"013","message":"조회된 데이타가 없습니다."}""")
+        val port = serving("""{"status":"013","message":"조회된 데이타가 없습니다."}""")
 
         val page = client.fetchPage(LocalDate.of(2026, 8, 17), LocalDate.of(2026, 8, 17), 1)
 
@@ -897,7 +941,7 @@ class DartListClientTest {
 
     @Test
     fun `그 밖의 status는 예외다`() {
-        enqueue("""{"status":"020","message":"요청 제한을 초과하였습니다."}""")
+        val port = serving("""{"status":"020","message":"요청 제한을 초과하였습니다."}""")
 
         assertThatThrownBy {
             client.fetchPage(LocalDate.of(2026, 8, 18), LocalDate.of(2026, 8, 18), 1)
@@ -907,43 +951,39 @@ class DartListClientTest {
 
     @Test
     fun `인증키가 비면 호출하지 않고 예외를 던진다`() {
-        val noKey = DartListClient(
-            DartProperties(apiKey = "", baseUrl = server.url("/api").toString().trimEnd('/')),
-            ObjectMapper(),
-        )
+        // 아무도 듣지 않는 포트 — 호출이 나가면 연결 거부로 다른 예외가 된다
+        val deadPort = java.net.ServerSocket(0).use { it.localPort }
 
         assertThatThrownBy {
-            noKey.fetchPage(LocalDate.of(2026, 8, 18), LocalDate.of(2026, 8, 18), 1)
+            client(deadPort, key = "").fetchPage(LocalDate.of(2026, 8, 18), LocalDate.of(2026, 8, 18), 1)
         }.isInstanceOf(DartApiException::class.java).hasMessageContaining("DART_API_KEY")
-
-        assertThat(server.requestCount).isZero()
     }
 
     @Test
     fun `예외 메시지에 인증키가 들어가지 않는다`() {
         // 이 메시지는 어드민 응답과 GitHub Actions 주석까지 나간다.
-        enqueue("""{"status":"020","message":"요청 제한을 초과하였습니다."}""")
+        val port = serving("""{"status":"020","message":"요청 제한을 초과하였습니다."}""")
 
         val thrown = runCatching {
             client.fetchPage(LocalDate.of(2026, 8, 18), LocalDate.of(2026, 8, 18), 1)
         }.exceptionOrNull()!!
 
-        assertThat(thrown.message).doesNotContain("test-key")
+        assertThat(thrown.stackTraceToString()).doesNotContain(API_KEY)
         assertThat(thrown.cause).isNull()
     }
 
     @Test
     fun `요청에 날짜와 페이지가 값으로 실린다`() {
-        enqueue("""{"status":"013","message":"조회된 데이타가 없습니다."}""")
+        val port = serving("""{"status":"013","message":"조회된 데이타가 없습니다."}""")
 
-        client.fetchPage(LocalDate.of(2026, 8, 17), LocalDate.of(2026, 8, 18), 3)
+        client(port).fetchPage(LocalDate.of(2026, 8, 17), LocalDate.of(2026, 8, 18), 3)
 
         // 문자열 통째 비교는 파라미터 순서가 바뀌면 깨진다 — 값으로 파싱해 본다
-        val url = server.takeRequest().requestUrl!!
-        assertThat(url.queryParameter("bgn_de")).isEqualTo("20260817")
-        assertThat(url.queryParameter("end_de")).isEqualTo("20260818")
-        assertThat(url.queryParameter("page_no")).isEqualTo("3")
-        assertThat(url.queryParameter("page_count")).isEqualTo("100")
+        val q = queryOf(received.get())
+        assertThat(q["bgn_de"]).isEqualTo("20260817")
+        assertThat(q["end_de"]).isEqualTo("20260818")
+        assertThat(q["page_no"]).isEqualTo("3")
+        assertThat(q["page_count"]).isEqualTo("100")
     }
 }
 ```
@@ -956,11 +996,7 @@ cd allfolio-backend && ./gradlew :backend-app:test --tests "com.allfolio.dart.li
 
 Expected: 컴파일 실패 — `Unresolved reference: DartListClient`
 
-MockWebServer 의존성이 없으면 `backend-app/build.gradle.kts`의 `dependencies`에 추가한다:
-
-```kotlin
-testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
-```
+**의존성을 추가하지 말 것.** 위 경고대로 JDK `HttpServer`를 쓴다 — 추가할 것이 없다.
 
 - [ ] **Step 3: 구현**
 
@@ -1078,14 +1114,45 @@ Expected: PASS, 7 tests
 
 ```bash
 git add allfolio-backend/backend-app/src/main/kotlin/com/allfolio/dart/list/DartListClient.kt \
-        allfolio-backend/backend-app/src/test/kotlin/com/allfolio/dart/list/DartListClientTest.kt \
-        allfolio-backend/backend-app/build.gradle.kts
+        allfolio-backend/backend-app/src/test/kotlin/com/allfolio/dart/list/DartListClientTest.kt
 git commit -m "feat(d1): list.json 클라이언트 — status 013은 공휴일이지 실패가 아니다"
 ```
 
 ---
 
 ## Task 7: 델타 확보 스토어 (`ON CONFLICT ... RETURNING`)
+
+> ### ⚠️ 테스트 방식 — H2로 실행하지 않는다
+>
+> **H2 2.2.224는 PostgreSQL 모드에서도 `ON CONFLICT`와 `RETURNING`을 둘 다 지원하지 않는다.**
+> 실측으로 확인했다:
+> ```
+> ON CONFLICT 미지원: Syntax error ... VALUES (?,?) [*]ON CONFLICT (k) DO NOTHING
+> RETURNING  미지원: Syntax error ... VALUES (?,?) [*]ON CONFLICT (k) DO NOTHING RETURNING k
+> ```
+> CI(`deploy.yml`)는 순수 ubuntu + JDK 21에서 `./gradlew test`만 돌린다 — Postgres가 없다.
+> 따라서 이 SQL은 **CI에서 실행할 수 없다.**
+>
+> **레포에 이미 같은 문제를 푼 선례가 있고, 그 방식을 따른다:**
+> `unified-asset/src/test/kotlin/com/allfolio/unifiedasset/application/usecase/PerformanceSnapshotFakes.kt`의
+> `CapturingJdbcTemplate`(= `JdbcTemplate()`을 상속해 `update`/`query`를 가로채고 SQL·인자를 모아 둠,
+> DataSource 없이 동작). `PerformanceSnapshotDateTest`의 KDoc이 "H2 통합 경로는 막혀 있다 —
+> INSERT도 Postgres 전용 ON CONFLICT다"라고 그 이유를 적어 두었다.
+>
+> `CapturingJdbcTemplate`은 `unified-asset` 테스트 소스라 `backend-app`에서 재사용할 수 없다.
+> **같은 모양의 fake를 `backend-app` 테스트에 하나 만들 것** (예: `com.allfolio.dart.list.CapturingJdbc`).
+>
+> **검증 대상은 셋이다:**
+> 1. **SQL 문자열** — `ON CONFLICT (rcept_no) DO NOTHING`과 `RETURNING rcept_no`가 들어 있는가
+> 2. **바인딩 인자** — 14개 컬럼이 순서대로, `stockCode`가 null이면 null로
+> 3. **배치 안 중복 접기와 델타 매핑** — 같은 `rcept_no`가 두 번 오면 한 번만 실행되는가,
+>    `query`가 돌려준 행이 그대로 델타가 되는가 (fake의 `query` 반환값을 테스트가 정한다)
+>
+> **SQL 자체는 실제 Postgres로 1회 수동 검증하고 커밋 메시지에 남긴다** — Task 1의
+> 마이그레이션과 같은 방식이다. 로컬에 `docker compose up -d postgres`로 띄우고,
+> Task 1의 마이그레이션을 적용한 뒤 이 INSERT를 두 번 실행해 두 번째가 빈 결과를
+> 돌려주는 것을 눈으로 볼 것. 그 출력을 보고에 인용할 것.
+
 
 **Files:**
 - Create: `allfolio-backend/backend-app/src/main/kotlin/com/allfolio/dart/list/JdbcDisclosureStore.kt`
@@ -1099,46 +1166,37 @@ git commit -m "feat(d1): list.json 클라이언트 — status 013은 공휴일�
 package com.allfolio.dart.list
 
 import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType
+import org.springframework.jdbc.core.RowMapper
 import java.time.LocalDate
 import java.time.LocalDateTime
 
 /**
- * H2 PostgreSQL 모드로 돈다. ON CONFLICT 문법이 실제로 도는지 보는 게 목적이라
- * 스토어를 가짜로 바꾸면 의미가 없다.
+ * SQL을 실행하지 않고 **가로챈다**. H2는 PostgreSQL 모드에서도 `ON CONFLICT`와 `RETURNING`을
+ * 둘 다 지원하지 않고(실측), CI에는 Postgres가 없다. `PerformanceSnapshotDateTest`가 같은
+ * 이유로 같은 방식을 쓴다 — 그쪽 KDoc에 근거가 있다.
+ *
+ * 그래서 이 테스트가 못 잡는 것이 있다: **SQL이 Postgres에서 실제로 도는지**. 그건 구현 시
+ * 로컬 Postgres로 1회 확인하고 커밋 메시지에 남긴다.
  */
 class JdbcDisclosureStoreTest {
 
-    private lateinit var jdbc: JdbcTemplate
-    private lateinit var store: JdbcDisclosureStore
+    /** 실행 SQL과 바인딩 인자를 모아 두는 fake. DataSource 없이 동작한다(super 호출 없음) */
+    private class CapturingJdbc(
+        /** `RETURNING`이 돌려줄 rcept_no. 테스트가 "이미 있던 건"을 흉내 내려면 비운다 */
+        var returning: (String) -> List<String> = { listOf(it) },
+    ) : JdbcTemplate() {
+        val queries = mutableListOf<Pair<String, List<Any?>>>()
+
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : Any?> query(sql: String, rowMapper: RowMapper<T>, vararg args: Any?): List<T> {
+            queries += sql to args.toList()
+            return returning(args[0] as String) as List<T>
+        }
+    }
 
     private val now = LocalDateTime.of(2026, 8, 18, 19, 0)
-
-    @BeforeEach
-    fun setUp() {
-        val db = EmbeddedDatabaseBuilder()
-            .setType(EmbeddedDatabaseType.H2)
-            .setName("dart;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE")
-            .build()
-        jdbc = JdbcTemplate(db)
-        jdbc.execute("""
-            CREATE TABLE dart_disclosure (
-                rcept_no VARCHAR(14) PRIMARY KEY,
-                corp_code VARCHAR(8) NOT NULL, corp_name VARCHAR(200) NOT NULL,
-                stock_code VARCHAR(6), corp_cls VARCHAR(1),
-                report_nm TEXT NOT NULL, report_nm_norm TEXT NOT NULL,
-                rcept_dt DATE NOT NULL, flr_nm VARCHAR(200), rm VARCHAR(20),
-                is_material BOOLEAN NOT NULL DEFAULT FALSE, material_tier SMALLINT,
-                is_correction BOOLEAN NOT NULL DEFAULT FALSE,
-                collected_at TIMESTAMP NOT NULL
-            )
-        """.trimIndent())
-        store = JdbcDisclosureStore(jdbc)
-    }
 
     private fun row(rceptNo: String, stockCode: String? = "005930") = DisclosureInsert(
         rceptNo = rceptNo, corpCode = "00126380", corpName = "삼성전자",
@@ -1149,57 +1207,85 @@ class JdbcDisclosureStoreTest {
     )
 
     @Test
-    fun `처음 넣으면 전부 델타다`() {
-        val delta = store.insertIgnoringConflicts(listOf(row("A1"), row("A2")), now)
-        assertThat(delta).containsExactlyInAnyOrder("A1", "A2")
+    fun `SQL에 ON CONFLICT DO NOTHING과 RETURNING이 들어간다`() {
+        // 이 둘이 멱등성과 델타의 근거다. 하나라도 빠지면 재실행이 중복을 쌓거나
+        // 델타가 전건이 되어 elestock을 매번 다시 부른다.
+        val jdbc = CapturingJdbc()
+
+        JdbcDisclosureStore(jdbc).insertIgnoringConflicts(listOf(row("A1")), now)
+
+        val sql = jdbc.queries.single().first
+        assertThat(sql).contains("INSERT INTO dart_disclosure")
+        assertThat(sql).contains("ON CONFLICT (rcept_no) DO NOTHING")
+        assertThat(sql).contains("RETURNING rcept_no")
     }
 
     @Test
-    fun `이미 있는 건은 델타가 아니다`() {
-        store.insertIgnoringConflicts(listOf(row("A1")), now)
+    fun `14개 컬럼이 순서대로 바인딩된다`() {
+        val jdbc = CapturingJdbc()
 
-        val delta = store.insertIgnoringConflicts(listOf(row("A1"), row("A2")), now)
+        JdbcDisclosureStore(jdbc).insertIgnoringConflicts(listOf(row("A1")), now)
+
+        assertThat(jdbc.queries.single().second).containsExactly(
+            "A1", "00126380", "삼성전자", "005930", "Y",
+            "단일판매ㆍ공급계약체결", "단일판매·공급계약체결",
+            LocalDate.of(2026, 8, 18), "삼성전자", "유",
+            true, 1.toShort(), false, now,
+        )
+    }
+
+    @Test
+    fun `stock_code가 null이면 null로 바인딩된다`() {
+        // 빈 문자열로 들어가면 부분 인덱스(WHERE stock_code IS NOT NULL)가 무용지물이 된다
+        val jdbc = CapturingJdbc()
+
+        JdbcDisclosureStore(jdbc).insertIgnoringConflicts(listOf(row("A1", stockCode = null)), now)
+
+        assertThat(jdbc.queries.single().second[3]).isNull()
+    }
+
+    @Test
+    fun `삽입된 행만 델타가 된다`() {
+        // RETURNING이 빈 결과인 건 = 이미 있던 건
+        val jdbc = CapturingJdbc(returning = { if (it == "A2") listOf(it) else emptyList() })
+
+        val delta = JdbcDisclosureStore(jdbc)
+            .insertIgnoringConflicts(listOf(row("A1"), row("A2")), now)
 
         assertThat(delta).containsExactly("A2")
     }
 
     @Test
-    fun `재실행해도 부작용이 없다`() {
-        store.insertIgnoringConflicts(listOf(row("A1")), now)
-        val delta = store.insertIgnoringConflicts(listOf(row("A1")), now)
+    fun `한 배치 안의 중복은 한 번만 실행된다`() {
+        // D-1과 D 범위가 겹쳐 같은 rcept_no가 두 번 올 수 있다.
+        // ON CONFLICT는 같은 문(statement) 안의 중복을 못 막으므로 사전에 접어야 한다.
+        val jdbc = CapturingJdbc()
+
+        val delta = JdbcDisclosureStore(jdbc)
+            .insertIgnoringConflicts(listOf(row("A1"), row("A1")), now)
+
+        assertThat(jdbc.queries).hasSize(1)
+        assertThat(delta).containsExactly("A1")
+    }
+
+    @Test
+    fun `빈 목록이면 SQL을 아예 실행하지 않는다`() {
+        val jdbc = CapturingJdbc()
+
+        val delta = JdbcDisclosureStore(jdbc).insertIgnoringConflicts(emptyList(), now)
 
         assertThat(delta).isEmpty()
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM dart_disclosure", Int::class.java)).isEqualTo(1)
+        assertThat(jdbc.queries).isEmpty()
     }
 
     @Test
-    fun `한 배치 안의 중복도 한 번만 들어간다`() {
-        // 실측상 D-1과 D 범위가 겹쳐 같은 rcept_no가 두 번 올 수 있다.
-        // ON CONFLICT는 같은 문(statement) 안의 중복은 못 막으므로 사전에 접어야 한다.
-        val delta = store.insertIgnoringConflicts(listOf(row("A1"), row("A1")), now)
+    fun `선행 0이 붙은 rcept_no가 문자열 그대로 바인딩된다`() {
+        // 숫자형으로 다루면 선행 0이 소실되어 원문 링크가 깨진다
+        val jdbc = CapturingJdbc()
 
-        assertThat(delta).containsExactly("A1")
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM dart_disclosure", Int::class.java)).isEqualTo(1)
-    }
+        JdbcDisclosureStore(jdbc).insertIgnoringConflicts(listOf(row("00260818000094")), now)
 
-    @Test
-    fun `stock_code null이 그대로 저장된다`() {
-        store.insertIgnoringConflicts(listOf(row("A1", stockCode = null)), now)
-
-        val stored = jdbc.queryForObject(
-            "SELECT stock_code FROM dart_disclosure WHERE rcept_no = 'A1'", String::class.java,
-        )
-        assertThat(stored).isNull()
-    }
-
-    @Test
-    fun `선행 0이 붙은 rcept_no가 문자열로 보존된다`() {
-        store.insertIgnoringConflicts(listOf(row("00260818000094")), now)
-
-        val stored = jdbc.queryForObject(
-            "SELECT rcept_no FROM dart_disclosure WHERE rcept_no = '00260818000094'", String::class.java,
-        )
-        assertThat(stored).isEqualTo("00260818000094")
+        assertThat(jdbc.queries.single().second[0]).isEqualTo("00260818000094")
     }
 }
 ```
@@ -1212,7 +1298,7 @@ cd allfolio-backend && ./gradlew :backend-app:test --tests "com.allfolio.dart.li
 
 Expected: 컴파일 실패 — `Unresolved reference: JdbcDisclosureStore`
 
-H2 의존성이 없으면 `backend-app/build.gradle.kts`에 `testImplementation("com.h2database:h2:2.2.224")`를 추가한다.
+**H2를 추가하지 말 것.** 위 경고대로 `CapturingJdbcTemplate` 방식을 쓴다 — 이 SQL은 H2에서 실행 자체가 안 된다.
 
 - [ ] **Step 3: 구현**
 
@@ -1286,14 +1372,35 @@ class JdbcDisclosureStore(private val jdbc: JdbcTemplate) {
 cd allfolio-backend && ./gradlew :backend-app:test --tests "com.allfolio.dart.list.JdbcDisclosureStoreTest"
 ```
 
-Expected: PASS, 6 tests
+Expected: PASS, 7 tests
 
-- [ ] **Step 5: 커밋**
+- [ ] **Step 5: SQL을 실제 Postgres로 1회 검증**
+
+가로채기 테스트는 SQL이 Postgres에서 **실제로 도는지**를 못 잡는다. 여기서 한 번 눈으로 본다.
+
+```bash
+docker compose up -d postgres
+psql "postgresql://allfolio:allfolio@localhost:5432/allfolio" \
+  -f docs/superpowers/migrations/2026-08-18-dart-disclosure.sql
+psql "postgresql://allfolio:allfolio@localhost:5432/allfolio" <<'SQL'
+INSERT INTO dart_disclosure (rcept_no, corp_code, corp_name, stock_code, corp_cls,
+    report_nm, report_nm_norm, rcept_dt, flr_nm, rm,
+    is_material, material_tier, is_correction, collected_at)
+VALUES ('20260818800172','00152880','코오롱글로벌','003070','Y',
+    '단일판매ㆍ공급계약체결','단일판매·공급계약체결','2026-08-18','코오롱글로벌','유',
+    true, 1, false, now())
+ON CONFLICT (rcept_no) DO NOTHING
+RETURNING rcept_no;
+SQL
+```
+
+Expected: 1회차는 `20260818800172` 한 행, **2회차는 `(0 rows)`**. 그 출력을 커밋 메시지와 보고에 인용할 것. 정리는 `DELETE FROM dart_disclosure WHERE rcept_no = '20260818800172';`
+
+- [ ] **Step 6: 커밋**
 
 ```bash
 git add allfolio-backend/backend-app/src/main/kotlin/com/allfolio/dart/list/JdbcDisclosureStore.kt \
-        allfolio-backend/backend-app/src/test/kotlin/com/allfolio/dart/list/JdbcDisclosureStoreTest.kt \
-        allfolio-backend/backend-app/build.gradle.kts
+        allfolio-backend/backend-app/src/test/kotlin/com/allfolio/dart/list/JdbcDisclosureStoreTest.kt
 git commit -m "feat(d1): ON CONFLICT RETURNING으로 델타를 얻는다 — JPA는 새 행을 못 알려준다"
 ```
 
@@ -1611,7 +1718,7 @@ class JdbcDisclosureStore(private val jdbc: JdbcTemplate) : DartDisclosureCollec
 cd allfolio-backend && ./gradlew :backend-app:test --tests "com.allfolio.dart.list.*"
 ```
 
-Expected: PASS, 20 tests (Client 7 + Store 6 + Service 7)
+Expected: PASS, 21 tests (Client 7 + Store 7 + Service 7)
 
 - [ ] **Step 5: 커밋**
 
@@ -1858,6 +1965,32 @@ git commit -m "feat(d1): corpCode.xml ZIP 파서 — JSON이 아니라 압축 �
 
 ## Task 10: `elestock` 클라이언트
 
+> ### ⚠️ 테스트 방식 — MockWebServer를 쓰지 않는다
+>
+> **이 레포는 JDK 내장 `com.sun.net.httpserver.HttpServer`로 루프백 스텁을 띄운다.**
+> MockWebServer도 WireMock도 의존성에 없고, 추가하지 않는다. 모범 사례를 그대로 따를 것:
+>
+> - 테스트 예시: `allfolio-backend/backend-app/src/test/kotlin/com/allfolio/market/commodity/fsc/FscCommodityClientTest.kt`
+> - 커넥터 헬퍼: `allfolio-backend/backend-app/src/test/kotlin/com/allfolio/test/StubServerConnector.kt`의 `dedicatedConnector()`
+>
+> **`dedicatedConnector()`를 반드시 쓸 것.** 기본 커넥터는 reactor-netty의 JVM 전역 풀인데,
+> 모듈 전체가 JVM 하나로 돌면서 스텁 서버 수십 개가 임시 포트에 떴다 죽는다. 죽은 소켓이
+> 풀에 남아 `Connection prematurely closed`가 산발적으로 난다 — 클래스 격리 실행에서는
+> 재현되지 않아 잡기 어렵다. 그 파일의 주석에 실측 표가 있다.
+>
+> **클라이언트는 커넥터를 주입받을 수 있어야 한다.** `FscCommodityClient`와 같은 모양으로:
+> ```kotlin
+> /** HTTP 커넥터. **운영은 null로 두고 기본값을 쓴다** */
+> internal var connector: ClientHttpConnector? = null
+>
+> private val webClient = WebClient.builder()
+>     .also { b -> connector?.let(b::clientConnector) }
+>     .build()
+> ```
+> 아래 테스트 코드 블록은 **단언할 내용의 목록**으로 읽을 것 — 스텁을 띄우고 응답을 돌려주는
+> 골격은 `FscCommodityClientTest`에서 가져온다.
+
+
 **Files:**
 - Create: `allfolio-backend/backend-app/src/main/kotlin/com/allfolio/dart/insider/DartElestockClient.kt`
 - Test: `allfolio-backend/backend-app/src/test/kotlin/com/allfolio/dart/insider/DartElestockClientTest.kt`
@@ -1870,13 +2003,15 @@ package com.allfolio.dart.insider
 import com.allfolio.dart.DartProperties
 import com.allfolio.dart.list.DartApiException
 import com.fasterxml.jackson.databind.ObjectMapper
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import com.allfolio.test.dedicatedConnector
+import com.sun.net.httpserver.HttpExchange
+import com.sun.net.httpserver.HttpServer
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.net.InetSocketAddress
+import java.net.URLDecoder
 import java.math.BigDecimal
 import java.time.LocalDate
 
@@ -1885,25 +2020,32 @@ import java.time.LocalDate
  */
 class DartElestockClientTest {
 
-    private lateinit var server: MockWebServer
-    private lateinit var client: DartElestockClient
+    private companion object { const val API_KEY = "SUPERSECRETDARTKEY1234" }
 
-    @BeforeEach fun setUp() {
-        server = MockWebServer().apply { start() }
-        client = DartElestockClient(
-            DartProperties(apiKey = "test-key", baseUrl = server.url("/api").toString().trimEnd('/')),
-            ObjectMapper(),
-        )
+    private var server: HttpServer? = null
+
+    @AfterEach fun tearDown() { server?.stop(0) }
+
+    private fun serving(body: String): Int {
+        val s = HttpServer.create(InetSocketAddress(0), 0)
+        s.createContext("/") { ex ->
+            val bytes = body.toByteArray()
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        }
+        s.start(); server = s
+        return s.address.port
     }
 
-    @AfterEach fun tearDown() = server.shutdown()
-
-    private fun enqueue(body: String) =
-        server.enqueue(MockResponse().setBody(body).setHeader("Content-Type", "application/json"))
+    // dedicatedConnector를 쓰는 이유는 StubServerConnector.kt 주석에 있다 — 빼면 간헐적으로 깨진다
+    private fun client(port: Int, key: String = API_KEY) = DartElestockClient(
+        DartProperties(apiKey = key, baseUrl = "http://localhost:$port"),
+        ObjectMapper(),
+    ).apply { connector = dedicatedConnector() }
 
     @Test
     fun `실측 응답을 파싱한다`() {
-        enqueue("""
+        val port = serving("""
             {"status":"000","message":"정상","list":[
               {"rcept_no":"20241008000176","rcept_dt":"2024-10-08","corp_code":"00828497",
                "corp_name":"한미약품","repror":"국민연금공단","isu_exctv_rgist_at":"-",
@@ -1912,7 +2054,7 @@ class DartElestockClientTest {
                "sp_stock_lmp_rate":"10.08","sp_stock_lmp_irds_rate":"0.02"}]}
         """.trimIndent())
 
-        val rows = client.fetch("00828497")
+        val rows = client(port).fetch("00828497")
 
         assertThat(rows).hasSize(1)
         with(rows.single()) {
@@ -1932,7 +2074,7 @@ class DartElestockClientTest {
 
     @Test
     fun `음수 증감을 읽는다`() {
-        enqueue("""
+        val port = serving("""
             {"status":"000","list":[
               {"rcept_no":"20241010000358","rcept_dt":"2024-10-10","corp_code":"00828497",
                "corp_name":"한미약품","repror":"국민연금공단","isu_exctv_rgist_at":"-",
@@ -1949,7 +2091,7 @@ class DartElestockClientTest {
 
     @Test
     fun `등기임원 여부를 불리언으로 읽는다`() {
-        enqueue("""
+        val port = serving("""
             {"status":"000","list":[
               {"rcept_no":"R1","rcept_dt":"2026-08-11","corp_code":"C1","corp_name":"회사",
                "repror":"홍길동","isu_exctv_rgist_at":"등기임원","isu_exctv_ofcps":"대표이사",
@@ -1966,7 +2108,7 @@ class DartElestockClientTest {
 
     @Test
     fun `비등기임원은 false다`() {
-        enqueue("""
+        val port = serving("""
             {"status":"000","list":[
               {"rcept_no":"R1","rcept_dt":"2026-08-11","corp_code":"C1","corp_name":"회사",
                "repror":"홍길동","isu_exctv_rgist_at":"비등기임원","isu_exctv_ofcps":"상무",
@@ -1979,14 +2121,14 @@ class DartElestockClientTest {
 
     @Test
     fun `status 013은 빈 목록이다`() {
-        enqueue("""{"status":"013","message":"조회된 데이타가 없습니다."}""")
+        val port = serving("""{"status":"013","message":"조회된 데이타가 없습니다."}""")
 
         assertThat(client.fetch("00000000")).isEmpty()
     }
 
     @Test
     fun `그 밖의 status는 예외다`() {
-        enqueue("""{"status":"020","message":"요청 제한을 초과하였습니다."}""")
+        val port = serving("""{"status":"020","message":"요청 제한을 초과하였습니다."}""")
 
         assertThatThrownBy { client.fetch("C1") }
             .isInstanceOf(DartApiException::class.java).hasMessageContaining("020")
@@ -1994,10 +2136,10 @@ class DartElestockClientTest {
 
     @Test
     fun `예외 메시지에 인증키가 들어가지 않는다`() {
-        enqueue("""{"status":"020","message":"요청 제한을 초과하였습니다."}""")
+        val port = serving("""{"status":"020","message":"요청 제한을 초과하였습니다."}""")
 
         val thrown = runCatching { client.fetch("C1") }.exceptionOrNull()!!
-        assertThat(thrown.message).doesNotContain("test-key")
+        assertThat(thrown.stackTraceToString()).doesNotContain(API_KEY)
         assertThat(thrown.cause).isNull()
     }
 }
