@@ -68,6 +68,10 @@ class DartDisclosureEntity(
     @Column(name = "flr_nm", length = 200)
     val flrNm: String?,
 
+    /**
+     * 실측 값이 `''`·`유`·`코`·`공`·`정`·`코정`·`넥`·`공정`·`연`·`유정`·`정연`·`채` 등 조합형 12종이다.
+     * 의미를 확인하지 못했으므로 해석하지 않고 원문만 보존한다 — 빠뜨린 필드가 아니라 그렇게 정한 것이다.
+     */
     @Column(name = "rm", length = 20)
     val rm: String?,
 

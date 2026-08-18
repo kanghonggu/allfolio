@@ -49,7 +49,10 @@ class DartInsiderTradeEntity(
     @Column(name = "stock_code", length = 6)
     val stockCode: String?,
 
-    /** 보고자 */
+    /**
+     * 보고자. `repror`는 오타가 아니라 OpenDART `elestock` 응답의 실제 필드명이다
+     * (실측 30개사 3,922행 전건에서 이 철자로 왔다) — 그래서 이름을 고치지 않았다.
+     */
     @Column(name = "repror", nullable = false, length = 200)
     val repror: String,
 

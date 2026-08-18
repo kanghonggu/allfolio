@@ -11,12 +11,15 @@ import java.time.LocalDate
  */
 interface DartDisclosureJpaRepository : JpaRepository<DartDisclosureEntity, String> {
 
-    /** Task 11 — 델타(방금 저장된 rcept_no들) 중 Tier 4 화이트리스트 트리거를 찾는다 */
+    /** 델타(방금 저장된 rcept_no들) 중 Tier 4 화이트리스트 트리거를 찾는다 */
     fun findByRceptNoIn(rceptNos: Collection<String>): List<DartDisclosureEntity>
 
     /**
-     * Task 14 — 보유종목 피드. 조건 순서를 `idx_disclosure_feed` 부분 인덱스의
-     * `WHERE is_material AND stock_code IS NOT NULL`과 맞춰 그 인덱스를 그대로 탄다.
+     * 보유종목 피드 조회. 이 쿼리가 부분 인덱스 `idx_disclosure_feed`
+     * (`WHERE is_material AND stock_code IS NOT NULL`)를 타는 것은 조건 순서를 맞춰서가
+     * 아니다 — Postgres 플래너는 WHERE 절의 조건 순서를 보지 않는다. 이 쿼리의 술어 집합
+     * (`stock_code IN (...)` · `is_material = true`)이 인덱스의 부분 조건을 함의하기 때문에
+     * 플래너가 쓸 수 있는 것이고, 순서는 무관하다.
      */
     fun findByStockCodeInAndRceptDtGreaterThanEqualAndIsMaterialTrue(
         stockCodes: Collection<String>,
