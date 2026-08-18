@@ -32,9 +32,15 @@ class DartDisclosureCollectServiceTest {
         }
     }
 
-    private class FakeRuns : DartDisclosureCollectService.RunLog {
+    private class FakeRuns(
+        /** true면 save()가 던진다 — 델타가 그래도 반환되는지(Critical #1)를 검증하는 용도 */
+        private val throwOnSave: Boolean = false,
+    ) : DartDisclosureCollectService.RunLog {
         val saved = mutableListOf<DartCollectionRunEntity>()
-        override fun save(run: DartCollectionRunEntity) { saved += run }
+        override fun save(run: DartCollectionRunEntity) {
+            if (throwOnSave) throw IllegalStateException("Neon 연결 끊김(가짜)")
+            saved += run
+        }
     }
 
     private fun row(rceptNo: String, reportNm: String, stockCode: String? = "005930") = DartListRow(
@@ -63,6 +69,14 @@ class DartDisclosureCollectServiceTest {
         // newRceptNos가 곧 Task 11의 elestock 호출 대상이다 — 개수만 보고 내용을 안 보면
         // "빈 목록을 반환해도 통과"하는 구멍이 생긴다
         assertThat(summary.newRceptNos).containsExactlyInAnyOrder("A1", "A2", "A3")
+        // apiCalls는 이전까지 어떤 테스트도 단언하지 않았다 — apiCalls++ 또는
+        // run.apiCalls = apiCalls를 지워도 나머지 전부가 초록이었다(품질 리뷰 발견)
+        assertThat(summary.apiCalls).isEqualTo(3)
+        with(runs.saved.single()) {
+            assertThat(apiCalls).isEqualTo(3)
+            assertThat(pagesFetched).isEqualTo(3)
+            assertThat(newCount).isEqualTo(3)
+        }
     }
 
     @Test
@@ -82,6 +96,17 @@ class DartDisclosureCollectServiceTest {
         assertThat(byId["A2"]!!.materialTier).isEqualTo(5)
         assertThat(byId["A3"]!!.isMaterial).isFalse()
         assertThat(byId["A3"]!!.materialTier).isNull()
+        // 그대로 통과시키기만 하는 필드들 — 이전까지 어느 테스트도 단언하지 않아
+        // stockCode/corpCls를 맞바꿔도(둘 다 String?이라 컴파일도 통과) 초록으로 남았다(품질 리뷰 발견)
+        with(byId["A1"]!!) {
+            assertThat(corpCode).isEqualTo("00126380")
+            assertThat(corpName).isEqualTo("삼성전자")
+            assertThat(stockCode).isEqualTo("005930")
+            assertThat(corpCls).isEqualTo("Y")
+            assertThat(rceptDt).isEqualTo(endDe)
+            assertThat(flrNm).isEqualTo("삼성전자")
+            assertThat(rm).isEqualTo("유")
+        }
     }
 
     @Test
@@ -137,6 +162,47 @@ class DartDisclosureCollectServiceTest {
             assertThat(status).isEqualTo("FAILED")
             assertThat(errorMsg).contains("020")
         }
+    }
+
+    @Test
+    fun `실패 전까지의 진척도가 기록된다`() {
+        // catch 블록이 run.apiCalls·run.pagesFetched를 안 채우면, 12페이지 중 5페이지째에서
+        // 죽어도 pages_fetched=0·api_calls=0으로 남는다 — "바로 죽었다"와 "여러 페이지 돌다
+        // 죽었다"를 사고 조사에서 구분할 수 없다(품질 리뷰 발견)
+        val client = object : ListPort {
+            override fun fetchPage(bgnDe: LocalDate, endDe: LocalDate, pageNo: Int): DartListPage {
+                if (pageNo == 3) throw DartApiException("OpenDART status=020")
+                return DartListPage(listOf(row("R$pageNo", "유상증자결정")), totalPage = 5, emptyResult = false)
+            }
+        }
+        val runs = FakeRuns()
+
+        runCatching { DartDisclosureCollectService(client, FakeStore(), runs).collect(bgnDe, endDe, now) }
+
+        with(runs.saved.single()) {
+            assertThat(status).isEqualTo("FAILED")
+            assertThat(pagesFetched).isEqualTo(2)
+            assertThat(apiCalls).isEqualTo(2)
+        }
+    }
+
+    @Test
+    fun `감사 로그 저장이 실패해도 이미 커밋된 델타는 호출자에게 반환된다`() {
+        // Critical — store.insertIgnoringConflicts는 @Transactional이라 이 메서드가 반환된
+        // 시점에 dart_disclosure 행은 이미 커밋돼 있다. 그 뒤 runLog.save가 던진다고 해서
+        // collect() 자체가 예외로 끝나면, 이미 커밋된 행의 델타를 호출자(elestock 호출부)가
+        // 영원히 못 받는다 — 다음 재수집도 ON CONFLICT DO NOTHING이 그 행을 조용히 걸러낸다
+        val client = FakeClient(listOf(DartListPage(listOf(row("A1", "유상증자결정")), 1, false)))
+        val store = FakeStore()
+        val runs = FakeRuns(throwOnSave = true)
+
+        val summary = service(client, store, runs).collect(bgnDe, endDe, now)
+
+        assertThat(summary.newRceptNos).containsExactly("A1")
+        assertThat(summary.newCount).isEqualTo(1)
+        // 감사 로그는 못 남았다 — save()가 던졌으니 saved에는 아무것도 안 쌓인다.
+        // 이건 받아들이는 대가지, 놓친 게 아니다(saveRunLog KDoc 참고)
+        assertThat(runs.saved).isEmpty()
     }
 
     @Test

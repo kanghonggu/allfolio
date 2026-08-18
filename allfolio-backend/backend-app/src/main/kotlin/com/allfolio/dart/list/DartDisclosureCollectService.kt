@@ -66,6 +66,20 @@ data class DartCollectSummary(
  *
  * **실패하면 `dart_collection_run`에 `FAILED`+`error_msg`를 남기고 예외를 다시 던진다.**
  * 조용히 삼키면 스케줄러가 "정상 종료"로 읽고, 다시 던지지 않으면 어드민이 실패를 못 본다.
+ * 실패 시에도 그때까지의 `pagesFetched`·`apiCalls`는 남긴다 — 그래야 사고 조사에서
+ * "바로 죽었다"와 "40페이지 돌다 죽었다"를 가를 수 있고, OpenDART 쿼터가 실제로 얼마나
+ * 소비됐는지도 알 수 있다.
+ *
+ * **감사 로그 저장 실패가 이미 커밋된 수집 결과를 삼키면 안 된다.** `store.insertIgnoringConflicts`는
+ * `@Transactional`이라 이 메서드로 반환된 시점에 이미 커밋돼 있다([JdbcDisclosureStore] KDoc의
+ * "트랜잭션 경계" 절). 그 뒤 `runLog.save`가 Neon 콜드 스타트·연결 끊김 등으로 던지면, 여기서
+ * 그대로 전파해 `collect()` 자체가 예외로 끝날 경우 [DartCollectSummary]가 호출자에게 못
+ * 돌아가고 `newRceptNos`(델타)가 사라진다. `dart_disclosure` 행은 이미 들어가 있으므로 다음
+ * 재수집은 `ON CONFLICT DO NOTHING`이 그 행을 조용히 걸러 **그 델타가 영원히 어떤 실행에도
+ * 안 잡힌다** — Task 11의 `elestock` 호출이 델타로만 구동되므로 임원 소유변동이 영영 안
+ * 채워진다. 그래서 [saveRunLog]가 저장 실패를 삼킨다: 감사 행을 못 남기는 것과 델타를 잃는
+ * 것 중 후자가 훨씬 나쁘다 — 전자는 `dart_disclosure`를 직접 봐서라도 사후에 되짚을 수 있지만
+ * 후자는 조용히 영구적이다.
  */
 @Service
 class DartDisclosureCollectService(
@@ -83,7 +97,15 @@ class DartDisclosureCollectService(
         fun insertIgnoringConflicts(rows: List<DisclosureInsert>, collectedAt: LocalDateTime): List<String>
     }
 
-    /** 실행 기록 저장. `save()` 한 번은 시작 행 생성, 두 번째 `save()`는 종료 시 갱신이다 */
+    /**
+     * 실행 기록 저장. `collect()`가 분기(성공/실패)당 **정확히 한 번만** 부른다 — 시작 시점에
+     * 별도로 "진행 중" 행을 만들지 않는다.
+     *
+     * **강제 종료(OOM·컨테이너 재시작 등, `catch (Exception)`이 못 잡는 경우)면 그 실행에
+     * 대응하는 행이 아예 안 생긴다.** "시작됐는데 안 끝난 행"으로 그 상황을 감지할 방법이
+     * 이 설계에는 없다 — 그런 감지가 필요해지면 시작 시점 별도 `save()` + 종료 시 갱신으로
+     * 바꿔야 한다.
+     */
     interface RunLog {
         fun save(run: DartCollectionRunEntity)
     }
@@ -97,11 +119,14 @@ class DartDisclosureCollectService(
             status = "FAILED", errorMsg = null, finishedAt = null,
         )
 
+        // catch 블록에서도 읽어야 하므로 try 밖에서 선언한다 — 5페이지째에서 죽어도
+        // "몇 페이지·몇 콜까지 갔었는지"가 dart_collection_run에 남아야 사고 조사가 된다
+        var pageNo = 1
+        var apiCalls = 0
+
         try {
             val collected = mutableListOf<DartListRow>()
-            var pageNo = 1
             var totalPage = 1
-            var apiCalls = 0
             var emptyResult = false
 
             while (pageNo <= totalPage) {
@@ -127,7 +152,9 @@ class DartDisclosureCollectService(
             run.newCount = delta.size
             run.status = "SUCCESS"
             run.finishedAt = now
-            runLog.save(run)
+            // 여기서 던져도 삼킨다 — 근거는 클래스 KDoc "감사 로그 저장 실패가 이미 커밋된
+            // 수집 결과를 삼키면 안 된다" 절. delta는 이미 커밋됐으니 반드시 아래 return까지 간다
+            saveRunLog(run)
 
             log.info(
                 "[DART] 수집 완료 {}~{} pages={} apiCalls={} new={} emptyResult={}",
@@ -141,13 +168,36 @@ class DartDisclosureCollectService(
             )
         } catch (e: Exception) {
             // 실패는 조용히 삼키지 않는다 — FAILED를 남기고 예외를 다시 던져 스케줄러가 빨갛게
-            // 볼 수 있게 한다. 여기서 삼키면 "그날 공시가 없었다"와 "호출이 죽었다"가 구분 안 된다
+            // 볼 수 있게 한다. 여기서 삼키면 "그날 공시가 없었다"와 "호출이 죽었다"가 구분 안 된다.
+            // pageNo·apiCalls는 try 밖 선언 덕에 실패 직전까지의 진행이 그대로 남는다
+            run.pagesFetched = pageNo - 1
+            run.apiCalls = apiCalls
             run.status = "FAILED"
             run.errorMsg = e.message
             run.finishedAt = now
-            runLog.save(run)
-            log.warn("[DART] 수집 실패 {}~{} reason={}", bgnDe, endDe, e.message)
+            saveRunLog(run)
+            log.warn("[DART] 수집 실패 {}~{} pages={} apiCalls={} reason={}", bgnDe, endDe, run.pagesFetched, apiCalls, e.message)
+            // saveRunLog가 삼킨 것과 무관하게 원래 예외 e를 그대로 올린다 — 감사 로그 저장이
+            // 실패했다고 진짜 실패 사유가 다른 예외로 덮이면 안 된다
             throw e
+        }
+    }
+
+    /**
+     * `runLog.save`를 감싸 저장 실패를 삼킨다. **의도적이다** — 근거는 클래스 KDoc
+     * "감사 로그 저장 실패가 이미 커밋된 수집 결과를 삼키면 안 된다" 절.
+     * 여기서 예외가 새 나가면 성공 경로에서는 이미 커밋된 델타를 호출자에게 영원히 못
+     * 돌려주고(Task 11의 `elestock` 호출이 조용히 빠진다), 실패 경로에서는 원래 실패 사유(`e`)가
+     * 감사 로그 저장 실패로 덮인다. 어느 쪽도 감사 행 하나 못 남기는 것보다 훨씬 비싸다.
+     */
+    private fun saveRunLog(run: DartCollectionRunEntity) {
+        try {
+            runLog.save(run)
+        } catch (e: Exception) {
+            log.error(
+                "[DART] 실행 기록 저장 실패 — status={} pagesFetched={} apiCalls={} newCount={} reason={}",
+                run.status, run.pagesFetched, run.apiCalls, run.newCount, e.message, e,
+            )
         }
     }
 
