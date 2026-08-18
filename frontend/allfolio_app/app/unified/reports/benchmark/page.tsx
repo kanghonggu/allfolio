@@ -206,6 +206,19 @@ export default function BenchmarkPage() {
         <p className="mt-4 text-[11.5px] leading-relaxed text-fg-faint">
           * S&amp;P 500, BTC, KOSPI는 일별 종가 기준 실제 지수 데이터입니다. 데이터가 없는 날짜는 표시되지 않습니다.
         </p>
+        {/*
+          두 개의 KOSPI (AF-107). 시장 화면은 KIS 시세를 하루 세 슬롯(collect-index.yml의
+          KST 09:10 OPEN · 12:10 MID · 15:50 CLOSE)으로 담고, 여기는 공공데이터포털 D+1 확정 종가다.
+          **"실시간"이라고 쓰지 말 것** — 스트림이 아니라 스냅샷 세 번이고, CLOSE 슬롯은 그날 종가다.
+          차이의 주된 원인도 장중/종가가 아니라 기준일이다: 저녁에 두 화면을 비교하면 시장 화면엔
+          오늘 종가가 있고 벤치마크는 아직 어제까지다. 사용자가 그 두 숫자를 나란히 봤을 때
+          답이 화면에 있어야 하므로 지우지 말 것.
+        */}
+        <p className="mt-2 text-[11.5px] leading-relaxed text-fg-faint">
+          * KOSPI는 공공데이터포털의 확정 종가 기준입니다. 시장 화면의 KOSPI는 KIS 시세를 하루
+          세 번(개장 직후·장중·마감 직후) 담은 값이라 값·기준일이 다를 수 있습니다. 확정 종가는
+          다음 날 들어오므로 벤치마크의 최신 날짜는 시장 화면보다 하루 늦습니다.
+        </p>
       </div>
     </div>
   )

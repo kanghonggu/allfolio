@@ -13,6 +13,9 @@ import java.time.LocalDate
 /**
  * 벤치마크 지수 일별 종가 수집 (R1 #35).
  * 기동 시 + 매일 01:10 — 저장분이 30일 이상 비면 1y 백필, 아니면 1mo 증분. UPSERT 멱등.
+ *
+ * **KOSPI는 여기서 안 받는다** — 공공데이터포털 수집기(AF-107)가 채운다.
+ * [BenchmarkType.syncedFromYahoo] 참조.
  */
 @Service
 class BenchmarkSyncService(
@@ -31,7 +34,7 @@ class BenchmarkSyncService(
     fun daily() = syncAll()
 
     fun syncAll() {
-        BenchmarkType.entries.forEach { type ->
+        BenchmarkType.entries.filter { it.syncedFromYahoo }.forEach { type ->
             runCatching {
                 val latest = store.latestDate(type)
                 val range = if (latest == null || latest.isBefore(LocalDate.now().minusDays(30))) "1y" else "1mo"

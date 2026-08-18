@@ -1,11 +1,13 @@
 package com.allfolio.api.scheduler
 
+import com.allfolio.api.admin.BenchmarkIndexAdminController
 import com.allfolio.api.admin.CommodityAdminController
 import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.api.admin.MarketRateAdminController
 import com.allfolio.fx.BackfillSummary
 import com.allfolio.fx.hana.HanaCollectSummary
+import com.allfolio.market.benchmark.BenchmarkCollectSummary
 import com.allfolio.market.commodity.CommodityCollectSummary
 import com.allfolio.market.index.DomesticIndexCollectSummary
 import com.allfolio.market.index.IndexSlot
@@ -51,6 +53,7 @@ class SchedulerTriggerController(
     private val indexAdmin: MarketIndexAdminController,
     private val rateAdmin: MarketRateAdminController,
     private val commodityAdmin: CommodityAdminController,
+    private val benchmarkAdmin: BenchmarkIndexAdminController,
     private val stepExecutor: WfStepExecutor,
     @Value("\${scheduler.trigger-token:}") private val configuredToken: String,
 ) {
@@ -216,6 +219,30 @@ class SchedulerTriggerController(
     ): ResponseEntity<CommodityCollectSummary> {
         authorize(token)
         return commodityAdmin.collect(null, null)
+    }
+
+    /**
+     * POST /api/internal/scheduler/benchmark-index — 벤치마크 지수 수집 트리거 (AF-107)
+     *
+     * **날짜를 노출하지 않는다.** [BenchmarkIndexAdminController.collect]가 끝점을 KST 오늘로 잡고
+     * 시작점을 거기서 14일 뺀 날로 잡는다. 워크플로가 날짜를 계산해 실어 보내면 러너의 UTC 시계가
+     * 그대로 데이터에 새겨지고, GitHub cron이 밀린 날 구간이 어긋난다.
+     *
+     * 백필 구간을 여기 노출하지 않는 이유는 금리·원자재 트리거와 같다 — 초기 1년 백필은 사람이
+     * 한 번 부르는 일회성 작업이고, 어드민 엔드포인트에 있다.
+     *
+     * 어드민 컨트롤러에 위임하는 이유도 같다: 502(전량 실패 = 상류 장애)와 500(우리 설정 문제 —
+     * 목록이 빔 / 전 지수 0건 / `type`이 `BenchmarkType`에 없음)의 구분이 Actions 로그를 읽는
+     * 사람에게 그대로 필요하다. **여기 500의 원인 목록이 원자재와 다르다** — `benchmark_daily`는
+     * 이미 있는 표라 마이그레이션 부재가 원인이 될 수 없다.
+     * **이 위임을 "정리"하지 말 것** — 위 [collectHanaFx]의 설명 참조.
+     */
+    @PostMapping("/benchmark-index")
+    fun collectBenchmarkIndex(
+        @RequestHeader(name = TOKEN_HEADER, required = false) token: String?,
+    ): ResponseEntity<BenchmarkCollectSummary> {
+        authorize(token)
+        return benchmarkAdmin.collect(null, null)
     }
 
     /**

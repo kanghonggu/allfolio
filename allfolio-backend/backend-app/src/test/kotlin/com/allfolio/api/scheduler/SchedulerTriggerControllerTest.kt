@@ -1,5 +1,6 @@
 package com.allfolio.api.scheduler
 
+import com.allfolio.api.admin.BenchmarkIndexAdminController
 import com.allfolio.api.admin.CommodityAdminController
 import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.api.admin.MarketIndexAdminController
@@ -12,6 +13,9 @@ import com.allfolio.fx.FxRateBackfillService
 import com.allfolio.fx.FxRateService
 import com.allfolio.fx.hana.HanaCollectSummary
 import com.allfolio.fx.hana.HanaFxCollectService
+import com.allfolio.market.benchmark.BenchmarkCollectSummary
+import com.allfolio.market.benchmark.BenchmarkIndexProperties
+import com.allfolio.market.benchmark.FscIndexCollectService
 import com.allfolio.market.commodity.CommodityCollectService
 import com.allfolio.market.commodity.CommodityCollectSummary
 import com.allfolio.market.commodity.CommodityProperties
@@ -56,6 +60,7 @@ class SchedulerTriggerControllerTest {
     private val indexAdmin: MarketIndexAdminController = mock(MarketIndexAdminController::class.java)
     private val rateAdmin: MarketRateAdminController = mock(MarketRateAdminController::class.java)
     private val commodityAdmin: CommodityAdminController = mock(CommodityAdminController::class.java)
+    private val benchmarkAdmin: BenchmarkIndexAdminController = mock(BenchmarkIndexAdminController::class.java)
     private val stepExecutor: WfStepExecutor = mock(WfStepExecutor::class.java)
 
     private val summary = HanaCollectSummary(
@@ -73,7 +78,7 @@ class SchedulerTriggerControllerTest {
     // 응답으로 풀려, 운영과 다른 경로를 테스트하게 된다. 워크플로가 --fail을 일부러 안 쓰는 이유가
     // 이 본문을 잡 요약에 남기기 위해서라, 본문까지 운영과 같아야 의미가 있다.
     private fun mvc(token: String) = MockMvcBuilders
-        .standaloneSetup(SchedulerTriggerController(admin, indexAdmin, rateAdmin, commodityAdmin, stepExecutor, token))
+        .standaloneSetup(SchedulerTriggerController(admin, indexAdmin, rateAdmin, commodityAdmin, benchmarkAdmin, stepExecutor, token))
         .setControllerAdvice(GlobalExceptionHandler())
         .build()
 
@@ -181,7 +186,7 @@ class SchedulerTriggerControllerTest {
             mock(CashFlowRecomputeService::class.java),
         )
 
-        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, commodityAdmin, stepExecutor, "secret"))
+        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, commodityAdmin, benchmarkAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -307,7 +312,7 @@ class SchedulerTriggerControllerTest {
             mock(OverseasIndexCollectService::class.java),
         )
 
-        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin, rateAdmin, commodityAdmin, stepExecutor, "secret"))
+        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin, rateAdmin, commodityAdmin, benchmarkAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -353,6 +358,7 @@ class SchedulerTriggerControllerTest {
                     ),
                     rateAdmin,
                     commodityAdmin,
+                    benchmarkAdmin,
                     stepExecutor,
                     "secret",
                 )
@@ -509,7 +515,7 @@ class SchedulerTriggerControllerTest {
         )
 
         MockMvcBuilders
-            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, commodityAdmin, stepExecutor, "secret"))
+            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, commodityAdmin, benchmarkAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -537,7 +543,7 @@ class SchedulerTriggerControllerTest {
         )
 
         MockMvcBuilders
-            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, commodityAdmin, stepExecutor, "secret"))
+            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, commodityAdmin, benchmarkAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -563,7 +569,7 @@ class SchedulerTriggerControllerTest {
         ).thenThrow(KisIndexException("KIS 해외 응답에 output2가 없습니다"))
 
         MockMvcBuilders
-            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, commodityAdmin, stepExecutor, "secret"))
+            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, commodityAdmin, benchmarkAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -735,7 +741,7 @@ class SchedulerTriggerControllerTest {
             mock(CashFlowRecomputeService::class.java),
         )
 
-        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, commodityAdmin, stepExecutor, "secret"))
+        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, commodityAdmin, benchmarkAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -876,6 +882,7 @@ class SchedulerTriggerControllerTest {
                 indexAdmin,
                 MarketRateAdminController(rateCollectServiceReturning(summary), mock(EcosStatListClient::class.java)),
                 commodityAdmin,
+                benchmarkAdmin,
                 stepExecutor,
                 "secret",
             )
@@ -1041,6 +1048,7 @@ class SchedulerTriggerControllerTest {
                 indexAdmin,
                 rateAdmin,
                 CommodityAdminController(commodityCollectServiceReturning(summary), CommodityProperties()),
+                benchmarkAdmin,
                 stepExecutor,
                 "secret",
             )
@@ -1069,6 +1077,145 @@ class SchedulerTriggerControllerTest {
     // 트리거가 실제로 부르는 collect(null, null)을 놓친다 — never() 검증이 통째로 장식이 된다.
     private fun verifyNoCommodityCollect() {
         verify(commodityAdmin, never()).collect(any(), any())
+    }
+
+    // ── 벤치마크 지수 트리거 (AF-107) ──────────────────────────────────────────
+
+    private val benchmarkSummary = BenchmarkCollectSummary(
+        from = LocalDate.of(2026, 8, 3),
+        to = LocalDate.of(2026, 8, 17),
+        requested = 1,
+        saved = 10,
+        outOfRange = 0,
+        emptySeries = emptyList(),
+        failed = 0,
+        failures = emptyList(),
+    )
+
+    // 날짜를 노출하지 않는 게 이 엔드포인트의 설계다. null이 그대로 넘어가야 어드민 컨트롤러의
+    // KST 오늘 기준 14일 창이 적용된다 — 러너의 UTC 시계가 아니라.
+    @Test
+    fun `토큰이 맞으면 벤치마크 지수 수집을 위임한다`() {
+        `when`(benchmarkAdmin.collect(null, null)).thenReturn(ResponseEntity.ok(benchmarkSummary))
+
+        mvc("secret").perform(
+            post("/api/internal/scheduler/benchmark-index").header("X-Scheduler-Token", "secret")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.saved").value(10))
+            // emptySeries가 응답에서 빠지면 "쌍이 틀려 조용히 0건"인 날을 워크플로가 못 짚는다
+            .andExpect(jsonPath("$.emptySeries").exists())
+
+        verify(benchmarkAdmin).collect(null, null)
+    }
+
+    @Test
+    fun `벤치마크 지수 트리거도 토큰이 틀리면 401이고 수집을 부르지 않는다`() {
+        mvc("secret").perform(
+            post("/api/internal/scheduler/benchmark-index").header("X-Scheduler-Token", "wrong")
+        )
+            .andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.error").exists())
+
+        verifyNoBenchmarkCollect()
+    }
+
+    // 앞의 트리거들과 같은 authorize를 **재사용**하는지 본다. 경로마다 검사를 새로 짜면
+    // 새 경로 하나만 fail-open이 되어도 다른 테스트가 전부 통과해버린다.
+    @Test
+    fun `설정 토큰이 비어 있으면 벤치마크 지수 트리거도 503으로 닫는다`() {
+        mvc("").perform(
+            post("/api/internal/scheduler/benchmark-index").header("X-Scheduler-Token", "anything")
+        )
+            .andExpect(status().isServiceUnavailable)
+            .andExpect(jsonPath("$.error").exists())
+
+        verifyNoBenchmarkCollect()
+    }
+
+    @Test
+    fun `설정 토큰이 비어 있고 헤더도 없으면 벤치마크 지수 트리거도 503으로 닫는다`() {
+        mvc("").perform(post("/api/internal/scheduler/benchmark-index"))
+            .andExpect(status().isServiceUnavailable)
+
+        verifyNoBenchmarkCollect()
+    }
+
+    @Test
+    fun `벤치마크 지수 트리거는 GET으로는 열리지 않는다`() {
+        mvc("secret").perform(
+            get("/api/internal/scheduler/benchmark-index").header("X-Scheduler-Token", "secret")
+        ).andExpect(status().isMethodNotAllowed)
+
+        verifyNoBenchmarkCollect()
+    }
+
+    // 크론이 실제로 때리는 건 이 경로다. FscIndexCollectService는 지수가 전부 터져도 예외 대신
+    // 요약을 돌려주므로, 어드민이 502로 바꿔주지 않으면 전면 중단이 200으로 나가 잡이 초록으로
+    // 끝난다. 목을 쓰면 그 변환이 한 번도 실행되지 않아 어드민 쪽 분기를 통째로 지워도 통과한다.
+    @Test
+    fun `벤치마크 지수를 한 건도 못 모으면 트리거도 502를 낸다`() {
+        val mvc = mvcWithRealBenchmarkAdmin(
+            benchmarkSummary.copy(
+                saved = 0,
+                failed = 1,
+                failures = listOf("KOSPI: FSC 응답 오류 (resultCode=22)"),
+            )
+        )
+
+        mvc.perform(post("/api/internal/scheduler/benchmark-index").header("X-Scheduler-Token", "secret"))
+            .andExpect(status().isBadGateway)
+            // 잡 요약에 남는 건 본문이다. 사유가 없으면 502만 보고 원인을 다시 찾아야 한다.
+            .andExpect(jsonPath("$.error").exists())
+    }
+
+    // 502와 갈라지는 쪽. 포털은 정상 응답을 줬는데 전 지수가 0건이면 틀린 건 우리가 넣은
+    // (idxNm, idxCsf) 쌍이다 — 상류 장애(502)로 부르면 운영자를 멀쩡한 포털 상태 페이지로 보낸다.
+    // **여기서 마이그레이션을 의심하게 만들면 안 된다** — benchmark_daily는 이미 있는 표다.
+    @Test
+    fun `전 지수가 0건이면 벤치마크 트리거는 502가 아니라 500을 낸다`() {
+        val mvc = mvcWithRealBenchmarkAdmin(
+            benchmarkSummary.copy(saved = 0, emptySeries = listOf("KOSPI"))
+        )
+
+        mvc.perform(post("/api/internal/scheduler/benchmark-index").header("X-Scheduler-Token", "secret"))
+            .andExpect(status().isInternalServerError)
+            .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("idxCsf")))
+    }
+
+    private fun mvcWithRealBenchmarkAdmin(summary: BenchmarkCollectSummary) = MockMvcBuilders
+        .standaloneSetup(
+            SchedulerTriggerController(
+                admin,
+                indexAdmin,
+                rateAdmin,
+                commodityAdmin,
+                BenchmarkIndexAdminController(fscIndexCollectServiceReturning(summary), BenchmarkIndexProperties()),
+                stepExecutor,
+                "secret",
+            )
+        )
+        .setControllerAdvice(GlobalExceptionHandler())
+        .build()
+
+    private fun fscIndexCollectServiceReturning(summary: BenchmarkCollectSummary): FscIndexCollectService {
+        val service = mock(FscIndexCollectService::class.java)
+        // any(...)는 매처를 등록하고 null을 돌려주는데, FscIndexCollectService는 Kotlin 파이널
+        // 클래스라 원본 바이트코드의 non-null 파라미터 검사가 남아 NPE가 난다.
+        // 엘비스로 아무 값이나 채우면 매처는 그대로 등록된 채 검사만 통과한다.
+        `when`(
+            service.collect(
+                any(LocalDate::class.java) ?: LocalDate.EPOCH,
+                any(LocalDate::class.java) ?: LocalDate.EPOCH,
+            )
+        ).thenReturn(summary)
+        return service
+    }
+
+    // 맨 any()를 쓴다. any(LocalDate::class.java)는 Mockito 2.1부터 null을 매칭하지 않아
+    // 트리거가 실제로 부르는 collect(null, null)을 놓친다 — never() 검증이 통째로 장식이 된다.
+    private fun verifyNoBenchmarkCollect() {
+        verify(benchmarkAdmin, never()).collect(any(), any())
     }
 
     // ── 마감 트리거 (AF-107) ───────────────────────────────────────────────────
