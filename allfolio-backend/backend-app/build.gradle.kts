@@ -50,4 +50,8 @@ dependencies {
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.kafka:spring-kafka-test")
+    // D1 Task 14 — JpaFeedStoreTest가 실제 ua_assets 네이티브 쿼리(type='STOCK' 필터)를
+    // @DataJpaTest로 검증한다. ON CONFLICT/RETURNING(Task 7)과 달리 이 쿼리는 평범한 SELECT라
+    // H2로 충분하다 — unified-asset 모듈의 같은 관례(MarketCommodityQuoteJpaRepositoryTest 등)를 따른다.
+    testRuntimeOnly("com.h2database:h2")
 }
