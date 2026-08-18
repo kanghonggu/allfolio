@@ -12,22 +12,31 @@ import java.time.LocalDateTime
  * 둘 다 지원하지 않고(실측), CI에는 Postgres가 없다. `PerformanceSnapshotDateTest`
  * (`unified-asset`)가 같은 이유로 같은 방식을 쓴다 — 그쪽 KDoc에 근거가 있다.
  *
- * 그래서 이 테스트가 못 잡는 것이 있다: **SQL이 Postgres에서 실제로 도는지**. 그건 구현 시
- * 로컬 Postgres로 1회 확인하고 커밋 메시지에 남긴다.
+ * 그래서 이 테스트가 못 잡는 것이 있다: **SQL이 Postgres에서 실제로 도는지**, `RowMapper`가
+ * 정확한 컬럼을 읽는지, INSERT 컬럼 목록의 순서. 근거는 [JdbcDisclosureStore]의 클래스 KDoc
+ * "가짜 기반 테스트가 못 잡는 것 둘" 절 — 그건 Task 1 마이그레이션 대조와 로컬 Postgres
+ * 1회 수동 검증으로 담보한다.
  */
 class JdbcDisclosureStoreTest {
 
-    /** 실행 SQL과 바인딩 인자를 모아 두는 fake. DataSource 없이 동작한다(super 호출 없음) */
+    /**
+     * 실행 SQL과 바인딩 인자를 모아 두는 fake. DataSource 없이 동작한다(super 호출 없음).
+     *
+     * 한 청크가 다중행 `VALUES`로 나가므로 `args`는 14개씩 끊어 읽으면 행 하나다 —
+     * 각 행의 첫 칸(offset 0)이 `rcept_no`다.
+     */
     private class CapturingJdbc(
-        /** `RETURNING`이 돌려줄 rcept_no. 테스트가 "이미 있던 건"을 흉내 내려면 비운다 */
-        var returning: (String) -> List<String> = { listOf(it) },
+        /** RETURNING이 돌려줄 rcept_no 목록을 정하는 함수. 인자는 이번 청크에 실제로 바인딩된
+         *  전체 rcept_no 목록이다. "이미 있던 건"을 흉내 내려면 그 rcept_no를 걸러내면 된다. */
+        var returning: (List<String>) -> List<String> = { it },
     ) : JdbcTemplate() {
         val queries = mutableListOf<Pair<String, List<Any?>>>()
 
         @Suppress("UNCHECKED_CAST")
         override fun <T : Any?> query(sql: String, rowMapper: RowMapper<T>, vararg args: Any?): List<T> {
             queries += sql to args.toList()
-            return returning(args[0] as String) as List<T>
+            val rceptNosInChunk = args.toList().chunked(14).map { it[0] as String }
+            return returning(rceptNosInChunk) as List<T>
         }
     }
 
@@ -80,9 +89,21 @@ class JdbcDisclosureStoreTest {
     }
 
     @Test
+    fun `여러 행이 한 번의 INSERT 문으로 묶인다`() {
+        // 행마다 왕복하지 않는다 — 로컬 실측으로도 단건 반복 대비 다중행이 10배 빠르다.
+        val jdbc = CapturingJdbc()
+
+        JdbcDisclosureStore(jdbc).insertIgnoringConflicts(listOf(row("A1"), row("A2"), row("A3")), now)
+
+        assertThat(jdbc.queries).hasSize(1)
+        assertThat(jdbc.queries.single().second).hasSize(3 * 14)
+    }
+
+    @Test
     fun `삽입된 행만 델타가 된다`() {
-        // RETURNING이 빈 결과인 건 = 이미 있던 건
-        val jdbc = CapturingJdbc(returning = { if (it == "A2") listOf(it) else emptyList() })
+        // RETURNING이 빈 결과인 건 = 이미 있던 건. A1·A2가 한 청크에 함께 바인딩되어도
+        // 신규 A2만 델타가 된다.
+        val jdbc = CapturingJdbc(returning = { nos -> nos.filter { it == "A2" } })
 
         val delta = JdbcDisclosureStore(jdbc)
             .insertIgnoringConflicts(listOf(row("A1"), row("A2")), now)
@@ -92,15 +113,32 @@ class JdbcDisclosureStoreTest {
 
     @Test
     fun `한 배치 안의 중복은 한 번만 실행된다`() {
-        // D-1과 D 범위가 겹쳐 같은 rcept_no가 두 번 올 수 있다.
-        // ON CONFLICT는 같은 문(statement) 안의 중복을 못 막으므로 사전에 접어야 한다.
+        // D-1과 D 범위가 겹쳐 같은 rcept_no가 두 번 올 수 있다. dedup 자체는 파라미터
+        // 절약과 DO UPDATE 전환 대비이지, ON CONFLICT DO NOTHING이 같은 문 안 중복을
+        // 못 막아서가 아니다(DO NOTHING은 실측상 첫 행만 반영하고 오류 없이 넘어간다).
         val jdbc = CapturingJdbc()
 
         val delta = JdbcDisclosureStore(jdbc)
             .insertIgnoringConflicts(listOf(row("A1"), row("A1")), now)
 
         assertThat(jdbc.queries).hasSize(1)
+        assertThat(jdbc.queries.single().second).hasSize(14)
         assertThat(delta).containsExactly("A1")
+    }
+
+    @Test
+    fun `청크 경계를 넘는 행수는 여러 문으로 나뉘고 델타는 전건 보존된다`() {
+        // 바인드 파라미터 상한(65,535) 때문에 청크가 필수다 — CHUNK_SIZE+1행으로 경계를 넘긴다.
+        val jdbc = CapturingJdbc()
+        val rows = (1..JdbcDisclosureStore.CHUNK_SIZE + 1).map { row("R%05d".format(it)) }
+
+        val delta = JdbcDisclosureStore(jdbc).insertIgnoringConflicts(rows, now)
+
+        assertThat(jdbc.queries).hasSize(2)
+        assertThat(jdbc.queries[0].second).hasSize(JdbcDisclosureStore.CHUNK_SIZE * 14)
+        assertThat(jdbc.queries[1].second).hasSize(1 * 14)
+        assertThat(delta).hasSize(rows.size)
+        assertThat(delta).containsExactlyInAnyOrderElementsOf(rows.map { it.rceptNo })
     }
 
     @Test
