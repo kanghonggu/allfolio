@@ -1,5 +1,6 @@
 package com.allfolio.realasset
 
+import org.springframework.stereotype.Component
 import java.math.RoundingMode
 import java.time.LocalDate
 
@@ -19,6 +20,7 @@ import java.time.LocalDate
  * 1일 68% · 2일 15% · 3일 14% · 4일 3%). 이 값을 "오래됐다"고 판정하는 임계치는 5 이상이다 —
  * 그보다 낮게 잡으면 정상 운영이 매일 경보로 나온다.
  */
+@Component
 class KrxGoldSource(
     private val lookup: CommodityQuoteLookup,
 ) : ValuationSource {
