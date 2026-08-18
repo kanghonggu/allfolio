@@ -51,7 +51,7 @@ curl -s "https://opendart.fss.or.kr/api/list.json?crtfc_key=$DART_API_KEY&bgn_de
 | `dart/query/DisclosureFeedService.kt` | 보유종목 조인 조회 |
 | `api/admin/DartAdminController.kt` | 수동 트리거 · 요약 반환 |
 | `api/dart/DisclosureFeedController.kt` | 사용자 피드 조회 API |
-| `unifiedasset/infrastructure/entity/Dart*Entity.kt` | 엔티티 4개 (기존 엔티티 패키지 관례를 따른다) |
+| `unified-asset` 모듈의 `unifiedasset/infrastructure/{entity,jpa}/Dart*.kt` | 엔티티·리포지터리 각 4개. **`backend-app`이 아니다** — 형제 22개가 그쪽에 있다 |
 
 ---
 
@@ -176,7 +176,7 @@ git commit -m "feat(d1): 공시 테이블 4개 마이그레이션 — rcept_no�
 ## Task 2: JPA 엔티티와 리포지터리
 
 **Files:**
-- Create: `allfolio-backend/backend-app/src/main/kotlin/com/allfolio/unifiedasset/infrastructure/entity/DartDisclosureEntity.kt`
+- Create: `allfolio-backend/unified-asset/src/main/kotlin/com/allfolio/unifiedasset/infrastructure/entity/DartDisclosureEntity.kt`
 - Create: `.../entity/DartInsiderTradeEntity.kt`
 - Create: `.../entity/DartCorpMapEntity.kt`
 - Create: `.../entity/DartCollectionRunEntity.kt`
@@ -185,7 +185,11 @@ git commit -m "feat(d1): 공시 테이블 4개 마이그레이션 — rcept_no�
 - Create: `.../jpa/DartCorpMapJpaRepository.kt`
 - Create: `.../jpa/DartCollectionRunJpaRepository.kt`
 
-`MarketCommodityQuoteEntity.kt`와 같은 패키지·같은 관례다.
+**모듈은 `unified-asset`이다 — `backend-app`이 아니다.** `MarketCommodityQuoteEntity.kt`를 비롯한
+형제 엔티티 18개와 리포지터리 22개가 전부 `unified-asset/src/main/kotlin/com/allfolio/unifiedasset/infrastructure/`
+아래에 있다. `backend-app`에 두면 같은 패키지가 두 모듈에 갈라진다(`@EntityScan(basePackages = ["com.allfolio"])`
+라 런타임에 깨지진 않지만 구조가 어긋난다). 수집 서비스(`com.allfolio.dart.*`)만 `backend-app`이고
+엔티티·리포지터리는 형제들 옆에 둔다.
 
 - [ ] **Step 1: 엔티티 4개 작성**
 
@@ -380,15 +384,15 @@ interface DartCollectionRunJpaRepository : JpaRepository<DartCollectionRunEntity
 - [ ] **Step 3: 컴파일 확인**
 
 ```bash
-cd allfolio-backend && ./gradlew :backend-app:compileKotlin
+cd allfolio-backend && ./gradlew :unified-asset:compileKotlin :backend-app:compileKotlin
 ```
 
-Expected: BUILD SUCCESSFUL
+Expected: BUILD SUCCESSFUL (둘 다)
 
 - [ ] **Step 4: 커밋**
 
 ```bash
-git add allfolio-backend/backend-app/src/main/kotlin/com/allfolio/unifiedasset/infrastructure/
+git add allfolio-backend/unified-asset/src/main/kotlin/com/allfolio/unifiedasset/infrastructure/
 git commit -m "feat(d1): 공시 엔티티·리포지터리"
 ```
 
@@ -3221,7 +3225,7 @@ Expected: BUILD SUCCESSFUL
 ```bash
 git add allfolio-backend/backend-app/src/main/kotlin/com/allfolio/dart/query/ \
         allfolio-backend/backend-app/src/main/kotlin/com/allfolio/api/dart/ \
-        allfolio-backend/backend-app/src/main/kotlin/com/allfolio/unifiedasset/infrastructure/jpa/ \
+        allfolio-backend/unified-asset/src/main/kotlin/com/allfolio/unifiedasset/infrastructure/jpa/ \
         allfolio-backend/backend-app/src/test/kotlin/com/allfolio/dart/query/
 git commit -m "feat(d1): 공시 피드 조회 API — ua_assets.symbol로 조인한다"
 ```
