@@ -87,6 +87,22 @@ CREATE INDEX idx_corp_map_stock
 
 `corpCode.xml`(ZIP)에서 주 1회 갱신한다.
 
+**실측 (2026-08-18 실제 호출):**
+
+| 항목 | 값 |
+|---|---|
+| ZIP | 3,596,918 bytes (3.4 MB) |
+| 압축 해제 | 30,059,956 bytes (**28.7 MB**), 엔트리명 `CORPCODE.xml`(대문자) |
+| 행 수 | **118,712** |
+| `stock_code` 있음 | **3,983** (3.4%) |
+| `stock_code` 공백 | 114,729 (96.6%) — 빈 문자열이 아니라 **공백 한 칸 `' '`** |
+| `modify_date` 파싱 불가 | 0 |
+| 태그 | `corp_code` · `corp_name` · `corp_eng_name` · `stock_code` · `modify_date` |
+
+**상장사만 적재한다.** 이 테이블의 용도 둘(수집 시점 스냅샷 보정 · `corp_code` 역방향 조회)이 모두 `stock_code`를 전제하므로, 없는 114,729행은 어느 쪽에도 기여하지 않는다. Neon CU-hours가 병목(1절 원칙 2)인데 30배를 실을 이유가 없다.
+
+**28.7 MB를 DOM으로 올리지 않는다.** Render 무료 인스턴스는 512MB다. StAX로 훑으면서 상장사만 남긴다.
+
 ### `dart_disclosure` — 공시 원장
 
 ```sql
