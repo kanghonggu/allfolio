@@ -2,9 +2,12 @@ package com.allfolio.api.scheduler
 
 import com.allfolio.api.admin.BenchmarkIndexAdminController
 import com.allfolio.api.admin.CommodityAdminController
+import com.allfolio.api.admin.DartAdminController
 import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.api.admin.MarketRateAdminController
+import com.allfolio.dart.DartRunResult
+import com.allfolio.dart.corp.CorpMapSummary
 import com.allfolio.fx.BackfillSummary
 import com.allfolio.fx.hana.HanaCollectSummary
 import com.allfolio.market.benchmark.BenchmarkCollectSummary
@@ -54,6 +57,7 @@ class SchedulerTriggerController(
     private val rateAdmin: MarketRateAdminController,
     private val commodityAdmin: CommodityAdminController,
     private val benchmarkAdmin: BenchmarkIndexAdminController,
+    private val dartAdmin: DartAdminController,
     private val stepExecutor: WfStepExecutor,
     @Value("\${scheduler.trigger-token:}") private val configuredToken: String,
 ) {
@@ -243,6 +247,29 @@ class SchedulerTriggerController(
     ): ResponseEntity<BenchmarkCollectSummary> {
         authorize(token)
         return benchmarkAdmin.collect(null, null)
+    }
+
+    /**
+     * POST /api/internal/scheduler/dart/collect — 공시 수집 트리거
+     *
+     * 날짜를 노출하지 않는다. [DartAdminController.collect]가 null을 KST 오늘로 해석하고,
+     * Render 컨테이너는 UTC라 이 기본값 처리가 없으면 19:00 KST 실행이 "어제"를 조회한다.
+     */
+    @PostMapping("/dart/collect")
+    fun collectDart(
+        @RequestHeader(name = TOKEN_HEADER, required = false) token: String?,
+    ): ResponseEntity<DartRunResult> {
+        authorize(token)
+        return dartAdmin.collect(null)
+    }
+
+    /** POST /api/internal/scheduler/dart/corp-map — corp_code 매핑 갱신 (주 1회) */
+    @PostMapping("/dart/corp-map")
+    fun refreshDartCorpMap(
+        @RequestHeader(name = TOKEN_HEADER, required = false) token: String?,
+    ): ResponseEntity<CorpMapSummary> {
+        authorize(token)
+        return dartAdmin.refreshCorpMap()
     }
 
     /**

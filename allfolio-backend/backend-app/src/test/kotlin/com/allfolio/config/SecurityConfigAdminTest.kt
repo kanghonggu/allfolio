@@ -1,12 +1,15 @@
 package com.allfolio.config
 
 import com.allfolio.api.admin.BenchmarkIndexAdminController
+import com.allfolio.api.admin.DartAdminController
 import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.api.admin.CommodityAdminController
 import com.allfolio.api.admin.MarketRateAdminController
 import com.allfolio.api.market.MarketQueryController
 import com.allfolio.api.scheduler.SchedulerTriggerController
+import com.allfolio.dart.DartCollectOrchestrator
+import com.allfolio.dart.corp.DartCorpMapService
 import com.allfolio.market.benchmark.BenchmarkIndexProperties
 import com.allfolio.market.benchmark.FscIndexCollectService
 import com.allfolio.market.index.IndexCollectService
@@ -57,6 +60,7 @@ import java.math.BigDecimal
         MarketRateAdminController::class,
         CommodityAdminController::class,
         BenchmarkIndexAdminController::class,
+        DartAdminController::class,
         SchedulerTriggerController::class,
         // AF-104. 어드민이 아니지만 이 컨텍스트에 함께 둔다 — 이 파일이 보는 건 SecurityConfig의
         // 경로 규칙 전체이고(스케줄러 트리거도 여기 있다), 컨텍스트를 하나 더 띄우는 값이 안 된다.
@@ -128,6 +132,15 @@ class SecurityConfigAdminTest {
     // 아니라 컨텍스트가 아예 안 떠서, 무관해 보이는 실패 메시지가 전 테스트에 걸린다.
     @MockBean
     private lateinit var wfStepExecutor: WfStepExecutor
+
+    // Task 12. SchedulerTriggerController가 DartAdminController를, 그쪽이 이 둘을 요구한다.
+    // 위 overseasIndexCollectService와 같은 함정이다 — 빠뜨리면 이 파일의 테스트가 실패하는 게
+    // 아니라 컨텍스트가 아예 안 떠서, 무관해 보이는 실패 메시지가 전 테스트에 걸린다.
+    @MockBean
+    private lateinit var dartCollectOrchestrator: DartCollectOrchestrator
+
+    @MockBean
+    private lateinit var dartCorpMapService: DartCorpMapService
 
     // AF-104. MarketQueryController가 요구한다. 조회 내용은 이 파일의 관심사가 아니라
     // 아래 200 테스트에서 빈 스냅샷 하나만 돌려주게 한다.
