@@ -3421,7 +3421,7 @@ git commit -m "feat(d1): 공시 피드 조회 API — ua_assets.symbol로 조인
 2. **Render 환경변수에 `DART_API_KEY` 추가**
 3. **GitHub Secrets 확인** — `BACKEND_URL`·`SCHEDULER_TOKEN`은 기존 워크플로가 이미 쓰는 것과 같다. 새로 넣을 것은 없다
 4. **백엔드 배포**
-5. **`corp-map` 워크플로를 수동 실행**(`workflow_dispatch`) — 매핑이 비어 있으면 비상장 판별 근거가 없다
+5. **`corp-map` 워크플로를 수동 실행**(`workflow_dispatch`) — **이 단계를 건너뛰어도 수집·조회는 정상 동작한다.** `list.json`이 행마다 `stock_code`를 주므로 상장/비상장 판별은 `dart_corp_map` 없이 이뤄진다(Task 9 ⚠️ 블록 참조). 지금 돌리는 이유는 매핑 이력을 일찍 쌓아 두기 위해서다 — 나중에 붙이면 그 시점부터의 매핑만 갖게 된다
 6. **`collect-dart` 워크플로를 수동 실행** — 응답 본문의 `pagesFetched`·`newCount`를 눈으로 확인한다
 7. **DB에서 실제 값 대조** — 아래 쿼리로 Tier 분포가 실측(스펙 5절 표)과 비슷한지 본다
 
