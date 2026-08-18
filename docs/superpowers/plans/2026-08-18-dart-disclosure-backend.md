@@ -829,8 +829,13 @@ git commit -m "feat(d1): OpenDART 설정 바인딩"
 
 
 **Files:**
+- Create: `allfolio-backend/backend-app/src/main/kotlin/com/allfolio/dart/DartApiException.kt`
 - Create: `allfolio-backend/backend-app/src/main/kotlin/com/allfolio/dart/list/DartListClient.kt`
 - Test: `allfolio-backend/backend-app/src/test/kotlin/com/allfolio/dart/list/DartListClientTest.kt`
+
+**`DartApiException`은 `com.allfolio.dart`에 독립 파일로 둔다** — `dart.list`에 두면 Task 9(`dart/corp/`) ·
+10(`dart/insider/`) · 12(`api/admin/`)가 수집 클라이언트도 아니면서 `list` 패키지를 임포트하게 된다.
+`FscApiException`이 같은 이유로 `com.allfolio.market.fsc`에 독립 파일이고 두 클라이언트가 공유한다.
 
 `FscCommodityClient`와 같은 구조다. 다른 점은 `status 013` 처리와 빈 문자열 정규화다.
 
@@ -1000,9 +1005,22 @@ Expected: 컴파일 실패 — `Unresolved reference: DartListClient`
 
 - [ ] **Step 3: 구현**
 
+`DartApiException.kt`:
+
+```kotlin
+package com.allfolio.dart
+
+/** OpenDART 호출 실패. **`cause`를 받지 않는다** — Reactor checkpoint 프레임에 요청 URI가
+ *  통째로 들어 있고 거기 `crtfc_key=`가 실린다. 이 메시지는 어드민 응답과 Actions 주석까지 나간다 */
+class DartApiException(message: String) : RuntimeException(message)
+```
+
+`DartListClient.kt`:
+
 ```kotlin
 package com.allfolio.dart.list
 
+import com.allfolio.dart.DartApiException
 import com.allfolio.dart.DartProperties
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -1011,8 +1029,6 @@ import org.springframework.web.reactive.function.client.WebClient
 import java.time.Duration
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-
-class DartApiException(message: String) : RuntimeException(message)
 
 /** `list.json` 한 행. 저장 전 상태이므로 정규화·판정은 아직 안 했다 */
 data class DartListRow(
@@ -1113,7 +1129,8 @@ Expected: PASS, 7 tests
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add allfolio-backend/backend-app/src/main/kotlin/com/allfolio/dart/list/DartListClient.kt \
+git add allfolio-backend/backend-app/src/main/kotlin/com/allfolio/dart/DartApiException.kt \
+        allfolio-backend/backend-app/src/main/kotlin/com/allfolio/dart/list/DartListClient.kt \
         allfolio-backend/backend-app/src/test/kotlin/com/allfolio/dart/list/DartListClientTest.kt
 git commit -m "feat(d1): list.json 클라이언트 — status 013은 공휴일이지 실패가 아니다"
 ```
@@ -1828,7 +1845,7 @@ Expected: 컴파일 실패 — `Unresolved reference: DartCorpCodeClient`
 package com.allfolio.dart.corp
 
 import com.allfolio.dart.DartProperties
-import com.allfolio.dart.list.DartApiException
+import com.allfolio.dart.DartApiException
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.client.WebClient
 import org.w3c.dom.Element
@@ -2001,7 +2018,7 @@ git commit -m "feat(d1): corpCode.xml ZIP 파서 — JSON이 아니라 압축 �
 package com.allfolio.dart.insider
 
 import com.allfolio.dart.DartProperties
-import com.allfolio.dart.list.DartApiException
+import com.allfolio.dart.DartApiException
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.allfolio.test.dedicatedConnector
 import com.sun.net.httpserver.HttpExchange
@@ -2159,7 +2176,7 @@ Expected: 컴파일 실패 — `Unresolved reference: DartElestockClient`
 package com.allfolio.dart.insider
 
 import com.allfolio.dart.DartProperties
-import com.allfolio.dart.list.DartApiException
+import com.allfolio.dart.DartApiException
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.stereotype.Component
@@ -2286,7 +2303,7 @@ git commit -m "feat(d1): elestock 클라이언트 — 변동사유 필드가 없
 ```kotlin
 package com.allfolio.dart.insider
 
-import com.allfolio.dart.list.DartApiException
+import com.allfolio.dart.DartApiException
 import com.allfolio.unifiedasset.infrastructure.entity.DartDisclosureEntity
 import com.allfolio.unifiedasset.infrastructure.entity.DartInsiderTradeEntity
 import org.assertj.core.api.Assertions.assertThat
@@ -2587,7 +2604,7 @@ git commit -m "feat(d1): 소유변동 적재 — elestock은 2년치를 통째�
 package com.allfolio.dart
 
 import com.allfolio.dart.insider.InsiderCollectSummary
-import com.allfolio.dart.list.DartApiException
+import com.allfolio.dart.DartApiException
 import com.allfolio.dart.list.DartCollectSummary
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -2740,7 +2757,7 @@ import com.allfolio.dart.DartCollectOrchestrator
 import com.allfolio.dart.DartRunResult
 import com.allfolio.dart.corp.CorpMapSummary
 import com.allfolio.dart.corp.DartCorpMapService
-import com.allfolio.dart.list.DartApiException
+import com.allfolio.dart.DartApiException
 import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
