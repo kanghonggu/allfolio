@@ -1165,6 +1165,17 @@ git commit -m "feat(d1): list.json 클라이언트 — status 013은 공휴일�
 > 3. **배치 안 중복 접기와 델타 매핑** — 같은 `rcept_no`가 두 번 오면 한 번만 실행되는가,
 >    `query`가 돌려준 행이 그대로 델타가 되는가 (fake의 `query` 반환값을 테스트가 정한다)
 >
+> **다중행 INSERT로 청크를 나눠 넣을 것.** 행마다 왕복하면 실측 최다일(2026-08-14, D-1+D 기준
+> 9,000행 초과)에 9,000번 왕복한다. 로컬 실측으로 단건 반복 1.624s 대 다중행 한 방 0.171s(10배)이고,
+> Neon은 원격 서버리스라 격차가 더 벌어진다 — 설계 1절 원칙 2가 "실제 병목은 Neon CU-hours"다.
+> **바인드 파라미터 상한 65,535가 실제 제약이다** — 14컬럼이면 행 4,681개가 한 문의 상한이라
+> 청크가 없으면 최다일에 터진다. 1,000행 정도로 자른다.
+>
+> **`@Transactional`을 반드시 붙일 것.** 없으면 행마다 autocommit이라, 9,000행 중 N행째에서 죽으면
+> 1..N은 커밋됐는데 델타는 반환되지 못한다. 다음 실행은 `ON CONFLICT DO NOTHING`으로 그 N행을
+> 건너뛰므로 **그 행들은 영원히 어떤 델타에도 안 들어가고**, 델타로만 구동되는 elestock 호출이
+> 영영 안 일어난다. 오류도 경고도 없어 정상 재실행과 구분되지 않는다.
+>
 > **SQL 자체는 실제 Postgres로 1회 수동 검증하고 커밋 메시지에 남긴다** — Task 1의
 > 마이그레이션과 같은 방식이다. 로컬에 `docker compose up -d postgres`로 띄우고,
 > Task 1의 마이그레이션을 적용한 뒤 이 INSERT를 두 번 실행해 두 번째가 빈 결과를
@@ -1352,7 +1363,10 @@ data class DisclosureInsert(
  * **JPA로는 안 된다** — `saveAll`은 SELECT 후 INSERT/UPDATE라 "새로 들어간 행"을 구분해
  * 주지 않는다. `NavCurrencyDailyStore`가 같은 이유로 JdbcTemplate을 쓴다.
  *
- * **배치 안 중복은 사전에 접는다.** `ON CONFLICT`는 같은 문 안에서 중복된 키를 막지 못한다.
+ * **배치 안 중복은 사전에 접는다.** `ON CONFLICT DO NOTHING`은 같은 문 안의 중복도 처리하지만
+ * (실측: 같은 키 3행을 한 `VALUES`에 넣으면 첫 행만 들어가고 `RETURNING`은 1행, 오류 없음),
+ * 접어 두면 바인드 파라미터를 아낄 수 있고 나중에 `DO UPDATE`로 바꾸는 날 필수가 된다
+ * — 그쪽은 `ON CONFLICT DO UPDATE command cannot affect row a second time`으로 실제로 터진다.
  * D-1과 D 범위가 겹쳐 같은 `rcept_no`가 두 번 오는 경우가 실제로 있다.
  */
 @Component
