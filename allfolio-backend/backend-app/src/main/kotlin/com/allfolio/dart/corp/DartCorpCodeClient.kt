@@ -7,27 +7,31 @@ import org.springframework.http.client.reactive.ClientHttpConnector
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.WebClientResponseException
-import org.w3c.dom.Element
 import java.io.ByteArrayInputStream
 import java.time.Duration
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.zip.ZipInputStream
-import javax.xml.parsers.DocumentBuilderFactory
+import javax.xml.stream.XMLInputFactory
+import javax.xml.stream.XMLStreamConstants
+import javax.xml.stream.XMLStreamReader
 
 /**
- * `corpCode.xml` 응답 한 행.
- *
- * **`stock_code`는 비상장이면 공백/빈 문자열로 온다** — `list.json`(`DartListRow`)과 같은 습성이다.
- * 여기서 null로 정규화해 두지 않으면 `dart_corp_map`의 부분 인덱스(`WHERE stock_code IS NOT NULL`)가
- * 무용지물이 된다.
+ * `corpCode.xml` 응답 중 **상장사** 한 행. 비상장(`stock_code` 없음)은 파싱 단계에서 이미
+ * 걸러지므로 이 타입에 도달한 행은 전부 `stockCode`가 있다 — 근거는 [DartCorpCodeClient] KDoc.
  */
 data class DartCorpRow(
     val corpCode: String,
     val corpName: String,
-    val stockCode: String?,
+    val stockCode: String,
     val modifyDate: LocalDate?,
 )
+
+/**
+ * [totalRows] `corp_code`가 있는 행 전체 수(상장 여부 무관, 실측 118,712).
+ * [listedRows] 그중 `stock_code`가 있어 실제로 [DartCorpRow]로 만들어진(=상장) 행. 실측 3,983건(3.4%).
+ */
+data class DartCorpParseResult(val totalRows: Int, val listedRows: List<DartCorpRow>)
 
 /**
  * OpenDART(전자공시시스템 오픈API) 전 종목 고유번호 매핑 `corpCode.xml`.
@@ -40,15 +44,36 @@ data class DartCorpRow(
  * 유일한 경로다. 다음 사람이 "왜 안 쓰는 걸 만들었지" 하지 않도록 남긴다.
  *
  * **`corpCode.xml`은 ZIP으로 온다 — JSON이 아니다.** 응답 Content-Type이
- * `application/x-msdownload`라 Jackson으로 읽으면 깨진다. `ZipInputStream`으로 풀고 DOM으로
- * XML을 파싱한다.
+ * `application/x-msdownload`라 Jackson으로 읽으면 깨진다. `ZipInputStream`으로 풀고 StAX로
+ * XML을 스트리밍 파싱한다.
+ *
+ * **실측(2026-08-18, 실제 호출).** 계획서 Task 9은 이 구조를 "미검증 가정"이라 적어 두었으나
+ * 이제 실측으로 확인했다:
+ * - ZIP 3,596,918 bytes(3.4MB) → 해제 30,059,956 bytes(28.7MB), ZIP 엔트리명 `CORPCODE.xml`(대문자)
+ * - 총 118,712행. `<result><list><corp_code>…` 구조가 계획서 가정과 일치했다
+ * - `<list>` 태그는 5종을 담는다: `corp_code`·`corp_eng_name`·`corp_name`·`modify_date`·`stock_code`.
+ *   `corp_eng_name`은 쓰지 않는다
+ * - `stock_code` 있음(상장) 3,983행(3.4%), 공백(비상장) 114,729행(96.6%) — **빈 문자열이 아니라
+ *   공백 한 칸(`" "`)**. 코틀린 `" ".isBlank()`가 true라 정규화는 문제없이 걸린다
+ * - `modify_date` 파싱 불가 0건
+ *
+ * **상장사만 적재한다 — 118,712행 중 3,983행(3.4%)만 [DartCorpParseResult.listedRows]에 남는다.**
+ * 이 테이블의 존재 이유 둘 다(수집 시점 스냅샷 보정, `corp_code`→종목 역방향 조회) `stock_code`가
+ * 있어야 성립한다 — 비상장 96.6%는 어느 쪽에도 기여하지 않는다. Neon CU-hours가 이 프로젝트의
+ * 문서화된 병목(설계 1절 원칙 2)인데 쓰지도 않을 30배를 적재할 이유가 없다.
+ *
+ * **DOM이 아니라 StAX로 파싱하고, 파싱 중에 상장 필터를 적용한다.** 28.7MB XML을 DOM으로 올리면
+ * 트리 노드 오버헤드 때문에 통상 원본의 수 배~수십 배 힙을 쓴다. Render 무료 인스턴스가 512MB이고
+ * 스프링 앱이 이미 상당량을 쓰는 상황에서 이 여유가 없다. StAX로 훑으면서 `stock_code`가 공백인
+ * 행은 [DartCorpRow]로 만들지 않고 그 자리에서 버리므로, 메모리에 남는 건 118,712행이 아니라
+ * 최종 3,983행뿐이다.
+ *
+ * **StAX에도 XXE 방지를 건다.** [XMLInputFactory.SUPPORT_DTD]를 꺼서 DTD 선언 자체를 거부한다
+ * (DOM에 걸었던 `disallow-doctype-decl`과 동등한 방어). 외부(OpenDART)가 만든 XML을 그대로
+ * 파싱하는 지점이라 최소한의 방어는 걸어 둔다.
  *
  * **전 종목 매핑이라 응답이 수 MB다.** WebClient의 in-memory 버퍼 상한(기본 256KB)을 올려야
  * 한다 — 주 1회 호출이면 이 정도 메모리는 감당할 만하다는 게 애초에 주 1회로 잡은 이유다.
- *
- * **응답 구조는 아직 실측하지 않은 가정이다.** `<result><list><corp_code>…` 구조와
- * ZIP 내부 파일명(`CORPCODE.xml`)은 계획서(Task 9)에 적힌 값을 그대로 따른 것으로, 실제
- * 필드명·파일명이 다를 수 있다. 실측 확인은 배포 후 corp-map 워크플로 수동 실행에서 한다.
  *
  * **🔴 인증키가 쿼리 파라미터(`crtfc_key=`)에 실린다.** `DartListClient`와 같은 방어 셋을
  * 지킨다: 전체 URL을 로그에 찍지 않는다 · 예외에 `cause`를 붙이지 않는다(Reactor checkpoint
@@ -77,7 +102,7 @@ class DartCorpCodeClient(private val props: DartProperties) {
     /** 전 종목 매핑이라 `list.json`보다 느릴 수 있어 기본 타임아웃의 배수를 쓴다. 테스트에서만 줄인다 */
     internal var timeout: Duration = Duration.ofSeconds(props.timeoutSeconds * TIMEOUT_MULTIPLIER)
 
-    fun fetch(): List<DartCorpRow> {
+    fun fetch(): DartCorpParseResult {
         // 설정 누락은 상류 장애가 아니라 우리 문제다. 조용히 빈 목록을 주면 다른 실패와 구분이 안 된다
         if (props.apiKey.isBlank()) {
             throw DartApiException("DART_API_KEY가 설정되지 않았습니다")
@@ -126,45 +151,92 @@ class DartCorpCodeClient(private val props: DartProperties) {
         private const val TIMEOUT_MULTIPLIER = 4L
         private val DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd")
 
+        /** [parseZip]가 값을 누적하는 leaf 태그. `corp_eng_name`은 여기 없어 자동으로 무시된다 */
+        private val TRACKED_TAGS = setOf("corp_code", "corp_name", "stock_code", "modify_date")
+
         /**
-         * ZIP을 풀어 `<list>` 행마다 [DartCorpRow]로 옮긴다.
+         * ZIP을 풀어 StAX로 훑으며 `<list>` 행마다 상장 여부를 가른다.
          *
-         * - `corp_code`가 없는 행은 버린다.
-         * - `stock_code`는 trim 후 공백/빈 문자열이면 null로 정규화한다(비상장).
+         * - `corp_code`가 없거나 공백뿐이면(태그 자체가 없든, 태그는 있는데 내용이 없든) 그 행
+         *   전체를 버린다 — `totalRows`에도 안 잡힌다.
+         * - `stock_code`가 없거나 공백뿐이면 비상장이다 — [DartCorpRow]를 만들지 않고 버린다.
+         *   `totalRows`에는 잡히지만 `listedRows`에는 안 남는다.
          * - `modify_date`는 없거나 `yyyyMMdd`로 못 읽으면 null로 둔다 — 한 행의 파싱 실패로
          *   전체를 죽이지 않는다.
-         *
-         * XXE 방지를 위해 DTD 선언을 거부한다 — 외부(OpenDART)가 만든 XML을 그대로 파싱하는
-         * 지점이라 최소한의 방어는 걸어 둔다.
          */
-        fun parseZip(zipBytes: ByteArray): List<DartCorpRow> {
+        fun parseZip(zipBytes: ByteArray): DartCorpParseResult {
             val xmlBytes = ZipInputStream(ByteArrayInputStream(zipBytes)).use { zip ->
                 generateSequence { zip.nextEntry }.firstOrNull { !it.isDirectory }
                     ?: throw DartApiException("corpCode ZIP에 항목이 없습니다")
                 zip.readBytes()
             }
 
-            val factory = DocumentBuilderFactory.newInstance().apply {
-                isNamespaceAware = false
-                setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+            val factory = XMLInputFactory.newInstance().apply {
+                // XXE 방지 — DOM에 걸었던 disallow-doctype-decl과 동등한 방어
+                setProperty(XMLInputFactory.SUPPORT_DTD, false)
+                setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false)
             }
-            val doc = factory.newDocumentBuilder().parse(ByteArrayInputStream(xmlBytes))
+            val reader = factory.createXMLStreamReader(ByteArrayInputStream(xmlBytes))
 
-            val nodes = doc.getElementsByTagName("list")
-            return (0 until nodes.length).mapNotNull { i ->
-                val el = nodes.item(i) as Element
-                val corpCode = el.textOf("corp_code")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                DartCorpRow(
-                    corpCode = corpCode,
-                    corpName = el.textOf("corp_name").orEmpty(),
-                    stockCode = el.textOf("stock_code")?.ifBlank { null },
-                    modifyDate = el.textOf("modify_date")?.ifBlank { null }
-                        ?.let { runCatching { LocalDate.parse(it, DATE_FORMAT) }.getOrNull() },
-                )
+            var totalRows = 0
+            val listed = mutableListOf<DartCorpRow>()
+
+            try {
+                var currentTag: String? = null
+                var corpCode: StringBuilder? = null
+                var corpName: StringBuilder? = null
+                var stockCode: StringBuilder? = null
+                var modifyDate: StringBuilder? = null
+
+                while (reader.hasNext()) {
+                    when (reader.next()) {
+                        XMLStreamConstants.START_ELEMENT -> {
+                            when (reader.localName) {
+                                "list" -> {
+                                    corpCode = null; corpName = null; stockCode = null; modifyDate = null
+                                    currentTag = null
+                                }
+                                in TRACKED_TAGS -> currentTag = reader.localName
+                                else -> currentTag = null
+                            }
+                        }
+                        XMLStreamConstants.CHARACTERS -> {
+                            val target = when (currentTag) {
+                                "corp_code" -> corpCode ?: StringBuilder().also { corpCode = it }
+                                "corp_name" -> corpName ?: StringBuilder().also { corpName = it }
+                                "stock_code" -> stockCode ?: StringBuilder().also { stockCode = it }
+                                "modify_date" -> modifyDate ?: StringBuilder().also { modifyDate = it }
+                                else -> null
+                            }
+                            target?.append(reader.text)
+                        }
+                        XMLStreamConstants.END_ELEMENT -> {
+                            if (reader.localName == "list") {
+                                val code = corpCode?.toString()?.trim()
+                                if (!code.isNullOrBlank()) {
+                                    totalRows++
+                                    val stock = stockCode?.toString()?.trim()
+                                    if (!stock.isNullOrBlank()) {
+                                        listed += DartCorpRow(
+                                            corpCode = code,
+                                            corpName = corpName?.toString()?.trim().orEmpty(),
+                                            stockCode = stock,
+                                            modifyDate = modifyDate?.toString()?.trim()?.ifBlank { null }
+                                                ?.let { runCatching { LocalDate.parse(it, DATE_FORMAT) }.getOrNull() },
+                                        )
+                                    }
+                                }
+                            }
+                            currentTag = null
+                        }
+                        else -> {}
+                    }
+                }
+            } finally {
+                reader.close()
             }
+
+            return DartCorpParseResult(totalRows, listed)
         }
-
-        private fun Element.textOf(tag: String): String? =
-            getElementsByTagName(tag).item(0)?.textContent?.trim()
     }
 }

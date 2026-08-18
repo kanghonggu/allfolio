@@ -12,8 +12,10 @@ import org.junit.jupiter.api.Test
 import java.io.ByteArrayOutputStream
 import java.net.InetSocketAddress
 import java.net.ServerSocket
+import java.net.URLDecoder
 import java.time.Duration
 import java.time.LocalDate
+import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -21,9 +23,12 @@ import java.util.zip.ZipOutputStream
 /**
  * OpenDART 전 종목 매핑 `corpCode.xml` 클라이언트.
  *
- * **`corpCode.xml`의 실제 응답 구조는 아직 호출해 본 적이 없다.** 여기 쓰인 `<result><list><corp_code>…`
- * 구조는 계획서(`docs/superpowers/plans/2026-08-18-dart-disclosure-backend.md` Task 9)의 가정이지
- * 실측이 아니다. 실측 확인은 배포 후 corp-map 워크플로 수동 실행에서 한다.
+ * 응답 구조(`<result><list><corp_code>…`)와 태그 5종(`corp_code`·`corp_eng_name`·`corp_name`·
+ * `modify_date`·`stock_code`), ZIP 엔트리명(`CORPCODE.xml`, 대문자)은 전부 2026-08-18 실제
+ * 호출로 확인된 값이다 — 계획서의 "미검증 가정"은 이제 실측으로 대체됐다. 실측: ZIP
+ * 3,596,918 bytes(3.4MB) → 해제 30,059,956 bytes(28.7MB), 118,712행, 그중 `stock_code`
+ * 있음(상장) 3,983행(3.4%)·공백(비상장) 114,729행(96.6%, 빈 문자열이 아니라 공백 한 칸),
+ * `modify_date` 파싱 불가 0건. 자세한 근거는 [DartCorpCodeClient] KDoc.
  *
  * 인증키는 `list.json`(`DartListClient`)과 같은 쿼리 파라미터(`crtfc_key=`) 방식이므로 같은 유출
  * 방어 셋을 그대로 검증한다 — 예외 어디에도 키도 오퍼레이션 경로 조각도 없어야 한다.
@@ -33,6 +38,7 @@ class DartCorpCodeClientTest {
     private companion object { const val API_KEY = "SUPERSECRETCORPCODEKEY9876" }
 
     private var server: HttpServer? = null
+    private val received = AtomicReference<String>()
 
     @AfterEach fun tearDown() { server?.stop(0) }
 
@@ -52,8 +58,11 @@ class DartCorpCodeClientTest {
     private fun respond(exchange: HttpExchange, status: Int, body: String) =
         respond(exchange, status, body.toByteArray())
 
-    /** ZIP 하나를 200으로 돌려주는 루프백 스텁 */
-    private fun serving(zip: ByteArray): Int = serve { ex -> respond(ex, 200, zip) }
+    /** ZIP 하나를 200으로 돌려주는 루프백 스텁. 요청 쿼리를 [received]에 남긴다 */
+    private fun serving(zip: ByteArray): Int = serve { ex ->
+        received.set(ex.requestURI.rawQuery)
+        respond(ex, 200, zip)
+    }
 
     // dedicatedConnector를 쓰는 이유는 StubServerConnector.kt 주석에 있다 — 빼면 간헐적으로 깨진다
     private fun client(port: Int, key: String = API_KEY) = DartCorpCodeClient(
@@ -62,6 +71,12 @@ class DartCorpCodeClientTest {
 
     /** 아무도 듣지 않는 포트. 여는 즉시 닫아 두므로 연결이 거부된다 */
     private fun deadPort(): Int = ServerSocket(0).use { it.localPort }
+
+    private fun queryOf(raw: String): Map<String, String> =
+        raw.split("&").associate { p ->
+            val (n, v) = p.split("=", limit = 2)
+            URLDecoder.decode(n, "UTF-8") to URLDecoder.decode(v, "UTF-8")
+        }
 
     /** 예외 전체(메시지 + cause 체인 + suppressed + 모든 스택프레임)에 비밀이 없는지 본다 */
     private fun assertNoSecretAnywhere(t: Throwable) {
@@ -104,7 +119,7 @@ class DartCorpCodeClientTest {
     }
 
     @Test
-    fun `ZIP을 풀어 매핑을 읽는다`() {
+    fun `ZIP을 풀어 상장사만 남긴다`() {
         val xml = """
             <?xml version="1.0" encoding="UTF-8"?>
             <result>
@@ -115,16 +130,16 @@ class DartCorpCodeClientTest {
             </result>
         """.trimIndent()
 
-        val rows = DartCorpCodeClient.parseZip(zipOf(xml))
+        val result = DartCorpCodeClient.parseZip(zipOf(xml))
 
-        assertThat(rows).hasSize(2)
-        with(rows[0]) {
+        // 실측대로 총 스캔 행수(2)와 실제 적재 대상(1, 비상장 걸러진 뒤)이 다르다
+        assertThat(result.totalRows).isEqualTo(2)
+        assertThat(result.listedRows).hasSize(1)
+        with(result.listedRows.single()) {
             assertThat(corpCode).isEqualTo("00126380")
             assertThat(stockCode).isEqualTo("005930")
             assertThat(modifyDate).isEqualTo(LocalDate.of(2026, 8, 14))
         }
-        // 비상장은 공백으로 온다 — null로 정규화해야 부분 인덱스(WHERE stock_code IS NOT NULL)가 산다
-        assertThat(rows[1].stockCode).isNull()
     }
 
     @Test
@@ -138,7 +153,7 @@ class DartCorpCodeClientTest {
             </result>
         """.trimIndent()
 
-        val rows = DartCorpCodeClient.parseZip(zipOf(xml))
+        val rows = DartCorpCodeClient.parseZip(zipOf(xml)).listedRows
 
         assertThat(rows).hasSize(2)
         assertThat(rows[0].modifyDate).isNull()
@@ -147,12 +162,60 @@ class DartCorpCodeClientTest {
     }
 
     @Test
-    fun `corp_code가 없는 행은 버린다`() {
+    fun `corp_code 태그 자체가 없는 행은 버린다`() {
         val xml = """
             <result><list><corp_name>이름만있음</corp_name><stock_code>000001</stock_code></list></result>
         """.trimIndent()
 
-        assertThat(DartCorpCodeClient.parseZip(zipOf(xml))).isEmpty()
+        val result = DartCorpCodeClient.parseZip(zipOf(xml))
+
+        assertThat(result.totalRows).isZero()
+        assertThat(result.listedRows).isEmpty()
+    }
+
+    @Test
+    fun `corp_code 태그는 있지만 공백뿐인 행도 버린다`() {
+        // "태그가 아예 없음"과는 다른 경로다 — 빈 문자열/공백 정규화(takeIf isNotBlank)가
+        // 빠지면 이 케이스만 새는데, "태그 자체가 없는" 테스트는 그 결함을 못 잡는다.
+        val xml = """
+            <result><list><corp_code> </corp_code><corp_name>공백코드</corp_name>
+                    <stock_code>000001</stock_code></list></result>
+        """.trimIndent()
+
+        val result = DartCorpCodeClient.parseZip(zipOf(xml))
+
+        assertThat(result.totalRows).isZero()
+        assertThat(result.listedRows).isEmpty()
+    }
+
+    @Test
+    fun `stock_code가 공백뿐이면 비상장으로 걸러진다`() {
+        // 실측 114,729건(96.6%)이 이 형태다 — 빈 문자열이 아니라 공백 한 칸.
+        val xml = """
+            <result><list><corp_code>01888779</corp_code><corp_name>제이엠밸브</corp_name>
+                    <stock_code> </stock_code><modify_date>20260701</modify_date></list></result>
+        """.trimIndent()
+
+        val result = DartCorpCodeClient.parseZip(zipOf(xml))
+
+        // corp_code는 유효하므로 totalRows에는 잡히지만, 비상장이라 적재 대상엔 안 남는다
+        assertThat(result.totalRows).isEqualTo(1)
+        assertThat(result.listedRows).isEmpty()
+    }
+
+    /** DOCTYPE 자체를 거부하는지 본다 — SUPPORT_DTD=false가 빠지면 내부 엔티티가 조용히 치환된다 */
+    @Test
+    fun `DOCTYPE이 있는 XML은 XXE 방지로 거부된다`() {
+        val xml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE result [<!ENTITY x "치환됨">]>
+            <result><list><corp_code>00000001</corp_code><corp_name>&x;</corp_name>
+                    <stock_code>000001</stock_code></list></result>
+        """.trimIndent()
+
+        val thrown = catchThrowable { DartCorpCodeClient.parseZip(zipOf(xml)) }
+
+        assertThat(thrown).isNotNull()
     }
 
     @Test
@@ -163,10 +226,22 @@ class DartCorpCodeClientTest {
         """.trimIndent()
         val port = serving(zipOf(xml))
 
-        val rows = client(port).fetch()
+        val result = client(port).fetch()
 
-        assertThat(rows).hasSize(1)
-        assertThat(rows.first().corpCode).isEqualTo("00126380")
+        assertThat(result.totalRows).isEqualTo(1)
+        assertThat(result.listedRows).hasSize(1)
+        assertThat(result.listedRows.first().corpCode).isEqualTo("00126380")
+    }
+
+    @Test
+    fun `쿼리에 인증키가 값으로 실린다`() {
+        val xml = """<result></result>"""
+        val port = serving(zipOf(xml))
+
+        client(port).fetch()
+
+        val q = queryOf(received.get())
+        assertThat(q["crtfc_key"]).isEqualTo(API_KEY)
     }
 
     @Test
@@ -198,7 +273,7 @@ class DartCorpCodeClientTest {
         assertNoSecretAnywhere(thrown)
     }
 
-    /** ZIP이 아닌(깨진) 바이트가 오면 ZipInputStream/DOM 파서가 실패한다 — 그 실패 경로에서도 유출이 없어야 한다 */
+    /** ZIP이 아닌(깨진) 바이트가 오면 ZipInputStream/StAX 파서가 실패한다 — 그 실패 경로에서도 유출이 없어야 한다 */
     @Test
     fun `ZIP이 아닌 응답 본문에서도 인증키가 새지 않는다`() {
         val port = serve { ex ->
@@ -252,9 +327,9 @@ class DartCorpCodeClientTest {
         assertThat(zip.size).isGreaterThan(256 * 1024)
         val port = serving(zip)
 
-        val rows = client(port).fetch()
+        val result = client(port).fetch()
 
-        assertThat(rows).hasSize(1)
-        assertThat(rows.first().corpName).hasSize(300_000)
+        assertThat(result.listedRows).hasSize(1)
+        assertThat(result.listedRows.first().corpName).hasSize(300_000)
     }
 }
