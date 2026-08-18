@@ -87,7 +87,11 @@ CREATE TABLE IF NOT EXISTS dart_collection_run (
     pages_fetched  INT         NOT NULL DEFAULT 0,
     api_calls      INT         NOT NULL DEFAULT 0,
     new_count      INT         NOT NULL DEFAULT 0,
-    elestock_calls INT         NOT NULL DEFAULT 0,
+    elestock_calls INT         NOT NULL DEFAULT 0,  -- 항상 0(배선 없음): 공시 run 행이 저장된
+                                                      -- "뒤"에 소유변동 단계가 돈다. 채우려면 1회
+                                                      -- 기록 원칙(DartDisclosureCollectService
+                                                      -- KDoc)과 충돌 — DartCollectionRunEntity
+                                                      -- KDoc 참고
     status         VARCHAR(20) NOT NULL,      -- SUCCESS / PARTIAL / FAILED
     error_msg      TEXT,
     finished_at    TIMESTAMPTZ

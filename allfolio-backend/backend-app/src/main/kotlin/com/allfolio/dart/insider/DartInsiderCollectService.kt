@@ -62,10 +62,13 @@ data class InsiderCollectSummary(
  * **공시의 `stock_code`를 소유변동 행에 물려준다.** `elestock` 응답에는 `stock_code`가 없다
  * ([ElestockRow] KDoc) — 트리거가 된 [DartDisclosureEntity]에서 가져온다.
  *
- * **한 회사가 실패해도 나머지는 진행한다.** 사유는 [InsiderCollectSummary.failures]에 담는다.
- * 공시 수집(TX1, Task 8 [com.allfolio.dart.list.DartDisclosureCollectService])은 이미
- * 커밋됐으므로 여기서 예외를 올려도 그쪽은 롤백되지 않는다 — 오히려 여기서 예외를 전파하면
- * 아직 처리 안 된 나머지 회사들의 소유변동만 통째로 못 들어간다.
+ * **한 회사가 실패해도 나머지는 진행한다 — `fetch`든 `saveAll`이든 같다.** 사유는
+ * [InsiderCollectSummary.failures]에 담는다. `runCatching` 블록이 `client.fetch`뿐 아니라
+ * `store.saveAll`까지 감싸는 이유가 이것이다: 저장 실패(Neon 타임아웃 등)를 `fetch` 실패와
+ * 다르게 취급해 밖으로 새게 두면, 그 예외가 회사 루프를 뚫고 나가 아직 처리 안 된 나머지
+ * 회사가 통째로 건너뛰어진다. 공시 수집(TX1, Task 8
+ * [com.allfolio.dart.list.DartDisclosureCollectService])은 이미 커밋됐으므로 여기서 예외를
+ * 올려도 그쪽은 롤백되지 않는다.
  *
  * **델타가 비면 `elestock`을 아예 안 부른다.** Task 8이 공휴일 등으로 새 공시가 없으면
  * `newRceptNos`가 빈 리스트로 온다 — 이때 `findDisclosures(emptyList())`조차 부르지 않고
@@ -140,41 +143,51 @@ class DartInsiderCollectService(
         // 같은 회사에 Tier 4 공시가 둘 이상이어도 elestock은 한 번만 부른다 — 회사 전체 이력이 온다
         triggers.map { it.corpCode }.distinct().forEach { corpCode ->
             calls++
-            runCatching { client.fetch(corpCode) }
+            // fetch뿐 아니라 saveAll까지 이 한 블록 안에 있어야 한다 — saveAll이 던지는 경우
+            // (Neon 타임아웃 등)도 fetch 실패와 똑같이 "이 회사만" 실패로 격리해야 한다.
+            // 둘로 나눠 saveAll을 밖에 두면 그 예외가 forEach를 뚫고 collect() 밖으로 나가
+            // 아직 처리 안 된 나머지 회사가 통째로 건너뛰어진다
+            runCatching {
+                val rows = client.fetch(corpCode)
+                // ★핵심★ elestock은 회사 전체 이력(최대 3,395행)을 통째로 준다 — 델타에
+                // 있는 rcept_no만 남긴다. 이 필터가 없으면 재호출마다 같은 이력이 다시 들어온다
+                val fresh = rows
+                    .filter { it.rceptNo in deltaSet }
+                    // uq_insider (rcept_no, repror) 회피 — 이미 저장된 조합은 다시 넣지 않는다
+                    .filter { (it.rceptNo to it.repror) !in existing }
+
+                val entities = fresh.map { r ->
+                    DartInsiderTradeEntity(
+                        rceptNo = r.rceptNo,
+                        corpCode = r.corpCode,
+                        stockCode = stockCodeByRcept[r.rceptNo],
+                        repror = r.repror,
+                        officerPosition = r.officerPosition,
+                        isRegistered = r.isRegistered,
+                        majorHolderType = r.majorHolderType,
+                        reportDate = r.reportDate,
+                        ownedQty = r.ownedQty,
+                        changeQty = r.changeQty,
+                        ownedRate = r.ownedRate,
+                        changeRate = r.changeRate,
+                        collectedAt = now,
+                    )
+                }
+                if (entities.isNotEmpty()) store.saveAll(entities)
+                fresh
+            }
                 .onFailure { e ->
-                    // 한 회사가 실패해도 나머지는 진행한다. TX1(공시 수집)은 이미 커밋됐으므로
-                    // 여기서 예외를 전파하지 않는다 — 근거는 클래스 KDoc "부분 커밋 판단" 절
+                    // 한 회사가 실패해도 나머지는 진행한다(fetch든 saveAll이든). TX1(공시 수집)은
+                    // 이미 커밋됐으므로 여기서 예외를 전파하지 않는다 — 근거는 클래스 KDoc
+                    // "부분 커밋 판단" 절
                     failures += "corp_code=$corpCode: ${e.message}"
                     log.warn("[DART] elestock 실패 corp_code={}: {}", corpCode, e.message)
                 }
-                .onSuccess { rows ->
-                    // ★핵심★ elestock은 회사 전체 이력(최대 3,395행)을 통째로 준다 — 델타에
-                    // 있는 rcept_no만 남긴다. 이 필터가 없으면 재호출마다 같은 이력이 다시 들어온다
-                    val fresh = rows
-                        .filter { it.rceptNo in deltaSet }
-                        // uq_insider (rcept_no, repror) 회피 — 이미 저장된 조합은 다시 넣지 않는다
-                        .filter { (it.rceptNo to it.repror) !in existing }
+                .onSuccess { fresh ->
+                    // saveAll이 예외 없이 끝난 뒤에만 existing·inserted를 갱신한다 — saveAll이
+                    // 던지면 이 줄에 도달하지 못하므로 실패한 회사분이 "저장된 것처럼" 잡히지 않는다
                     fresh.forEach { existing += it.rceptNo to it.repror }
-
-                    val entities = fresh.map { r ->
-                        DartInsiderTradeEntity(
-                            rceptNo = r.rceptNo,
-                            corpCode = r.corpCode,
-                            stockCode = stockCodeByRcept[r.rceptNo],
-                            repror = r.repror,
-                            officerPosition = r.officerPosition,
-                            isRegistered = r.isRegistered,
-                            majorHolderType = r.majorHolderType,
-                            reportDate = r.reportDate,
-                            ownedQty = r.ownedQty,
-                            changeQty = r.changeQty,
-                            ownedRate = r.ownedRate,
-                            changeRate = r.changeRate,
-                            collectedAt = now,
-                        )
-                    }
-                    if (entities.isNotEmpty()) store.saveAll(entities)
-                    inserted += entities.size
+                    inserted += fresh.size
                 }
         }
 

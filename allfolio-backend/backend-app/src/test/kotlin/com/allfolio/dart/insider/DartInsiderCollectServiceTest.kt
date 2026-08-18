@@ -131,6 +131,36 @@ class DartInsiderCollectServiceTest {
     }
 
     @Test
+    fun `저장이 실패해도 나머지 회사는 진행한다`() {
+        // store.saveAll이 던지는 경우(Neon 타임아웃 등)도 client.fetch 실패와 똑같이
+        // 회사 단위로 격리돼야 한다 — saveAll을 runCatching 밖에 두면 이 예외가 회사
+        // 루프를 뚫고 나가 아직 처리 안 된 나머지 회사가 통째로 건너뛰어진다
+        val store = object : DartInsiderCollectService.Store {
+            val saved = mutableListOf<DartInsiderTradeEntity>()
+            override fun findDisclosures(rceptNos: Collection<String>) = listOf(
+                disclosure("R1", "C1", tier = 4),
+                disclosure("R2", "C2", tier = 4),
+            ).filter { it.rceptNo in rceptNos }
+            override fun findExistingKeys(rceptNos: Collection<String>) = emptySet<Pair<String, String>>()
+            override fun saveAll(rows: List<DartInsiderTradeEntity>) {
+                if (rows.any { it.corpCode == "C1" }) throw RuntimeException("Neon 타임아웃")
+                saved += rows
+            }
+        }
+        val client = FakeClient(mapOf(
+            "C1" to listOf(elestock("R1", corpCode = "C1")),
+            "C2" to listOf(elestock("R2", corpCode = "C2")),
+        ))
+
+        val summary = DartInsiderCollectService(client, store).collect(listOf("R1", "R2"), now)
+
+        assertThat(store.saved.map { it.rceptNo }).containsExactly("R2")
+        assertThat(summary.failures).hasSize(1)
+        assertThat(summary.calls).isEqualTo(2)
+        assertThat(summary.inserted).isEqualTo(1)
+    }
+
+    @Test
     fun `델타가 비면 호출하지 않는다`() {
         val client = FakeClient(emptyMap())
 
