@@ -6,6 +6,7 @@ import Num from '@/components/ui/Num'
 import { signPct, dirTone } from '@/lib/format'
 import { EmptyState } from '@/components/ui/states'
 import type { Position } from '@/types/dashboard'
+import { STALE_THRESHOLD_DAYS, priceAsOfLabel, showsPriceAsOf, stalenessDays } from '@/lib/price-as-of'
 
 // QA 후속 #4: 먼지 포지션 판정은 원통화가 아니라 KRW 환산 기준 —
 // FDUSD 18원, TRX 13원 같은 잔여 단위가 실질 포지션처럼 노출되지 않게 접는다
@@ -58,9 +59,15 @@ export default function PositionTable({ positions, empty }: PositionTableProps) 
             <div key={p.id} className={`${GRID} items-baseline border-b border-line-hair py-2.5 hover:bg-surface-muted`}>
               <span className="flex min-w-0 flex-col">
                 <span className="truncate text-[13.5px]">{p.name}</span>
-                {p.symbol && (
-                  <span className="font-mono text-[9.5px] tracking-[0.08em] text-fg-ghost">{p.symbol}</span>
-                )}
+                <span className="flex flex-wrap items-baseline gap-x-1.5">
+                  {p.symbol && (
+                    <span className="font-mono text-[9.5px] tracking-[0.08em] text-fg-ghost">{p.symbol}</span>
+                  )}
+                  {/* **기준일은 자동 평가된 자산만 뜬다** (A1 · N2). 일요일에 보는 금값은
+                      금요일 종가다 — 숨기면 사용자는 그게 지금 시세인 줄 안다.
+                      주식·코인은 priceAsOf가 null이라 여기 아무것도 안 그려진다. */}
+                  <PriceAsOf position={p} />
+                </span>
               </span>
               <span className="font-mono text-[10px] tracking-label text-fg-3">
                 {TYPE_KO[p.type] ?? p.type}
@@ -92,5 +99,28 @@ export default function PositionTable({ positions, empty }: PositionTableProps) 
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * 시세 기준일 + 묵음 경고.
+ *
+ * **임계치 5의 근거는 `lib/price-as-of.ts`에 있다** — 1~4는 정상 운영이라 여기 경고가 뜨면 안 된다.
+ * 금은 D+1 공표라 `0`은 아예 나오지 않는 값이다.
+ */
+function PriceAsOf({ position }: { position: Position }) {
+  if (!showsPriceAsOf(position)) return null
+
+  const days = stalenessDays(position.priceAsOf)
+  const stale = days !== null && days >= STALE_THRESHOLD_DAYS
+
+  return (
+    <span
+      className={`font-mono text-[9.5px] tracking-[0.08em] ${stale ? 'text-warn' : 'text-fg-ghost'}`}
+      title={stale ? `시세가 ${days}일 지연됐습니다 — 소스 확인이 필요합니다` : undefined}
+    >
+      {priceAsOfLabel(position.priceAsOf)}
+      {stale && ` · ${days}일 지연`}
+    </span>
   )
 }

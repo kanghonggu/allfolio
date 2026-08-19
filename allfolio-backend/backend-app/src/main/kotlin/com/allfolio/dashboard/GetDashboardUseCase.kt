@@ -209,6 +209,11 @@ class GetDashboardUseCase(
                     weight          = MetricsCalculator.weightOf(a.currentValueInKrw(fx), totalLiquid)
                         .setScale(4, RoundingMode.HALF_UP),
                     currency        = a.currency,
+                    // 자동 평가된 자산만 채워진다. 수동 입력·브로커 동기화 자산은 null이고,
+                    // 그 null을 화면이 "표시하지 않음"으로 읽는다 — 오늘로 메우지 않는다.
+                    priceAsOf       = a.priceAsOf,
+                    valuationMethod = a.valuationMethod.name,
+                    confidenceLevel = a.confidenceLevel.name,
                 )
             }
 
