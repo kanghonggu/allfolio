@@ -21,8 +21,10 @@ data class DisclosureItem(
     val rceptDt: LocalDate,
     val materialTier: Short?,
     val isCorrection: Boolean,
+    /** 제출인. 정정공시 묶기 키의 일부 — 같은 이름의 보고서라도 제출인이 다르면 별개 건이다. */
+    val flrNm: String?,
     val sourceUrl: String,
-    /** 같은 (회사, 정규화된 보고서명)으로 접힌 이전 건 수 — 정정공시 묶음. 원본이면 0 */
+    /** 같은 (회사, 정규화된 보고서명, 제출인)으로 접힌 이전 건 수 — 정정공시 묶음. 원본이면 0 */
     val supersededCount: Int,
 )
 
@@ -53,6 +55,12 @@ data class InsiderTradeItem(
 data class DisclosureFeed(
     val items: List<DisclosureItem>,
     val insiderTrades: List<InsiderTradeItem>,
+    /**
+     * 보유 종목 수. **화면이 "보유가 없다"와 "공시가 없다"를 갈라야 해서 낸다** —
+     * 전자는 계좌 연결로 유도할 상태고 후자는 정상 상태라 문구가 달라야 한다.
+     * `findHeldStockCodes`가 이미 구한 값이라 추가 쿼리가 없다.
+     */
+    val heldCount: Int,
 )
 
 /**
@@ -71,11 +79,17 @@ data class DisclosureFeed(
  * 5,394건 중 2,846건이 Tier 5(정기보고서)였다 — Tier를 무시하고 접수일로만 정렬하면 피드가
  * 반기·사업보고서로 덮여 Tier 1(유상증자·최대주주변경 등 주가 직결 공시)이 아래로 밀린다.
  *
- * **정정공시를 (회사, 정규화된 보고서명)으로 묶어 최신 건만 낸다.** `report_nm_norm`은
- * [com.allfolio.dart.DartReportName.normalize]가 저장 시점에 접두어(`[기재정정]` 등)를 뗀
- * 값이라 원본과 정정본이 같은 그룹으로 모인다. 실측 6영업일치 875건이 `[기재정정]`이라 이
- * 묶기가 실제로 접는 물량이 있다. 접힌 개수는 `supersededCount`로 낸다 — 화면이 "N건 정정
- * 이력" 같은 배지를 달 수 있게.
+ * **정정공시를 (회사, 정규화된 보고서명, 제출인)으로 묶고, 그룹에 정정(`isCorrection`) 행이
+ * 있을 때만 최신 건으로 접는다.** `report_nm_norm`은 [com.allfolio.dart.DartReportName.normalize]가
+ * 저장 시점에 접두어(`[기재정정]` 등)를 뗀 값이라 원본과 정정본이 같은 그룹으로 모인다.
+ *
+ * `flrNm`(제출인)을 키에 넣지 않으면 서로 다른 사람의 공시가 함께 접힌다 — 임원·주요주주
+ * 소유상황보고서(Tier 4)는 **임원 각자가** 제출해 이름이 전부 같다. 실측 6영업일치 한미약품
+ * 23건이 이름만으로 묶으면 1건만 남고 22건이 사라진다.
+ *
+ * 정정 행이 하나도 없으면 접지 않는다 — 두산퓨얼셀의 `단일판매·공급계약체결`처럼 같은
+ * (회사, 보고서명, 제출인)이라도 별개 사건(별개 계약) 여러 건이 같은 날 나올 수 있어서다.
+ * 접힌 개수는 `supersededCount`로 낸다 — 화면이 "N건 정정 이력" 같은 배지를 달 수 있게.
  */
 @Service
 class DisclosureFeedService(private val store: Store) {
@@ -88,24 +102,22 @@ class DisclosureFeedService(private val store: Store) {
 
     fun feedFor(userId: UUID, from: LocalDate): DisclosureFeed {
         val held = store.findHeldStockCodes(userId)
-        if (held.isEmpty()) return DisclosureFeed(emptyList(), emptyList())
+        if (held.isEmpty()) return DisclosureFeed(emptyList(), emptyList(), heldCount = 0)
 
         val items = store.findMaterial(held, from)
-            // 정정공시 묶기 — 정규화가 접두어를 떼므로 원본과 정정본이 같은 그룹에 들어간다
-            .groupBy { it.corpCode to it.reportNmNorm }
-            .map { (_, group) ->
-                val latest = group.maxWith(compareBy({ it.rceptDt }, { it.rceptNo }))
-                DisclosureItem(
-                    rceptNo = latest.rceptNo,
-                    corpName = latest.corpName,
-                    stockCode = latest.stockCode,
-                    reportNm = latest.reportNm,
-                    rceptDt = latest.rceptDt,
-                    materialTier = latest.materialTier,
-                    isCorrection = latest.isCorrection,
-                    sourceUrl = SOURCE_URL_PREFIX + latest.rceptNo,
-                    supersededCount = group.size - 1,
-                )
+            // 정정공시 묶기 — 정규화가 접두어를 떼므로 원본과 정정본이 같은 그룹에 들어간다.
+            // flrNm(제출인)을 키에 넣어 같은 이름이라도 제출인이 다르면 갈라 세운다(임원 각자
+            // 제출하는 Tier 4 소유상황보고서가 근거).
+            .groupBy { Triple(it.corpCode, it.reportNmNorm, it.flrNm) }
+            .flatMap { (_, group) ->
+                // 정정(isCorrection) 행이 하나도 없으면 접지 않는다 — 같은 이름·같은 제출인이라도
+                // 별개 사건일 수 있어서다(두산퓨얼셀의 별개 계약 여러 건이 근거).
+                if (group.none { it.isCorrection }) {
+                    group.map { toItem(it, supersededCount = 0) }
+                } else {
+                    val latest = group.maxWith(LATEST)
+                    listOf(toItem(latest, supersededCount = group.size - 1))
+                }
             }
             .sortedWith(
                 compareBy<DisclosureItem> { it.materialTier ?: Short.MAX_VALUE }
@@ -126,7 +138,25 @@ class DisclosureFeedService(private val store: Store) {
                 )
             }
 
-        return DisclosureFeed(items, insiders)
+        return DisclosureFeed(items, insiders, heldCount = held.size)
+    }
+
+    private fun toItem(entity: DartDisclosureEntity, supersededCount: Int) = DisclosureItem(
+        rceptNo = entity.rceptNo,
+        corpName = entity.corpName,
+        stockCode = entity.stockCode,
+        reportNm = entity.reportNm,
+        rceptDt = entity.rceptDt,
+        materialTier = entity.materialTier,
+        isCorrection = entity.isCorrection,
+        flrNm = entity.flrNm,
+        sourceUrl = SOURCE_URL_PREFIX + entity.rceptNo,
+        supersededCount = supersededCount,
+    )
+
+    private companion object {
+        /** 그룹 내 최신 건을 고르는 기준 — 접수일, 같으면 접수번호(문자열이지만 자릿수가 고정이라 사전식=수치식) 순. */
+        val LATEST: Comparator<DartDisclosureEntity> = compareBy({ it.rceptDt }, { it.rceptNo })
     }
 }
 
