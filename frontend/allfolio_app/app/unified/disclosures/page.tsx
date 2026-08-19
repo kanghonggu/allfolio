@@ -7,7 +7,6 @@ import { useDisclosureApi } from '@/lib/useApi'
 import PageHeader from '@/components/ui/PageHeader'
 import Panel from '@/components/ui/Panel'
 import SectionHeader from '@/components/ui/SectionHeader'
-import Button from '@/components/ui/Button'
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/states'
 import DisclosureFeedPanel from '@/components/disclosure/DisclosureFeedPanel'
 import InsiderTradePanel from '@/components/disclosure/InsiderTradePanel'
@@ -45,8 +44,14 @@ export default function DisclosuresPage() {
           title="보유 종목이 없습니다"
           description="계좌를 연결하면 보유 종목의 공시를 모아서 보여드립니다."
           action={
-            <Link href="/unified/accounts">
-              <Button variant="outline" size="sm">계좌 연결</Button>
+            /* `<Link>`에 버튼 클래스를 직접 입힌다 — `<Link>` 안에 `<Button>`을 넣으면
+               `<a>` 안에 `<button>`이 들어가 HTML5 중첩 규칙(interactive 안에 interactive)을
+               어긴다. 레포의 다른 빈 상태 CTA(accounts·advisor)가 전부 이 형태다 */
+            <Link
+              href="/unified/accounts"
+              className="border border-ink bg-ink px-4 py-2 text-sm text-white transition-colors hover:bg-fg-2"
+            >
+              계좌 연결
             </Link>
           }
         />
