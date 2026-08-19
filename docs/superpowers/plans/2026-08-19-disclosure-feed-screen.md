@@ -35,6 +35,19 @@ cd frontend/allfolio_app && npx tsc --noEmit && npm run build
 
 ---
 
+> ### ⚠️ 색 토큰 — `text-fg-1`은 없다
+>
+> `tailwind.config.ts`의 `fg` 스케일은 **`DEFAULT`(=`--c-ink`) · `2` · `3` · `muted` · `faint` · `ghost`** 뿐이다.
+> **`fg-1`은 존재하지 않는다** — 쓰면 조용히 무색으로 렌더된다(Tailwind는 없는 클래스에 경고를 내지 않는다).
+> 본문 텍스트는 클래스를 아예 안 붙여 `<body>`의 `text-ink`를 상속받는다 — `RatePanel.tsx`·`CommodityPanel.tsx`가 그렇게 한다.
+>
+> 쓸 수 있는 것: `text-ink` · `text-fg-2` · `text-fg-3` · `text-fg-muted` · `text-fg-faint` · `text-fg-ghost` · `text-danger` · `text-warn` · `text-ok`
+>
+> ### ⚠️ `[...map.entries()]`는 이 프로젝트에서 컴파일 안 된다
+>
+> `downlevelIteration`이 꺼져 있어 Map 스프레드가 `tsc` 오류를 낸다. `Array.from(map.entries())`를 쓸 것 —
+> `app/unified/admin/tax-rates/page.tsx`가 같은 이유로 그렇게 한다.
+
 ## File Structure
 
 | 파일 | 책임 |
@@ -538,7 +551,7 @@ function Row({ item }: { item: DisclosureItem }) {
           href={item.sourceUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="min-w-0 flex-1 text-[13px] leading-snug text-fg-1 underline-offset-2 hover:underline"
+          className="min-w-0 flex-1 text-[13px] leading-snug underline-offset-2 hover:underline"
         >
           {item.reportNm}
         </a>
@@ -690,7 +703,7 @@ export default function InsiderTradePanel({ trades }: { trades: InsiderTradeItem
                     href={t.sourceUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="min-w-0 truncate text-fg-1 underline-offset-2 hover:underline"
+                    className="min-w-0 truncate underline-offset-2 hover:underline"
                   >
                     {t.repror}
                     {who(t) && <span className="ml-1.5 text-[11px] text-fg-faint">{who(t)}</span>}
