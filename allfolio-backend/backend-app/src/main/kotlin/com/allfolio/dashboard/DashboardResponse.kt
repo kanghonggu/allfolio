@@ -75,6 +75,20 @@ data class PositionDto(
     val returnRate: BigDecimal,
     val weight: BigDecimal,
     val currency: String,
+    /**
+     * 이 평가액이 어느 날짜 시세로 계산됐는지 (A1). **자동 평가된 자산만 채워진다.**
+     *
+     * 주식·코인은 브로커 동기화라 이 개념이 없고, 사람이 넣은 자산도 null이다 —
+     * **null을 "오늘"로 읽어 오늘 날짜를 채우지 말 것.** 그건 "모른다"이지 "오늘 시세"가 아니다.
+     *
+     * `lastUpdatedAt`("우리가 언제 썼나")과 다르다. 금은 D+1 공표라 둘이 평일에도
+     * 하루 이상 벌어지고 연휴 뒤엔 나흘까지 간다.
+     */
+    val priceAsOf: LocalDate?,
+    /** MARKET_PRICE | BALANCE | USER_INPUT — 화면이 자동 평가와 수동 입력을 가르는 기준 */
+    val valuationMethod: String,
+    /** HIGH | MEDIUM | LOW */
+    val confidenceLevel: String,
 )
 
 data class RealAssetDto(
