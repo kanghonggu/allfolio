@@ -6,6 +6,7 @@ import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.api.admin.CommodityAdminController
 import com.allfolio.api.admin.MarketRateAdminController
+import com.allfolio.api.admin.RealAssetValuationAdminController
 import com.allfolio.api.market.MarketQueryController
 import com.allfolio.api.scheduler.SchedulerTriggerController
 import com.allfolio.dart.DartCollectOrchestrator
@@ -21,6 +22,7 @@ import com.allfolio.market.query.MarketSnapshot
 import com.allfolio.market.commodity.CommodityCollectService
 import com.allfolio.market.commodity.CommodityProperties
 import com.allfolio.market.rate.RateCollectService
+import com.allfolio.realasset.RealAssetValuationService
 import com.allfolio.auth.JwtTokenService
 import com.allfolio.auth.UserEntity
 import com.allfolio.auth.UserRole
@@ -61,6 +63,7 @@ import java.math.BigDecimal
         CommodityAdminController::class,
         BenchmarkIndexAdminController::class,
         DartAdminController::class,
+        RealAssetValuationAdminController::class,
         SchedulerTriggerController::class,
         // AF-104. 어드민이 아니지만 이 컨텍스트에 함께 둔다 — 이 파일이 보는 건 SecurityConfig의
         // 경로 규칙 전체이고(스케줄러 트리거도 여기 있다), 컨텍스트를 하나 더 띄우는 값이 안 된다.
@@ -126,6 +129,11 @@ class SecurityConfigAdminTest {
 
     @MockBean
     private lateinit var benchmarkIndexProperties: BenchmarkIndexProperties
+
+    // 실물자산 평가도 같다 — SchedulerTriggerController가 RealAssetValuationAdminController를,
+    // 그쪽이 이 서비스를 요구한다 (A1 · G5). 위와 같은 함정이다.
+    @MockBean
+    private lateinit var realAssetValuationService: RealAssetValuationService
 
     // 마감 트리거는 어드민에 위임하지 않고 WfStepExecutor를 직접 요구한다.
     // 위 overseasIndexCollectService와 같은 함정이다 — 빠뜨리면 이 파일의 테스트가 실패하는 게

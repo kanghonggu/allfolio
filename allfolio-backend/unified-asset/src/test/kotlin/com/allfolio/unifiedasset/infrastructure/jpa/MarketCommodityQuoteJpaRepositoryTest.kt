@@ -108,6 +108,63 @@ class MarketCommodityQuoteJpaRepositoryTest {
     }
 
     /**
+     * **바로 위 `LessThan`과 한 글자 차이인데 요구가 정반대다.** 전일대비는 "나보다 앞선"이
+     * 필요해 기준일 자신이 나오면 변동이 늘 0이 되지만, 실물자산 평가(A1)의 폴백은
+     * **기준일 자신이 최우선**이다 — 그날 시세가 있는데 전날 값으로 평가하면 하루씩 밀린다.
+     *
+     * 그래서 둘을 합치거나 한쪽을 다른 쪽으로 "정리"하지 말 것. 두 호출부의 요구가 다르다.
+     * 이 테스트와 위 `직전 조회는...` 테스트는 **서로가 서로의 변이 검출기**다.
+     */
+    @Test
+    fun `폴백 조회는 기준일 자신을 포함한다`() {
+        save(quote("GOLD_KRX", LocalDate.of(2026, 8, 13), "200570.0000", unit = "KRW/g"))
+        save(quote("GOLD_KRX", LocalDate.of(2026, 8, 14), "198350.0000", unit = "KRW/g"))
+
+        val found = repository.findFirstByCodeAndTradeDateLessThanEqualOrderByTradeDateDesc(
+            "GOLD_KRX", LocalDate.of(2026, 8, 14),
+        )
+
+        assertThat(found?.tradeDate).isEqualTo(LocalDate.of(2026, 8, 14))
+        assertThat(found?.price).isEqualByComparingTo("198350.0000")
+    }
+
+    /**
+     * 실측한 연휴다 — 2026-08-15 광복절이 토요일이라 08-17(월)이 대체공휴일이 되면서
+     * 08-14(금) 다음 영업일이 08-18(화)이 됐다. 소스는 D+1 공표라 08-18에 쓸 수 있는
+     * 가장 신선한 값이 08-14다(공백 4일).
+     *
+     * **날짜 하한을 걸면 여기서 null이 나온다.** "직전 1영업일"로 좁힌 구현이 정확히 이 케이스에서
+     * 깨지고, 증상은 예외가 아니라 그 자산이 평가에서 통째로 빠지는 것이다.
+     */
+    @Test
+    fun `폴백 조회는 연휴를 건너뛰고 직전 영업일까지 내려간다`() {
+        save(quote("GOLD_KRX", LocalDate.of(2026, 8, 14), "198350.0000", unit = "KRW/g"))
+        // 미래 행 — 날짜 필터가 빠지면 이게 나온다
+        save(quote("GOLD_KRX", LocalDate.of(2026, 8, 19), "199000.0000", unit = "KRW/g"))
+        // 남의 종목 — 코드 필터가 빠지면 이게 나온다
+        save(quote("WTI", LocalDate.of(2026, 8, 17), "70.00"))
+
+        val found = repository.findFirstByCodeAndTradeDateLessThanEqualOrderByTradeDateDesc(
+            "GOLD_KRX", LocalDate.of(2026, 8, 18),
+        )
+
+        assertThat(found?.code).isEqualTo("GOLD_KRX")
+        assertThat(found?.tradeDate).isEqualTo(LocalDate.of(2026, 8, 14))
+    }
+
+    /** 수집 시작 이전 날짜를 물으면 null. 0원으로 메우지 않게 하는 자리다(설계 1절 원칙 3) */
+    @Test
+    fun `폴백 조회는 그 이전 행이 하나도 없으면 null이다`() {
+        save(quote("GOLD_KRX", LocalDate.of(2026, 8, 14), "198350.0000", unit = "KRW/g"))
+
+        assertThat(
+            repository.findFirstByCodeAndTradeDateLessThanEqualOrderByTradeDateDesc(
+                "GOLD_KRX", LocalDate.of(2026, 8, 13),
+            ),
+        ).isNull()
+    }
+
+    /**
      * 월간 계열의 "직전"은 한 달 전이다. 날짜 산술("어제")로 찾으면 영원히 못 찾는 그 경우를
      * 쿼리 층에서도 못 박는다 — 창 밖 행이라 구간 조회로는 절대 안 잡힌다.
      */

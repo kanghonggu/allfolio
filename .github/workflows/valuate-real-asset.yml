@@ -1,0 +1,195 @@
+name: Valuate Real Assets
+
+# Render 무료 플랜에는 크론 잡이 없고, 무료 웹 서비스는 15분 유휴 시 잠들어 인스턴스 안의
+# @Scheduled만으로는 주기 실행이 성립하지 않는다. collect-commodity.yml과 같은 구조다.
+#
+# **이건 수집이 아니라 평가다.** 상류 API를 부르지 않고 우리 DB만 읽는다
+# (market_commodity_quote의 asOf 이하 최신 시세 폴백). 그래서 아래 에러 범례에 502가 없다 —
+# 전량 실패는 상류 장애가 아니라 우리 문제(마이그레이션 미적용·코드 오류)이고, 502로 부르면
+# 운영자가 멀쩡한 공공데이터포털 상태 페이지를 확인하러 간다.
+#
+# **19:30인 이유는 수집 순서다.** 금 시세 수집이 18:20(collect-commodity.yml)이므로 그보다
+# 먼저 평가하면 그날 수집분을 못 쓰고 하루 묵은 값으로 스냅샷을 만든다. 설계 문서 초안의
+# 16:30은 수집이 16:00이라는 전제에서 나온 값이었고, 그 전제는 AF-108 이후 틀리다.
+#
+# 앞 슬롯과의 간격: 18:10(금리·환율) · 18:20(원자재) · 18:30(벤치마크) · 19:00(공시)이 차 있고
+# 한 실행의 최악이 10.5분(300초 x 2회 + 30초 대기)이다. 19:30은 19:00 공시의 최악(19:10:30)을
+# 넘긴다. 이 배치 자체는 상류를 안 불러 웜 인스턴스에서 수 초에 끝나지만, 콜드 스타트는
+# 똑같이 겪으므로(실측 280초) 예산은 형제들과 같게 잡는다.
+#
+# **요일 필터가 없다 — 이게 형제 워크플로들과 갈리는 지점이다.** 휴장일에도 평가해야 자산 추이
+# 그래프에 구멍이 안 생긴다. 시세가 없는 날은 폴백해서 직전 영업일 값을 쓰고 staleness_days만
+# 늘어난다. 요일 필터를 "형제들과 맞추려고" 붙이지 말 것 — 붙이는 순간 주말마다 선이 끊긴다.
+#
+# 그 덕에 collect-commodity.yml이 경고하는 UTC 15:00 함정(요일이 조용히 하나 사라지는 것)은
+# 여기서 성립하지 않는다. 다만 UTC 10:30은 어차피 15:00보다 한참 앞이라 밀림에도 안전하다.
+on:
+  schedule:
+    - cron: "30 10 * * *"   # UTC 10:30 = KST 19:30 (매일)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # 겹치면 같은 (자산, 평가일)에 두 실행이 동시에 INSERT를 시도해 uq_valuation에 걸린다.
+  # 서비스는 기존 행을 조회해 덮지만 그 조회와 저장 사이가 원자적이지 않다.
+  #
+  # cancel-in-progress: false여야 한다. true면 앞 실행을 죽여 절반만 저장된 구간이 남는데,
+  # 겹침을 없애려다 정확히 반대편 손상을 만드는 셈이다. false는 겹치는 대신 줄을 세운다.
+  group: valuate-real-asset
+  cancel-in-progress: false
+
+jobs:
+  valuate:
+    name: 실물자산 평가
+    runs-on: ubuntu-latest
+    # 아래 curl 재시도 예산(최악 10.5분)보다 커야 한다. 잡이 먼저 잘리면 요약도 애너테이션도
+    # 남지 않고 "cancelled"만 떠서 백엔드 문제가 러너 문제처럼 보인다.
+    timeout-minutes: 14
+    steps:
+      - name: Trigger valuation
+        env:
+          # ${{ }}를 셸 본문에 직접 박지 않는다 — 표현식은 셸이 파싱하기 **전에** 문자열로
+          # 치환되므로 값에 따옴표나 `$(...)`가 섞이면 그대로 명령이 된다.
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          SCHEDULER_TOKEN: ${{ secrets.SCHEDULER_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${BACKEND_URL}" ] || [ -z "${SCHEDULER_TOKEN}" ]; then
+            echo "::error::BACKEND_URL 또는 SCHEDULER_TOKEN 시크릿이 없습니다."
+            exit 1
+          fi
+
+          # 끝의 슬래시를 지운다. 남겨두면 경로가 "//api/internal/..."이 되어 404가 난다.
+          while [ "${BACKEND_URL}" != "${BACKEND_URL%/}" ]; do
+            BACKEND_URL="${BACKEND_URL%/}"
+          done
+
+          # https만 허용한다. http로 두면 Render가 301로 넘기는데 -L이 없어 POST가 아예
+          # 전달되지 않고 HTTP 301만 남는다(-L을 붙여도 --post301 없이는 POST가 GET으로 바뀐다).
+          case "${BACKEND_URL}" in
+            https://*) ;;
+            *)
+              echo "::error::BACKEND_URL 시크릿은 https://로 시작하고 끝에 슬래시가 없어야 합니다. 예: https://<서비스>.onrender.com"
+              exit 1
+              ;;
+          esac
+
+          # 날짜를 싣지 않는다. 백엔드가 KST 오늘로 정한다 —
+          # 여기서 계산하면 러너의 UTC 시계가 그대로 데이터에 새겨진다.
+          #
+          # 재시도가 안전한 이유는 평가가 멱등하기 때문이다 — 서비스가 (자산, 평가일)로 기존
+          # 스냅샷을 찾아 덮는다. 다만 **멱등하다는 것이 "공짜"라는 뜻은 아니다**: curl이
+          # --max-time에 포기해도 서버는 그 배치를 끝까지 돌린다. 뒤 시도가 앞 시도와 겹쳐
+          # 돌면 같은 (자산, 평가일)에 동시 INSERT가 나 uq_valuation에 걸릴 수 있다.
+          # 그래서 시도당 시간을 늘리고 재시도를 줄인다(형제 워크플로와 같은 예산).
+          #
+          # -o/-w로 본문과 상태를 분리해 받는다. --fail을 쓰면 4xx/5xx에서 본문이 버려져
+          # 왜 실패했는지 알 수 없게 된다. 부분 실패는 HTTP 200으로 나오므로 본문의
+          # failed·skipped가 유일한 단서다.
+          #
+          # --max-time은 "시도 1회당" 상한이다. 최악 소요는 300초 x 2회 + 30초 대기 = 630초(10.5분)이고,
+          # 이 값은 위 timeout-minutes(14)보다 작아야 한다 — 두 숫자는 따로 노는 값이 아니다.
+          HTTP_CODE=$(curl -sS -X POST \
+            "${BACKEND_URL}/api/internal/scheduler/real-asset/valuate" \
+            -H "X-Scheduler-Token: ${SCHEDULER_TOKEN}" \
+            --max-time 300 \
+            --retry 1 \
+            --retry-delay 30 \
+            --retry-all-errors \
+            -o response.json \
+            -w '%{http_code}') || HTTP_CODE="000"
+
+          echo "HTTP ${HTTP_CODE}"
+
+          # 이 저장소는 공개다. 토큰은 어디에도 찍지 않는다 — 요약은 영구 보존되고
+          # 로그와 달리 GitHub의 시크릿 마스킹에 기대는 것도 위험하다.
+          {
+            echo "### 실물자산 평가"
+            echo ""
+            echo "HTTP \`${HTTP_CODE}\`"
+            echo ""
+            echo '```json'
+            cat response.json 2>/dev/null || echo '(본문 없음)'
+            echo ""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # **502가 없는 것이 의도다** — 이 배치는 상류를 안 부른다(우리 DB만 읽는다).
+          # 500의 원인은 대개 둘이고 고칠 곳이 다르다:
+          #  (1) **real_asset·real_asset_valuation 테이블 부재 — 첫 배포에서 가장 흔하다.**
+          #      docs/superpowers/migrations/2026-08-18-real-asset-tables.sql을 운영 Neon에
+          #      적용했는지 확인할 것. ddl-auto: none이라 아무도 대신 만들어 주지 않는다.
+          #      (마감 워크플로가 운영 Neon에 wf_ 테이블이 없어 같은 방식으로 조용히 실패한 전례가 있다.)
+          #  (2) 코드 오류 — 응답 본문의 failures에 사유가 그대로 실린다.
+          if [ "${HTTP_CODE}" != "200" ]; then
+            # **본문을 stdout에도 찍는다 — 지우지 말 것.** 위 범례는 원인을 나열할 뿐이고
+            # 실제로 어느 쪽인지는 서버가 만든 예외 사유에만 들어 있다. 그 사유를 요약에만
+            # 남기면 아무도 못 읽는다: $GITHUB_STEP_SUMMARY는 사람이 UI를 열어야 보이고
+            # REST API로는 안 나온다.
+            echo "응답 본문:"
+            head -c 2000 response.json 2>/dev/null || echo '(본문 없음)'
+            echo ""
+            echo "::error::실물자산 평가 실패 (HTTP ${HTTP_CODE}). 500=대개 real_asset·real_asset_valuation 테이블 부재(docs/superpowers/migrations/2026-08-18-real-asset-tables.sql을 운영 Neon에 적용했는지 확인 — ddl-auto: none이라 아무도 대신 만들어 주지 않는다). 그 외 500은 코드 오류로, 위 응답 본문의 failures가 사유를 말해 준다 / 503=SCHEDULER_TOKEN 미설정 / 401=토큰 불일치(양끝 공백·개행 확인) / 404=BACKEND_URL 경로 확인 / 000=백엔드 응답 없음(콜드 스타트·네트워크). **502는 이 배치에 없다** — 상류를 안 부른다"
+            exit 1
+          fi
+
+          # 200이어도 부분 실패일 수 있다 — 자산 하나가 터져도 나머지를 살리려고 예외 대신
+          # 요약으로 돌려준다. 부분 실패를 빨갛게 만들지는 않는다(자산 하나가 흔들렸다고 매일
+          # 잡이 실패로 보이면 아무도 안 보게 된다). 대신 애너테이션으로 남긴다.
+          #
+          # 본문을 grep으로 재해석하지 않는다: 직렬화 형식이 조금만 바뀌어도 조용히 아무것도
+          # 안 잡는 가드가 되어 없느니만 못하다. 그래서 진짜 JSON 파서로 읽는다.
+          python3 - response.json <<'PY'
+          import json, sys
+
+          try:
+              with open(sys.argv[1], encoding="utf-8") as f:
+                  body = json.load(f)
+          except (OSError, ValueError) as e:
+              print(f"::warning::HTTP 200인데 응답 본문을 읽지 못했습니다({e}). 부분 실패 여부를 확인할 수 없습니다.")
+              raise SystemExit(0)
+
+          # 유효한 JSON이어도 객체가 아닐 수 있다 — `null`·`[]`·`"ok"`는 json.load를 통과하고
+          # 아래 body.get()에서 AttributeError로 터진다. 위 except는 ValueError만 잡으니
+          # 파이썬이 역추적을 뱉고 종료 코드 1이 되어, **성공한 평가가 빨간 잡으로 끝난다.**
+          if not isinstance(body, dict):
+              print(f"::warning::HTTP 200인데 응답 본문이 JSON 객체가 아닙니다({type(body).__name__}). 부분 실패 여부를 확인할 수 없습니다.")
+              raise SystemExit(0)
+
+          requested = body.get("requested") or 0
+          valued = body.get("valued") or 0
+          skipped = body.get("skipped") or []
+          failures = body.get("failures") or []
+          failed = body.get("failed") or 0
+
+          # **건수를 stdout에도 남긴다.** 잡 요약은 사람이 UI를 열어야만 보이고 REST API로는
+          # 못 읽는다. 그래서 이 줄이 없으면 "대상이 조용히 줄어든 경우"를 아무도 못 가른다 —
+          # is_active 조건이 잘못 걸려 requested가 절반이 돼도 전량 성공이라 초록으로 끝난다.
+          print(
+              f"평가 결과: valuedOn={body.get('valuedOn')} requested={requested} valued={valued} "
+              f"inserted={body.get('inserted')} updated={body.get('updated')} "
+              f"skipped={len(skipped)} failed={failed}"
+          )
+
+          # **대상 0건은 경고이지 실패가 아니다.** 평가 대상은 설정이 아니라 사용자가 등록한
+          # 자산이라, 아무도 아직 실물자산을 안 넣었으면 0건이 맞다. 다만 어제까지 있던 자산이
+          # 오늘 0건이 되는 경우(is_active 사고)와 구분이 안 되므로 사람에게 알린다.
+          if not requested:
+              print("::warning::평가 대상 자산이 0건입니다 — 아직 아무도 실물자산을 등록하지 않았다면 정상입니다. 어제까지 대상이 있었다면 real_asset.is_active를 확인하세요.")
+
+          if skipped:
+              # **"연휴라 그렇다"고 단정하지 않는다.** 건너뜀의 원인은 셋이고 자동으로 못 가른다:
+              # 시세가 아직 한 건도 없음(수집 미실행) · 단위가 KRW/g가 아님(소스 변경) ·
+              # 그 자산 유형을 맡는 어댑터가 없음(시계·부동산 등록). 사유 문자열이 셋을 가른다.
+              # 같은 자산이 며칠씩 계속 여기 뜨면 연휴가 아니라 위 셋 중 하나다.
+              print(f"::warning::평가를 건너뛴 자산 {len(skipped)}건: {', '.join(str(x).replace(chr(10), ' ') for x in skipped)}")
+
+          if failed or failures:
+              # **개행을 지운다.** ::warning::은 첫 줄만 먹으므로 나머지가 조용히 사라지고,
+              # 하필 이어지는 줄이 `::`로 시작하면 GitHub이 그걸 또 다른 워크플로 명령으로 해석한다.
+              reasons = " | ".join(str(x).replace("\n", " ") for x in failures) or "(사유 없음)"
+              print(f"::warning::실물자산 {failed}/{requested}건 평가 실패 (저장 {valued}건): {reasons}")
+          PY

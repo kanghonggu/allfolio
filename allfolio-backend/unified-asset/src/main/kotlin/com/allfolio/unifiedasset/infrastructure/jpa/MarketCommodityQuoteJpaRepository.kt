@@ -69,4 +69,25 @@ interface MarketCommodityQuoteJpaRepository : JpaRepository<MarketCommodityQuote
         code: String,
         before: LocalDate,
     ): MarketCommodityQuoteEntity?
+
+    /**
+     * `trade_date`가 [asOf] **이하인** 행 중 가장 최근 한 건. 실물자산 평가(A1)의 휴장일 폴백이다.
+     *
+     * **🔴 바로 위 메서드와 한 글자(`Equal`) 차이인데 요구가 정반대다. 합치지 말 것.**
+     * 전일대비는 "나보다 앞선" 행이 필요해 기준일 자신이 나오면 변동이 언제나 0이 되고,
+     * 평가 폴백은 그날 시세가 있으면 **그것부터** 써야 해서 자신을 포함해야 한다.
+     * 한쪽을 다른 쪽으로 "정리"하면 둘 중 하나가 조용히 틀린다 — 어느 쪽이든 숫자는
+     * 그럴듯하게 나오고 예외도 로그도 없다. 두 호출부의 요구가 다르다는 것이 요점이다.
+     *
+     * **날짜 하한이 없다.** 영업일만 적재하므로 주말·공휴일에는 며칠씩 거슬러 올라가야 한다.
+     * 실측 공백은 최대 4일이었다(2026-08-14 금 → 08-18 화: 광복절이 토요일이라 08-17 월이
+     * 대체공휴일). "직전 1영업일"로 좁히면 긴 연휴에 null이 나오고, 증상은 예외가 아니라
+     * **그 자산이 평가에서 통째로 빠지는 것**이다.
+     *
+     * `(code, trade_date)` 유니크 인덱스를 그대로 쓴다 — 위 메서드와 같은 이유다.
+     */
+    fun findFirstByCodeAndTradeDateLessThanEqualOrderByTradeDateDesc(
+        code: String,
+        asOf: LocalDate,
+    ): MarketCommodityQuoteEntity?
 }

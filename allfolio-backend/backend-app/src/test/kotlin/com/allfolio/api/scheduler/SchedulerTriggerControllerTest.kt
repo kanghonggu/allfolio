@@ -6,6 +6,7 @@ import com.allfolio.api.admin.DartAdminController
 import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.api.admin.MarketRateAdminController
+import com.allfolio.api.admin.RealAssetValuationAdminController
 import com.allfolio.config.GlobalExceptionHandler
 import com.allfolio.fx.BackfillSummary
 import com.allfolio.fx.CashFlowRecomputeService
@@ -63,6 +64,7 @@ class SchedulerTriggerControllerTest {
     private val commodityAdmin: CommodityAdminController = mock(CommodityAdminController::class.java)
     private val benchmarkAdmin: BenchmarkIndexAdminController = mock(BenchmarkIndexAdminController::class.java)
     private val dartAdmin: DartAdminController = mock(DartAdminController::class.java)
+    private val realAssetAdmin: RealAssetValuationAdminController = mock(RealAssetValuationAdminController::class.java)
     private val stepExecutor: WfStepExecutor = mock(WfStepExecutor::class.java)
 
     private val summary = HanaCollectSummary(
@@ -80,7 +82,7 @@ class SchedulerTriggerControllerTest {
     // 응답으로 풀려, 운영과 다른 경로를 테스트하게 된다. 워크플로가 --fail을 일부러 안 쓰는 이유가
     // 이 본문을 잡 요약에 남기기 위해서라, 본문까지 운영과 같아야 의미가 있다.
     private fun mvc(token: String) = MockMvcBuilders
-        .standaloneSetup(SchedulerTriggerController(admin, indexAdmin, rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, stepExecutor, token))
+        .standaloneSetup(SchedulerTriggerController(admin, indexAdmin, rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, realAssetAdmin, stepExecutor, token))
         .setControllerAdvice(GlobalExceptionHandler())
         .build()
 
@@ -188,7 +190,7 @@ class SchedulerTriggerControllerTest {
             mock(CashFlowRecomputeService::class.java),
         )
 
-        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, stepExecutor, "secret"))
+        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, realAssetAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -314,7 +316,7 @@ class SchedulerTriggerControllerTest {
             mock(OverseasIndexCollectService::class.java),
         )
 
-        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin, rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, stepExecutor, "secret"))
+        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin, rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, realAssetAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -362,6 +364,7 @@ class SchedulerTriggerControllerTest {
                     commodityAdmin,
                     benchmarkAdmin,
                     dartAdmin,
+                    realAssetAdmin,
                     stepExecutor,
                     "secret",
                 )
@@ -518,7 +521,7 @@ class SchedulerTriggerControllerTest {
         )
 
         MockMvcBuilders
-            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, stepExecutor, "secret"))
+            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, realAssetAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -546,7 +549,7 @@ class SchedulerTriggerControllerTest {
         )
 
         MockMvcBuilders
-            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, stepExecutor, "secret"))
+            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, realAssetAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -572,7 +575,7 @@ class SchedulerTriggerControllerTest {
         ).thenThrow(KisIndexException("KIS 해외 응답에 output2가 없습니다"))
 
         MockMvcBuilders
-            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, stepExecutor, "secret"))
+            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, realAssetAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -744,7 +747,7 @@ class SchedulerTriggerControllerTest {
             mock(CashFlowRecomputeService::class.java),
         )
 
-        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, stepExecutor, "secret"))
+        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, realAssetAdmin, stepExecutor, "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -887,6 +890,7 @@ class SchedulerTriggerControllerTest {
                 commodityAdmin,
                 benchmarkAdmin,
                 dartAdmin,
+                realAssetAdmin,
                 stepExecutor,
                 "secret",
             )
@@ -1054,6 +1058,7 @@ class SchedulerTriggerControllerTest {
                 CommodityAdminController(commodityCollectServiceReturning(summary), CommodityProperties()),
                 benchmarkAdmin,
                 dartAdmin,
+                realAssetAdmin,
                 stepExecutor,
                 "secret",
             )
@@ -1197,6 +1202,7 @@ class SchedulerTriggerControllerTest {
                 commodityAdmin,
                 BenchmarkIndexAdminController(fscIndexCollectServiceReturning(summary), BenchmarkIndexProperties()),
                 dartAdmin,
+                realAssetAdmin,
                 stepExecutor,
                 "secret",
             )
