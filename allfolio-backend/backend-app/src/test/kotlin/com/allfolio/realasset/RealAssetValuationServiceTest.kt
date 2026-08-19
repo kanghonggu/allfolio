@@ -1,147 +1,146 @@
 package com.allfolio.realasset
 
+import com.allfolio.unifiedasset.domain.asset.Asset
+import com.allfolio.unifiedasset.domain.asset.AssetCategory
+import com.allfolio.unifiedasset.domain.asset.AssetSourceType
+import com.allfolio.unifiedasset.domain.asset.AssetType
+import com.allfolio.unifiedasset.domain.asset.ConfidenceLevel
+import com.allfolio.unifiedasset.domain.asset.ValuationMethod
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.time.LocalDate
-import java.time.Instant
+import java.time.LocalDateTime
 import java.util.UUID
 
 /**
  * `CommodityCollectServiceTest`를 템플릿으로 삼았다 — 자산별 실패 격리·요약 축이 같다.
- * 평가에만 있는 것은 **산출 불가(null)와 실패(예외)의 구분**이다. 둘을 합치면
- * "연휴라 시세가 없다"와 "코드가 터졌다"가 같은 칸에 들어가 요약이 쓸모없어진다.
+ * 평가에만 있는 것은 **산출 불가(null)와 실패(예외)의 구분**, 그리고 **값이 같으면 안 쓰는 것**이다.
  */
 class RealAssetValuationServiceTest {
 
     private val valuedOn = LocalDate.of(2026, 8, 18)
-    // 19:30 KST = 10:30 UTC. 배치가 도는 순간이다
-    private val now = Instant.parse("2026-08-18T10:30:00Z")
+    private val now = LocalDateTime.of(2026, 8, 18, 19, 30)
 
     @Test
-    fun `자산마다 스냅샷을 쓰고 건수를 보고한다`() {
-        val asset = goldAsset(quantity = "10")
-        val store = FakeStore(assets = listOf(asset))
-        val source = FakeSource(AssetType.GOLD, valuation(krw = 1_983_500L, priceAsOf = "2026-08-14"))
+    fun `값이 바뀐 자산을 갱신하고 건수를 보고한다`() {
+        val asset = gold(currentValue = "1500000")
+        val store = FakeStore(listOf(asset))
+        val source = FakeSource(valuation(krw = "1983500", priceAsOf = "2026-08-14"))
 
         val summary = service(store, source).valuate(valuedOn, now)
 
         assertThat(summary.requested).isEqualTo(1)
-        assertThat(summary.valued).isEqualTo(1)
-        assertThat(summary.inserted).isEqualTo(1)
+        assertThat(summary.updated).isEqualTo(1)
+        assertThat(summary.unchanged).isZero()
+        assertThat(summary.failed).isZero()
+
+        val applied = store.applied.single()
+        assertThat(applied.asset.id).isEqualTo(asset.id)
+        assertThat(applied.valuation.valuationKrw).isEqualByComparingTo("1983500")
+        assertThat(applied.valuedAt).isEqualTo(now)
+    }
+
+    /**
+     * **값이 같으면 쓰지 않는다.** 시세가 D+1이라 대부분의 날은 어제와 같은 값이 나온다.
+     * 그때마다 저장하면 `last_updated_at`이 매일 갱신돼 **"언제 실제로 값이 바뀌었나"를
+     * 알 수 없게 된다** — 화면이 신선도를 말할 때 쓰는 바로 그 컬럼이다.
+     */
+    @Test
+    fun `값이 같으면 저장하지 않는다`() {
+        val asset = gold(currentValue = "1983500")
+        val store = FakeStore(listOf(asset))
+        val source = FakeSource(valuation(krw = "1983500", priceAsOf = "2026-08-14"))
+
+        val summary = service(store, source).valuate(valuedOn, now)
+
+        assertThat(store.applied).isEmpty()
+        assertThat(summary.updated).isZero()
+        assertThat(summary.unchanged).isEqualTo(1)
+        assertThat(summary.failed).isZero()
+    }
+
+    /** 스케일만 다른 같은 값도 같은 값이다 — `1983500` vs `1983500.0000000000` */
+    @Test
+    fun `스케일이 달라도 같은 값이면 저장하지 않는다`() {
+        val store = FakeStore(listOf(gold(currentValue = "1983500.0000000000")))
+        val source = FakeSource(valuation(krw = "1983500", priceAsOf = "2026-08-14"))
+
+        assertThat(service(store, source).valuate(valuedOn, now).unchanged).isEqualTo(1)
+        assertThat(store.applied).isEmpty()
+    }
+
+    /**
+     * 산출 불가는 **직전 값을 그대로 둔다.** 0으로 덮으면 순자산 그래프에 절벽이 생기고,
+     * 다음 날 값이 돌아와도 과거는 안 고쳐진다. 조용히 넘어가지도 않는다 —
+     * 요약에 이름이 남아야 "연휴라 그렇다"와 "이 자산만 몇 주째 안 잡힌다"를 가를 수 있다.
+     */
+    @Test
+    fun `산출 불가면 덮지 않고 건너뛴 것으로 남긴다`() {
+        val asset = gold(currentValue = "1500000", unit = "kg")
+        val store = FakeStore(listOf(asset))
+        val source = FakeSource(null)
+
+        val summary = service(store, source).valuate(valuedOn, now)
+
+        assertThat(store.applied).isEmpty()
         assertThat(summary.updated).isZero()
         assertThat(summary.failed).isZero()
-
-        val saved = store.saved.single()
-        assertThat(saved.realAssetId).isEqualTo(asset.id)
-        assertThat(saved.valuedOn).isEqualTo(valuedOn)
-        assertThat(saved.valuationKrw).isEqualTo(1_983_500L)
-        assertThat(saved.priceAsOf).isEqualTo(LocalDate.of(2026, 8, 14))
+        // 단위가 사유에 실려야 "왜 이 자산만 빠지나"를 요약만 보고 안다
+        assertThat(summary.skipped.single()).contains(asset.id.toString()).contains("kg")
     }
 
     /**
-     * 산출 불가는 **행을 안 쓴다.** 0원을 쓰면 순자산 그래프에 그 자산만큼 절벽이 생기고,
-     * 다음 날 값이 돌아오면 절벽이 그대로 남는다(스냅샷은 과거를 고치지 않는다).
-     * 직전 유효 스냅샷을 그대로 두는 것이 설계 1절 원칙 3의 "호출부가 처리한다"이다.
-     *
-     * 그리고 **조용히 넘어가지 않는다** — 요약에 이름이 남아야 "연휴라 그렇다"와
-     * "이 자산만 몇 주째 안 잡힌다"를 운영자가 가를 수 있다.
-     */
-    @Test
-    fun `산출 불가면 행을 쓰지 않고 건너뛴 것으로 남긴다`() {
-        val asset = goldAsset(quantity = "10")
-        val store = FakeStore(assets = listOf(asset))
-        val source = FakeSource(AssetType.GOLD, result = null)
-
-        val summary = service(store, source).valuate(valuedOn, now)
-
-        assertThat(store.saved).isEmpty()
-        assertThat(summary.requested).isEqualTo(1)
-        assertThat(summary.valued).isZero()
-        assertThat(summary.failed).isZero()
-        assertThat(summary.skipped).hasSize(1)
-        assertThat(summary.skipped.single()).contains(asset.id.toString()).contains("산출 불가")
-    }
-
-    /**
-     * v1은 금 어댑터 하나뿐인데 등록 API(G6)는 `AssetType` 전체를 받는다. 즉 시계를 등록한
-     * 사용자가 생기는 순간 맡을 어댑터가 없는 자산이 배치를 지나간다.
-     * **조용히 사라지면 안 된다** — 그 자산은 영원히 평가되지 않는데 아무 신호도 안 난다.
-     */
-    @Test
-    fun `맡는 어댑터가 없는 자산도 건너뛴 것으로 남긴다`() {
-        val watch = RealAsset(
-            id = UUID.randomUUID(),
-            assetType = AssetType.WATCH,
-            sourceRef = "116233",
-            quantity = BigDecimal.ONE,
-            purity = BigDecimal("1.0"),
-        )
-        val store = FakeStore(assets = listOf(watch))
-        val source = FakeSource(AssetType.GOLD, valuation(krw = 1L, priceAsOf = "2026-08-14"))
-
-        val summary = service(store, source).valuate(valuedOn, now)
-
-        assertThat(store.saved).isEmpty()
-        assertThat(summary.valued).isZero()
-        assertThat(summary.skipped.single()).contains(watch.id.toString()).contains("어댑터 없음")
-    }
-
-    /**
-     * 자산 하나가 터져도 나머지를 저장한다. 예외로 끝내면 살아 있던 평가까지 같이 잃고,
-     * 그날 스냅샷이 통째로 비어 순자산 그래프에 구멍이 난다.
-     *
-     * **실패는 건너뜀과 다른 칸에 넣는다.** "연휴라 시세가 없다"(skipped)와 "코드가 터졌다"(failed)를
-     * 합치면 요약을 보고 어디를 봐야 할지 알 수 없다.
+     * 자산 하나가 터져도 나머지를 저장한다. 예외로 끝내면 살아 있던 평가까지 잃는다.
+     * **실패는 건너뜀과 다른 칸에 넣는다** — 합치면 요약을 보고 어디를 봐야 할지 알 수 없다.
      */
     @Test
     fun `한 자산이 터져도 나머지는 저장한다`() {
-        val boom = goldAsset(quantity = "10")
-        val fine = goldAsset(quantity = "20")
-        val store = FakeStore(assets = listOf(boom, fine))
+        val boom = gold(currentValue = "1000000")
+        val fine = gold(currentValue = "1000000")
+        val store = FakeStore(listOf(boom, fine))
         val source = FakeSource(
-            AssetType.GOLD,
-            valuation(krw = 3_967_000L, priceAsOf = "2026-08-14"),
+            valuation(krw = "1983500", priceAsOf = "2026-08-14"),
             failingFor = setOf(boom.id),
             failure = IllegalStateException("시세 조회 실패"),
         )
 
         val summary = service(store, source).valuate(valuedOn, now)
 
-        assertThat(store.saved.map { it.realAssetId }).containsExactly(fine.id)
+        assertThat(store.applied.map { it.asset.id }).containsExactly(fine.id)
         assertThat(summary.requested).isEqualTo(2)
-        assertThat(summary.valued).isEqualTo(1)
+        assertThat(summary.updated).isEqualTo(1)
         assertThat(summary.failed).isEqualTo(1)
         assertThat(summary.failures.single()).contains(boom.id.toString()).contains("시세 조회 실패")
     }
 
-    /** 재시도가 행을 늘리지 않는다 — 워크플로의 `--retry`가 이 계수에 기대어 멱등해진다 */
-    @Test
-    fun `이미 스냅샷이 있는 자산은 갱신으로 센다`() {
-        val asset = goldAsset(quantity = "10")
-        val store = FakeStore(assets = listOf(asset), existing = setOf(asset.id))
-        val source = FakeSource(AssetType.GOLD, valuation(krw = 1_983_500L, priceAsOf = "2026-08-14"))
-
-        val summary = service(store, source).valuate(valuedOn, now)
-
-        assertThat(summary.valued).isEqualTo(1)
-        assertThat(summary.inserted).isZero()
-        assertThat(summary.updated).isEqualTo(1)
-    }
-
     /**
-     * 실측한 연휴 그대로다 — 08-18(화) 평가에 쓸 수 있는 가장 신선한 시세가 08-14(금)이라 4일.
-     * **0이 정상이 아니다**(소스가 D+1 공표). 이 값이 늘 0으로 나온다면 폴백이 아니라
-     * 평가일을 그대로 넣고 있는 것이다.
+     * 조회 대상(`JpaValuableAssetStore.VALUABLE_TYPES`)과 어댑터 목록이 갈라지는 날,
+     * 그 자산이 조용히 사라지지 않게 한다.
      */
     @Test
-    fun `평가일과 시세 기준일의 차이를 staleness로 남긴다`() {
-        val store = FakeStore(assets = listOf(goldAsset(quantity = "10")))
-        val source = FakeSource(AssetType.GOLD, valuation(krw = 1_983_500L, priceAsOf = "2026-08-14"))
+    fun `맡는 어댑터가 없는 자산은 건너뛴 것으로 남긴다`() {
+        val estate = gold(currentValue = "500000000", type = AssetType.REAL_ESTATE)
+        val store = FakeStore(listOf(estate))
 
-        service(store, source).valuate(valuedOn, now)
+        val summary = service(store, FakeSource(valuation(krw = "1", priceAsOf = "2026-08-14")))
+            .valuate(valuedOn, now)
 
-        assertThat(store.saved.single().stalenessDays).isEqualTo(4)
+        assertThat(store.applied).isEmpty()
+        assertThat(summary.skipped.single()).contains(estate.id.toString()).contains("어댑터 없음")
+    }
+
+    /** 대상이 없어도 정상이다 — 아무도 금을 안 넣었을 수 있다 */
+    @Test
+    fun `대상이 없으면 빈 요약이다`() {
+        val store = FakeStore(emptyList())
+
+        val summary = service(store, FakeSource(null)).valuate(valuedOn, now)
+
+        assertThat(summary.requested).isZero()
+        assertThat(summary.updated).isZero()
+        assertThat(summary.failed).isZero()
+        assertThat(store.applied).isEmpty()
     }
 
     // ── 테스트 픽스처 ───────────────────────────────────────────────────────
@@ -149,49 +148,58 @@ class RealAssetValuationServiceTest {
     private fun service(store: FakeStore, vararg sources: ValuationSource) =
         RealAssetValuationService(sources.toList(), store)
 
-    private fun goldAsset(quantity: String) = RealAsset(
+    private fun gold(
+        currentValue: String,
+        unit: String? = "g",
+        type: AssetType = AssetType.GOLD,
+    ) = Asset.reconstruct(
         id = UUID.randomUUID(),
-        assetType = AssetType.GOLD,
-        sourceRef = "GOLD_KRX",
-        quantity = BigDecimal(quantity),
-        purity = BigDecimal("1.0"),
+        userId = UUID.randomUUID(),
+        accountId = UUID.randomUUID(),
+        category = AssetCategory.MANUAL,
+        type = type,
+        sourceType = AssetSourceType.MANUAL,
+        name = "금",
+        symbol = unit,
+        quantity = BigDecimal("10"),
+        purchasePrice = BigDecimal("150000"),
+        currentValue = BigDecimal(currentValue),
+        currency = "KRW",
+        valuationMethod = ValuationMethod.USER_INPUT,
+        confidenceLevel = ConfidenceLevel.LOW,
+        lastUpdatedAt = LocalDateTime.of(2026, 8, 1, 9, 0),
+        createdAt = LocalDateTime.of(2026, 8, 1, 9, 0),
+        memo = null,
     )
 
-    private fun valuation(krw: Long, priceAsOf: String) = Valuation(
+    private fun valuation(krw: String, priceAsOf: String) = Valuation(
         unitPrice = BigDecimal("198350.0000"),
-        valuationKrw = krw,
+        valuationKrw = BigDecimal(krw),
         priceAsOf = LocalDate.parse(priceAsOf),
-        priceUnit = "KRW/g",
         priceBasis = PriceBasis.TRADE,
-        confidence = Confidence.HIGH,
+        confidence = ConfidenceLevel.HIGH,
     )
 
     private class FakeSource(
-        private val type: AssetType,
         private val result: Valuation?,
         private val failingFor: Set<UUID> = emptySet(),
         private val failure: RuntimeException? = null,
     ) : ValuationSource {
-        override fun supports(assetType: AssetType) = assetType == type
+        override fun supports(assetType: AssetType) = assetType == AssetType.GOLD
 
-        override fun valuate(asset: RealAsset, asOf: LocalDate): Valuation? {
+        override fun valuate(asset: Asset, asOf: LocalDate): Valuation? {
             if (asset.id in failingFor) throw failure ?: IllegalStateException("실패")
             return result
         }
     }
 
-    private class FakeStore(
-        private val assets: List<RealAsset> = emptyList(),
-        private val existing: Set<UUID> = emptySet(),
-    ) : RealAssetValuationService.Store {
-        val saved = mutableListOf<ValuationSnapshot>()
+    private class FakeStore(private val assets: List<Asset>) : RealAssetValuationService.Store {
+        val applied = mutableListOf<RealAssetValuationService.ValuationUpdate>()
 
-        override fun activeAssets(): List<RealAsset> = assets
+        override fun valuableAssets(): List<Asset> = assets
 
-        override fun existingAssetIds(valuedOn: LocalDate): Set<UUID> = existing
-
-        override fun save(snapshots: List<ValuationSnapshot>, now: Instant) {
-            saved += snapshots
+        override fun apply(updates: List<RealAssetValuationService.ValuationUpdate>) {
+            applied += updates
         }
     }
 }

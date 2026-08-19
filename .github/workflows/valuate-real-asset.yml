@@ -119,8 +119,8 @@ jobs:
 
           # **502가 없는 것이 의도다** — 이 배치는 상류를 안 부른다(우리 DB만 읽는다).
           # 500의 원인은 대개 둘이고 고칠 곳이 다르다:
-          #  (1) **real_asset·real_asset_valuation 테이블 부재 — 첫 배포에서 가장 흔하다.**
-          #      docs/superpowers/migrations/2026-08-18-real-asset-tables.sql을 운영 Neon에
+          #  (1) **ua_assets.price_as_of 컬럼 부재 — 첫 배포에서 가장 흔하다.**
+          #      docs/superpowers/migrations/2026-08-19-ua-assets-price-as-of.sql을 운영 Neon에
           #      적용했는지 확인할 것. ddl-auto: none이라 아무도 대신 만들어 주지 않는다.
           #      (마감 워크플로가 운영 Neon에 wf_ 테이블이 없어 같은 방식으로 조용히 실패한 전례가 있다.)
           #  (2) 코드 오류 — 응답 본문의 failures에 사유가 그대로 실린다.
@@ -132,7 +132,7 @@ jobs:
             echo "응답 본문:"
             head -c 2000 response.json 2>/dev/null || echo '(본문 없음)'
             echo ""
-            echo "::error::실물자산 평가 실패 (HTTP ${HTTP_CODE}). 500=대개 real_asset·real_asset_valuation 테이블 부재(docs/superpowers/migrations/2026-08-18-real-asset-tables.sql을 운영 Neon에 적용했는지 확인 — ddl-auto: none이라 아무도 대신 만들어 주지 않는다). 그 외 500은 코드 오류로, 위 응답 본문의 failures가 사유를 말해 준다 / 503=SCHEDULER_TOKEN 미설정 / 401=토큰 불일치(양끝 공백·개행 확인) / 404=BACKEND_URL 경로 확인 / 000=백엔드 응답 없음(콜드 스타트·네트워크). **502는 이 배치에 없다** — 상류를 안 부른다"
+            echo "::error::실물자산 평가 실패 (HTTP ${HTTP_CODE}). 500=대개 ua_assets.price_as_of 컬럼 부재(docs/superpowers/migrations/2026-08-19-ua-assets-price-as-of.sql을 운영 Neon에 적용했는지 확인 — ddl-auto: none이라 아무도 대신 만들어 주지 않는다). 그 외 500은 코드 오류로, 위 응답 본문의 failures가 사유를 말해 준다 / 503=SCHEDULER_TOKEN 미설정 / 401=토큰 불일치(양끝 공백·개행 확인) / 404=BACKEND_URL 경로 확인 / 000=백엔드 응답 없음(콜드 스타트·네트워크). **502는 이 배치에 없다** — 상류를 안 부른다"
             exit 1
           fi
 
@@ -160,7 +160,8 @@ jobs:
               raise SystemExit(0)
 
           requested = body.get("requested") or 0
-          valued = body.get("valued") or 0
+          updated = body.get("updated") or 0
+          unchanged = body.get("unchanged") or 0
           skipped = body.get("skipped") or []
           failures = body.get("failures") or []
           failed = body.get("failed") or 0
@@ -168,9 +169,12 @@ jobs:
           # **건수를 stdout에도 남긴다.** 잡 요약은 사람이 UI를 열어야만 보이고 REST API로는
           # 못 읽는다. 그래서 이 줄이 없으면 "대상이 조용히 줄어든 경우"를 아무도 못 가른다 —
           # is_active 조건이 잘못 걸려 requested가 절반이 돼도 전량 성공이라 초록으로 끝난다.
+          # **updated=0이 정상인 날이 대부분이다.** 금 시세는 D+1 공표라 어제와 같은 값이
+          # 나오는 날이 많고, 그때는 저장하지 않는다(last_updated_at을 매일 흔들지 않으려고).
+          # updated=0을 실패로 읽지 말 것 — unchanged가 그만큼 올라가 있으면 정상이다.
           print(
-              f"평가 결과: valuedOn={body.get('valuedOn')} requested={requested} valued={valued} "
-              f"inserted={body.get('inserted')} updated={body.get('updated')} "
+              f"평가 결과: valuedOn={body.get('valuedOn')} requested={requested} "
+              f"updated={updated} unchanged={unchanged} "
               f"skipped={len(skipped)} failed={failed}"
           )
 
@@ -178,18 +182,19 @@ jobs:
           # 자산이라, 아무도 아직 실물자산을 안 넣었으면 0건이 맞다. 다만 어제까지 있던 자산이
           # 오늘 0건이 되는 경우(is_active 사고)와 구분이 안 되므로 사람에게 알린다.
           if not requested:
-              print("::warning::평가 대상 자산이 0건입니다 — 아직 아무도 실물자산을 등록하지 않았다면 정상입니다. 어제까지 대상이 있었다면 real_asset.is_active를 확인하세요.")
+              print("::warning::평가 대상 자산이 0건입니다 — 아직 아무도 금(ua_assets.type='GOLD')을 등록하지 않았다면 정상입니다. 어제까지 대상이 있었다면 JpaValuableAssetStore.VALUABLE_TYPES와 자산 유형을 확인하세요.")
 
           if skipped:
-              # **"연휴라 그렇다"고 단정하지 않는다.** 건너뜀의 원인은 셋이고 자동으로 못 가른다:
-              # 시세가 아직 한 건도 없음(수집 미실행) · 단위가 KRW/g가 아님(소스 변경) ·
-              # 그 자산 유형을 맡는 어댑터가 없음(시계·부동산 등록). 사유 문자열이 셋을 가른다.
-              # 같은 자산이 며칠씩 계속 여기 뜨면 연휴가 아니라 위 셋 중 하나다.
+              # **"연휴라 그렇다"고 단정하지 않는다.** 건너뜀의 원인은 넷이고 자동으로 못 가른다:
+              # **사용자가 넣은 중량 단위를 해석할 수 없음(ua_assets.symbol이 자유 문자열이다 — 가장 흔하다)** ·
+              # 시세가 아직 한 건도 없음(수집 미실행) · 시세 단위가 KRW/g가 아님(소스 변경) ·
+              # 그 자산 유형을 맡는 어댑터가 없음. 사유 문자열이 넷을 가르고 단위를 함께 싣는다.
+              # 같은 자산이 며칠씩 계속 여기 뜨면 대개 단위 표기 문제다 — 그 사용자에게 물어야 한다.
               print(f"::warning::평가를 건너뛴 자산 {len(skipped)}건: {', '.join(str(x).replace(chr(10), ' ') for x in skipped)}")
 
           if failed or failures:
               # **개행을 지운다.** ::warning::은 첫 줄만 먹으므로 나머지가 조용히 사라지고,
               # 하필 이어지는 줄이 `::`로 시작하면 GitHub이 그걸 또 다른 워크플로 명령으로 해석한다.
               reasons = " | ".join(str(x).replace("\n", " ") for x in failures) or "(사유 없음)"
-              print(f"::warning::실물자산 {failed}/{requested}건 평가 실패 (저장 {valued}건): {reasons}")
+              print(f"::warning::실물자산 {failed}/{requested}건 평가 실패 (저장 {updated}건): {reasons}")
           PY

@@ -1,9 +1,16 @@
 package com.allfolio.realasset
 
+import com.allfolio.unifiedasset.domain.asset.Asset
+import com.allfolio.unifiedasset.domain.asset.AssetCategory
+import com.allfolio.unifiedasset.domain.asset.AssetSourceType
+import com.allfolio.unifiedasset.domain.asset.AssetType
+import com.allfolio.unifiedasset.domain.asset.ConfidenceLevel
+import com.allfolio.unifiedasset.domain.asset.ValuationMethod
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.util.UUID
 
 class KrxGoldSourceTest {
@@ -11,78 +18,60 @@ class KrxGoldSourceTest {
     private val asOf = LocalDate.of(2026, 8, 18)
 
     @Test
-    fun `시세와 수량을 곱해 평가액을 낸다`() {
+    fun `시세와 중량을 곱해 평가액을 낸다`() {
         val lookup = FakeLookup("GOLD_KRX" to quote("2026-08-14", "198350.0000", "KRW/g"))
 
-        val valuation = KrxGoldSource(lookup).valuate(gold(quantity = "10"), asOf)
+        val valuation = KrxGoldSource(lookup).valuate(gold(quantity = "10", unit = "g"), asOf)
 
         assertThat(valuation).isNotNull
-        assertThat(valuation!!.valuationKrw).isEqualTo(1_983_500L)
+        assertThat(valuation!!.valuationKrw).isEqualByComparingTo("1983500")
         assertThat(valuation.unitPrice).isEqualByComparingTo("198350.0000")
         assertThat(valuation.priceAsOf).isEqualTo(LocalDate.of(2026, 8, 14))
-        assertThat(valuation.priceUnit).isEqualTo("KRW/g")
         assertThat(valuation.priceBasis).isEqualTo(PriceBasis.TRADE)
-        assertThat(valuation.confidence).isEqualTo(Confidence.HIGH)
+        assertThat(valuation.confidence).isEqualTo(ConfidenceLevel.HIGH)
     }
 
     /**
-     * 1돈 = 3.75g. `valuation_krw`가 BIGINT라 어딘가에서 반드시 반올림되는데,
-     * 그 자리가 여기 하나여야 한다 — 저장하는 쪽마다 규칙이 생기면 같은 자산의 평가액이
-     * 화면과 DB에서 갈린다. 198,350 x 3.75 = 743,812.5 → HALF_UP → 743,813.
+     * **단위를 시세에 맞춰 환산한다.** 1돈 = 3.75g이므로 198,350 x 3.75 = 743,812.5 → 743,813.
+     * 환산을 빠뜨리면 1돈짜리 금이 1g으로 평가돼 **평가액이 1/3.75로 줄어든다.**
      */
     @Test
-    fun `원 단위로 반올림한다`() {
+    fun `돈 단위를 그램으로 환산해 곱한다`() {
         val lookup = FakeLookup("GOLD_KRX" to quote("2026-08-14", "198350.0000", "KRW/g"))
 
-        val valuation = KrxGoldSource(lookup).valuate(gold(quantity = "3.75"), asOf)
+        val valuation = KrxGoldSource(lookup).valuate(gold(quantity = "1", unit = "돈"), asOf)
 
-        assertThat(valuation!!.valuationKrw).isEqualTo(743_813L)
-    }
-
-    /** 18K는 0.75. v1은 24K 고정이지만 순도를 안 곱하면 주얼리를 받는 날 33% 과대평가된다 */
-    @Test
-    fun `순도를 곱한다`() {
-        val lookup = FakeLookup("GOLD_KRX" to quote("2026-08-14", "200000.0000", "KRW/g"))
-
-        val valuation = KrxGoldSource(lookup).valuate(gold(quantity = "10", purity = "0.75"), asOf)
-
-        assertThat(valuation!!.valuationKrw).isEqualTo(1_500_000L)
+        assertThat(valuation!!.valuationKrw).isEqualByComparingTo("743813")
     }
 
     /**
-     * 연휴가 아무리 길어도 폴백이 닿지 않는 구간(수집 시작 이전 등)이 있다.
-     * 그때 0원으로 메우면 사용자 순자산이 그 자산만큼 통째로 사라진 것처럼 보인다.
+     * **모르는 단위는 계산하지 않는다.** `symbol`이 자유 문자열이라 무엇이든 들어올 수 있는데,
+     * 기본값 g을 주면 돈으로 입력한 금이 3.75배로 평가된다 — 숫자가 그럴듯해 아무도 못 잡는다.
      */
     @Test
-    fun `시세가 없으면 null을 준다`() {
-        val valuation = KrxGoldSource(FakeLookup()).valuate(gold(quantity = "10"), asOf)
-
-        assertThat(valuation).isNull()
-    }
-
-    /** `source_ref`는 nullable이다 — 시세 소스가 없는 자산을 나중에 받을 수 있게 열어 둔 자리 */
-    @Test
-    fun `시세 조인 키가 없으면 null을 준다`() {
+    fun `단위를 해석할 수 없으면 계산하지 않는다`() {
         val lookup = FakeLookup("GOLD_KRX" to quote("2026-08-14", "198350.0000", "KRW/g"))
 
-        val valuation = KrxGoldSource(lookup).valuate(gold(quantity = "10", sourceRef = null), asOf)
-
-        assertThat(valuation).isNull()
+        assertThat(KrxGoldSource(lookup).valuate(gold(quantity = "10", unit = "kg"), asOf)).isNull()
+        assertThat(KrxGoldSource(lookup).valuate(gold(quantity = "10", unit = null), asOf)).isNull()
     }
 
     /**
      * AF-108이 단위를 코드 상수가 아니라 행에 저장하는 이유가 "소스가 단위를 바꾼 날 저장은
-     * 멀쩡한데 화면만 조용히 틀린다"를 막는 것이다. 어댑터가 KRW/g를 가정해 버리면 그 방어가
-     * 여기서 무효가 된다 — 돈(3.75g) 단위로 바뀌어 오면 평가액이 3.75배로 뛴다.
-     * 계산하지 않고 null을 준다(설계 1절 원칙 3: 산출 불가능하면 null).
+     * 멀쩡한데 화면만 조용히 틀린다"를 막는 것이다. 어댑터가 KRW/g를 가정해 버리면
+     * 그 방어가 여기서 무효가 된다.
      */
     @Test
-    fun `단위가 원per그램이 아니면 계산하지 않는다`() {
+    fun `시세 단위가 원per그램이 아니면 계산하지 않는다`() {
         val lookup = FakeLookup("GOLD_KRX" to quote("2026-08-14", "198350.0000", "KRW/돈"))
 
-        val valuation = KrxGoldSource(lookup).valuate(gold(quantity = "10"), asOf)
+        assertThat(KrxGoldSource(lookup).valuate(gold(quantity = "10", unit = "g"), asOf)).isNull()
+    }
 
-        assertThat(valuation).isNull()
+    /** 수집 시작 이전이거나 시세가 아직 없는 구간. 0원으로 메우면 순자산이 통째로 꺼진다 */
+    @Test
+    fun `시세가 없으면 null을 준다`() {
+        assertThat(KrxGoldSource(FakeLookup()).valuate(gold(quantity = "10", unit = "g"), asOf)).isNull()
     }
 
     @Test
@@ -90,22 +79,31 @@ class KrxGoldSourceTest {
         val source = KrxGoldSource(FakeLookup())
 
         assertThat(source.supports(AssetType.GOLD)).isTrue()
-        assertThat(source.supports(AssetType.WATCH)).isFalse()
+        assertThat(source.supports(AssetType.STOCK)).isFalse()
         assertThat(source.supports(AssetType.REAL_ESTATE)).isFalse()
+        assertThat(source.supports(AssetType.CRYPTO)).isFalse()
     }
 
     // ── 테스트 픽스처 ───────────────────────────────────────────────────────
 
-    private fun gold(
-        quantity: String,
-        purity: String = "1.0",
-        sourceRef: String? = "GOLD_KRX",
-    ) = RealAsset(
+    private fun gold(quantity: String, unit: String?) = Asset.reconstruct(
         id = UUID.randomUUID(),
-        assetType = AssetType.GOLD,
-        sourceRef = sourceRef,
+        userId = UUID.randomUUID(),
+        accountId = UUID.randomUUID(),
+        category = AssetCategory.MANUAL,
+        type = AssetType.GOLD,
+        sourceType = AssetSourceType.MANUAL,
+        name = "금",
+        symbol = unit,
         quantity = BigDecimal(quantity),
-        purity = BigDecimal(purity),
+        purchasePrice = BigDecimal("190000"),
+        currentValue = BigDecimal("1900000"),
+        currency = "KRW",
+        valuationMethod = ValuationMethod.USER_INPUT,
+        confidenceLevel = ConfidenceLevel.LOW,
+        lastUpdatedAt = LocalDateTime.of(2026, 8, 1, 9, 0),
+        createdAt = LocalDateTime.of(2026, 8, 1, 9, 0),
+        memo = null,
     )
 
     private fun quote(tradeDate: String, price: String, unit: String) =
