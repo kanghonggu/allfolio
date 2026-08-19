@@ -12,7 +12,7 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
-import java.time.Instant
+import java.time.LocalDateTime
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.TimeZone
@@ -95,7 +95,7 @@ class RealAssetValuationAdminControllerTest {
             controller.valuate(null)
 
             val captor = ArgumentCaptor.forClass(LocalDate::class.java)
-            verify(service).valuate(captor.capture() ?: LocalDate.EPOCH, any(Instant::class.java) ?: Instant.EPOCH)
+            verify(service).valuate(captor.capture() ?: LocalDate.EPOCH, any(LocalDateTime::class.java) ?: LocalDateTime.MIN)
             assertThat(captor.value).isEqualTo(LocalDate.now(ZoneId.of("Asia/Seoul")))
         } finally {
             TimeZone.setDefault(original)
@@ -110,7 +110,7 @@ class RealAssetValuationAdminControllerTest {
         controller.valuate(LocalDate.of(2026, 8, 14))
 
         val captor = ArgumentCaptor.forClass(LocalDate::class.java)
-        verify(service).valuate(captor.capture() ?: LocalDate.EPOCH, any(Instant::class.java) ?: Instant.EPOCH)
+        verify(service).valuate(captor.capture() ?: LocalDate.EPOCH, any(LocalDateTime::class.java) ?: LocalDateTime.MIN)
         assertThat(captor.value).isEqualTo(LocalDate.of(2026, 8, 14))
     }
 
@@ -121,7 +121,7 @@ class RealAssetValuationAdminControllerTest {
         `when`(
             service.valuate(
                 any(LocalDate::class.java) ?: LocalDate.EPOCH,
-                any(Instant::class.java) ?: Instant.EPOCH,
+                any(LocalDateTime::class.java) ?: LocalDateTime.MIN,
             ),
         ).thenReturn(summary)
     }
@@ -135,9 +135,8 @@ class RealAssetValuationAdminControllerTest {
     ) = RealAssetValuationSummary(
         valuedOn = LocalDate.of(2026, 8, 18),
         requested = requested,
-        valued = valued,
-        inserted = valued,
-        updated = 0,
+        updated = valued,
+        unchanged = 0,
         skipped = skipped,
         failed = failed,
         failures = failures,

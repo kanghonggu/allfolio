@@ -1,64 +1,55 @@
 package com.allfolio.realasset
 
+import com.allfolio.unifiedasset.domain.asset.Asset
+import com.allfolio.unifiedasset.domain.asset.AssetType
+import com.allfolio.unifiedasset.domain.asset.ConfidenceLevel
 import java.math.BigDecimal
 import java.time.LocalDate
-import java.util.UUID
-
-enum class AssetType { GOLD, WATCH, REAL_ESTATE }
 
 /**
  * 체결가(TRADE)와 호가(ASK)는 다른 숫자다. 실물자산은 스프레드가 커서 둘을 섞으면
  * 손익이 왜곡된다 — 금은 TRADE, 시계(chrono24·중고 카페)는 ASK다.
+ *
+ * **아직 저장하지 않는다.** `ua_assets`에는 이 개념이 없고 v1은 전부 TRADE라 넣을 자리가 없다.
+ * 그래도 [Valuation]에 두는 이유는 시계(ASK)가 오는 순간 컬럼을 만들어야 한다는 사실을
+ * 타입이 기억하게 하려는 것이다 — 그때 어댑터를 고치지 않아도 된다.
  */
 enum class PriceBasis { TRADE, ASK }
-
-enum class Confidence { HIGH, MEDIUM, LOW }
-
-/** 평가에 필요한 만큼의 보유 자산. 등록·수정 필드는 G6이 붙인다 */
-data class RealAsset(
-    val id: UUID,
-    val assetType: AssetType,
-    /** 시세 조인 키. 금=시세 코드('GOLD_KRX') · 시계=ref · 부동산=단지코드+면적 */
-    val sourceRef: String?,
-    /** 금은 g. 3.75g = 1돈이라 소수 필수 */
-    val quantity: BigDecimal,
-    /** 24K=1.0 · 18K=0.75 */
-    val purity: BigDecimal,
-)
 
 data class Valuation(
     val unitPrice: BigDecimal,
     /**
-     * **Long인 것은 의도다.** 설계 문서는 `BigDecimal`로 적었지만 `real_asset_valuation.valuation_krw`는
-     * `BIGINT`라, BigDecimal로 들고 다니면 "원 단위로 반올림한다"는 규칙이 저장하는 쪽마다 한 벌씩
-     * 생긴다. 한쪽만 고쳐지는 순간 같은 자산의 평가액이 화면과 DB에서 갈린다.
-     * 반올림을 여기서 한 번만 하고, 타입으로 소수를 못 흘려보내게 한다.
+     * 평가 총액(KRW). **원 단위 정수로 반올림해서 들어온다** — `ua_assets.current_value`는
+     * `NUMERIC(30,10)`이라 소수를 담을 수 있지만, 원화에 소수점을 두지 않는 것이 이 저장소의
+     * 규칙이다(AF-104가 자릿수를 흘린 뒤로). 반올림은 어댑터 한 곳에서만 한다.
      */
-    val valuationKrw: Long,
-    /** **필수다.** 폴백 때 평가일과 다르다 — 이걸 안 채우면 과거 화면을 재현할 수 없다 */
+    val valuationKrw: BigDecimal,
+    /**
+     * **필수다.** 시세 기준일은 평가일과 다르다 — 금은 D+1 공표라 평일에도 최소 하루 낡았고
+     * 연휴 뒤엔 4일까지 벌어진다. `last_updated_at`("우리가 쓴 시각")과 혼동하지 말 것.
+     */
     val priceAsOf: LocalDate,
-    /** 적용한 시세의 단위. 소스가 단위를 바꾼 날을 스냅샷 경계 너머로 추적하려고 남긴다 */
-    val priceUnit: String,
     val priceBasis: PriceBasis,
-    val confidence: Confidence,
+    val confidence: ConfidenceLevel,
 )
 
 /**
  * 자산 한 종류의 평가 방법.
  *
- * **평가 로직을 자산별 분기문이 아니라 어댑터로 분리한다** — 실물자산 확장의 핵심이다.
- * 금으로 파이프라인을 완성하고, 시계·부동산은 이 인터페이스의 구현만 갈아끼운다.
+ * **평가 로직을 자산별 분기문이 아니라 어댑터로 분리한다** — 금으로 파이프라인을 완성하고
+ * 시계·부동산은 이 인터페이스의 구현만 갈아끼운다.
  *
- * **반환이 nullable인 게 요점이다.** 시계 표본 3건 미만, 부동산 최근 거래 없음, 금 시세 없음 —
- * 전부 "지금은 산출 불가"이지 0원이 아니다. 억지로 숫자를 만들지 않고 호출부(G5)가
- * 직전 유효 스냅샷 유지로 처리한다.
+ * **`ua_assets`의 [Asset]을 그대로 받는다.** 초안은 전용 표(`real_asset`)와 전용 도메인을
+ * 두려 했지만, 제품에는 이미 `AssetType.GOLD`가 있고 대시보드·배분 차트·리포트가 전부 그걸
+ * 쓴다. 표를 하나 더 만들면 사용자가 금을 넣는 곳이 두 곳이 되고 한쪽만 순자산에 잡힌다.
+ * 여기서 하는 일은 **이미 있는 자산의 `current_value`를 신선하게 유지하는 것**이다.
  *
- * `priceAsOf`·`priceBasis`를 [Valuation]의 필수 필드로 둔 것도 같은 의도다 —
- * 어댑터가 이걸 안 채우면 컴파일이 안 된다. UI 기준일 표시 누락을 타입으로 막는다.
+ * **반환이 nullable인 게 요점이다.** 시세 없음·단위 해석 불가·표본 부족은 전부 "지금은
+ * 산출 불가"이지 0원이 아니다. 억지로 숫자를 만들지 않고 호출부가 **직전 값을 그대로 둔다**.
  */
 interface ValuationSource {
     fun supports(assetType: AssetType): Boolean
 
     /** 산출 불가능하면 null. 예외로 알리지 않는다 — 자산 하나가 배치 전체를 죽이면 안 된다 */
-    fun valuate(asset: RealAsset, asOf: LocalDate): Valuation?
+    fun valuate(asset: Asset, asOf: LocalDate): Valuation?
 }

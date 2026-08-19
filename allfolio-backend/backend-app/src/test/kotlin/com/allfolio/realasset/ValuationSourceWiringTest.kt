@@ -1,8 +1,9 @@
 package com.allfolio.realasset
 
+import com.allfolio.unifiedasset.application.port.AssetRepository
+import com.allfolio.unifiedasset.domain.asset.AssetType
+import com.allfolio.unifiedasset.infrastructure.jpa.AssetJpaRepository
 import com.allfolio.unifiedasset.infrastructure.jpa.MarketCommodityQuoteJpaRepository
-import com.allfolio.unifiedasset.infrastructure.jpa.RealAssetJpaRepository
-import com.allfolio.unifiedasset.infrastructure.jpa.RealAssetValuationJpaRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -38,9 +39,9 @@ class ValuationSourceWiringTest {
     // 안 그러면 배선 테스트가 "어댑터가 빠졌다"가 아니라 "레포 빈이 없다"로 빨개져 신호가 흐려진다.
     @MockBean private lateinit var quoteRepository: MarketCommodityQuoteJpaRepository
 
-    @MockBean private lateinit var assetRepository: RealAssetJpaRepository
+    @MockBean private lateinit var assetJpa: AssetJpaRepository
 
-    @MockBean private lateinit var valuationRepository: RealAssetValuationJpaRepository
+    @MockBean private lateinit var assetRepository: AssetRepository
 
     @Autowired private lateinit var sources: List<ValuationSource>
 
