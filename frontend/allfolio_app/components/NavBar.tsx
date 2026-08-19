@@ -12,6 +12,8 @@ const NAV_ITEMS = [
   { href: '/unified/cashflow', label: '현금흐름' },
   { href: '/unified/recon', label: '대사·검증' },
   { href: '/unified/real-assets', label: '실물자산' },
+  // 공시는 내 보유종목 기반이라 시장(보유와 무관한 정보)보다 앞이다
+  { href: '/unified/disclosures', label: '공시' },
   // 맨 끝인 게 설계다 — 부차적 화면이라 대시보드보다 먼저 눈에 들어오면 안 된다
   { href: '/unified/market', label: '시장' },
 ]
