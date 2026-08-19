@@ -97,8 +97,13 @@ cd frontend/allfolio_app && npx tsc --noEmit && npm run build
         val store = FakeStore(
             holdings = listOf("128940"),
             disclosures = listOf(
+                // **한 행을 isCorrection = true로 둬야 이 테스트가 제 일을 한다.**
+                // 둘 다 false면 접기 게이트(정정 없으면 안 접음)가 혼자서 접기를 막아,
+                // flrNm을 키에서 빼는 변이를 넣어도 테스트가 초록으로 통과한다.
+                // 즉 키를 검증하지 못한다 — 게이트를 검증할 뿐이다.
                 disclosure("R1", "128940", 4, LocalDate.of(2026, 8, 18),
-                    reportNm = "임원·주요주주특정증권등소유상황보고서", corpCode = "C1", flrNm = "황상연"),
+                    reportNm = "임원·주요주주특정증권등소유상황보고서", corpCode = "C1",
+                    flrNm = "황상연", isCorrection = true),
                 disclosure("R2", "128940", 4, LocalDate.of(2026, 8, 18),
                     reportNm = "임원·주요주주특정증권등소유상황보고서", corpCode = "C1", flrNm = "백가람"),
             ),
@@ -106,7 +111,7 @@ cd frontend/allfolio_app && npx tsc --noEmit && npm run build
 
         val feed = DisclosureFeedService(store).feedFor(userId, from)
 
-        assertThat(feed.items).hasSize(2)
+        assertThat(feed.items.map { it.rceptNo }).containsExactlyInAnyOrder("R1", "R2")
         assertThat(feed.items.map { it.supersededCount }).containsExactly(0, 0)
     }
 
