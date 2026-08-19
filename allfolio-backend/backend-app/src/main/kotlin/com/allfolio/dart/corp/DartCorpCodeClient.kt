@@ -167,19 +167,25 @@ class DartCorpCodeClient(private val props: DartProperties) {
          * - `modify_date`는 없거나 `yyyyMMdd`로 못 읽으면 null로 둔다 — 한 행의 파싱 실패로
          *   전체를 죽이지 않는다.
          */
-        fun parseZip(zipBytes: ByteArray): DartCorpParseResult {
-            val xmlBytes = ZipInputStream(ByteArrayInputStream(zipBytes)).use { zip ->
+        fun parseZip(zipBytes: ByteArray): DartCorpParseResult =
+            ZipInputStream(ByteArrayInputStream(zipBytes)).use { zip ->
                 generateSequence { zip.nextEntry }.firstOrNull { !it.isDirectory }
                     ?: throw DartApiException("corpCode ZIP에 항목이 없습니다")
-                zip.readBytes()
+                // **`readBytes()`로 통째로 올리지 않는다.** 압축 해제분이 실측 28.7 MB인데
+                // Render 무료는 RAM 512 MB라 JVM 기본 최대 힙이 그 1/4인 128 MB다 —
+                // ZIP 3.4 MB + XML 28.7 MB + StAX 버퍼가 겹쳐 OutOfMemoryError로 죽었다
+                // (2026-08-19 운영 첫 corp_map 실행). StAX에 스트림을 그대로 물리면
+                // 상장사 3,983건만 메모리에 남고 나머지는 흘려보낸다.
+                parseXml(zip)
             }
 
+        private fun parseXml(xml: java.io.InputStream): DartCorpParseResult {
             val factory = XMLInputFactory.newInstance().apply {
                 // XXE 방지 — DOM에 걸었던 disallow-doctype-decl과 동등한 방어
                 setProperty(XMLInputFactory.SUPPORT_DTD, false)
                 setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false)
             }
-            val reader = factory.createXMLStreamReader(ByteArrayInputStream(xmlBytes))
+            val reader = factory.createXMLStreamReader(xml)
 
             var totalRows = 0
             val listed = mutableListOf<DartCorpRow>()
