@@ -1,6 +1,7 @@
 package com.allfolio.dart.corp
 
 import com.allfolio.dart.DartApiException
+import com.allfolio.dart.DartHttpConnector
 import com.allfolio.dart.DartProperties
 import org.slf4j.LoggerFactory
 import org.springframework.http.client.reactive.ClientHttpConnector
@@ -92,7 +93,9 @@ class DartCorpCodeClient(private val props: DartProperties) {
             .baseUrl(props.baseUrl)
             // 전 종목 매핑 ZIP이 수 MB다 — 기본 256KB 상한으로는 DataBufferLimitException이 난다
             .codecs { it.defaultCodecs().maxInMemorySize(BUFFER_LIMIT_BYTES) }
-            .also { builder -> connector?.let(builder::clientConnector) }
+            // **커넥터를 명시한다.** reactor-netty 기본 암호군에는 DHE가 없고 OpenDART는
+            // ECDHE를 전부 거절해 교집합이 빈다 — 근거는 [DartHttpConnector] KDoc
+            .clientConnector(connector ?: DartHttpConnector.create())
             .build()
     }
 

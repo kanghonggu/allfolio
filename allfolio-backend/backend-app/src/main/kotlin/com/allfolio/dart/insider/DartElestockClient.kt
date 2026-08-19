@@ -1,6 +1,7 @@
 package com.allfolio.dart.insider
 
 import com.allfolio.dart.DartApiException
+import com.allfolio.dart.DartHttpConnector
 import com.allfolio.dart.DartProperties
 import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.JsonNode
@@ -86,7 +87,9 @@ class DartElestockClient(
     private val webClient: WebClient by lazy {
         WebClient.builder()
             .baseUrl(props.baseUrl)
-            .also { builder -> connector?.let(builder::clientConnector) }
+            // **커넥터를 명시한다.** reactor-netty 기본 암호군에는 DHE가 없고 OpenDART는
+            // ECDHE를 전부 거절해 교집합이 빈다 — 근거는 [DartHttpConnector] KDoc
+            .clientConnector(connector ?: DartHttpConnector.create())
             .build()
     }
 
