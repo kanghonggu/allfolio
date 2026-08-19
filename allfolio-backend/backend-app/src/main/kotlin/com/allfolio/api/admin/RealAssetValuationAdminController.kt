@@ -25,7 +25,7 @@ class RealAssetValuationAdminController(
     }
 
     /**
-     * POST /api/admin/real-asset/valuate — 실물자산 평가 스냅샷 (어드민 전용, A1 · G5).
+     * POST /api/admin/real-asset/valuate — 실물자산 자동 평가 (어드민 전용, A1).
      *
      * **`LocalDate.now()`가 아니라 KST로 옮겨 오늘을 구한다** — Render 컨테이너는 UTC라
      * 19:30 KST 실행이 그대로면 10:30 UTC 같은 날이라 우연히 맞지만, 크론이 밀려 자정을 넘기면
