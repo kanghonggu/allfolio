@@ -55,6 +55,12 @@ data class InsiderTradeItem(
 data class DisclosureFeed(
     val items: List<DisclosureItem>,
     val insiderTrades: List<InsiderTradeItem>,
+    /**
+     * 보유 종목 수. **화면이 "보유가 없다"와 "공시가 없다"를 갈라야 해서 낸다** —
+     * 전자는 계좌 연결로 유도할 상태고 후자는 정상 상태라 문구가 달라야 한다.
+     * `findHeldStockCodes`가 이미 구한 값이라 추가 쿼리가 없다.
+     */
+    val heldCount: Int,
 )
 
 /**
@@ -96,7 +102,7 @@ class DisclosureFeedService(private val store: Store) {
 
     fun feedFor(userId: UUID, from: LocalDate): DisclosureFeed {
         val held = store.findHeldStockCodes(userId)
-        if (held.isEmpty()) return DisclosureFeed(emptyList(), emptyList())
+        if (held.isEmpty()) return DisclosureFeed(emptyList(), emptyList(), heldCount = 0)
 
         val items = store.findMaterial(held, from)
             // 정정공시 묶기 — 정규화가 접두어를 떼므로 원본과 정정본이 같은 그룹에 들어간다.
@@ -132,7 +138,7 @@ class DisclosureFeedService(private val store: Store) {
                 )
             }
 
-        return DisclosureFeed(items, insiders)
+        return DisclosureFeed(items, insiders, heldCount = held.size)
     }
 
     private fun toItem(entity: DartDisclosureEntity, supersededCount: Int) = DisclosureItem(

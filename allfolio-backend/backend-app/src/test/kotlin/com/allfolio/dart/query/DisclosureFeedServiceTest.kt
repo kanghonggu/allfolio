@@ -141,6 +141,9 @@ class DisclosureFeedServiceTest {
         val feed = DisclosureFeedService(store).feedFor(userId, from)
 
         assertThat(feed.items.map { it.rceptNo }).containsExactlyInAnyOrder("R1", "R2")
+        // 접히지 않았으면 둘 다 supersededCount=0이어야 한다. 이 단언이 없으면 "항상
+        // supersededCount=1을 반환하는" 회귀를 이 테스트가 못 잡는다(rceptNo만 보므로).
+        assertThat(feed.items.map { it.supersededCount }).containsExactly(0, 0)
     }
 
     @Test
@@ -195,5 +198,22 @@ class DisclosureFeedServiceTest {
             assertThat(changeQty).isEqualTo(-50L)
             assertThat(sourceUrl).isEqualTo("https://dart.fss.or.kr/dsaf001/main.do?rcpNo=R1")
         }
+    }
+
+    @Test
+    fun `보유종목 수를 함께 낸다 — 보유 0과 공시 0은 다른 상태다`() {
+        val store = FakeStore(holdings = listOf("005930", "000660"), disclosures = emptyList())
+
+        val feed = DisclosureFeedService(store).feedFor(userId, from)
+
+        assertThat(feed.heldCount).isEqualTo(2)
+        assertThat(feed.items).isEmpty()
+    }
+
+    @Test
+    fun `보유종목이 없으면 heldCount가 0이다`() {
+        val store = FakeStore(holdings = emptyList(), disclosures = emptyList())
+
+        assertThat(DisclosureFeedService(store).feedFor(userId, from).heldCount).isZero()
     }
 }
