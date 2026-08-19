@@ -81,12 +81,19 @@ class AssetEntity(
 
     @Column(name = "area_pyeong", precision = 10, scale = 2)
     val areaPyeong: BigDecimal? = null,
+
+    /**
+     * 자동 평가된 자산의 시세 기준일 (A1). 수동 입력 자산은 null이다.
+     * **`lastUpdatedAt`과 다르다** — 그쪽은 우리가 쓴 시각, 이쪽은 시세가 언제 것인가.
+     */
+    @Column(name = "price_as_of")
+    val priceAsOf: LocalDate? = null,
 ) {
     fun toDomain() = Asset.reconstruct(
         id, userId, accountId, category, type, sourceType, name, symbol,
         quantity, purchasePrice, currentValue, currency, valuationMethod,
         confidenceLevel, lastUpdatedAt, createdAt, memo, subType, loanAmount,
-        maturityDate, liquidityType, areaPyeong,
+        maturityDate, liquidityType, areaPyeong, priceAsOf,
     )
 
     companion object {
@@ -95,7 +102,7 @@ class AssetEntity(
             a.name, a.symbol, a.quantity, a.purchasePrice, a.currentValue,
             a.currency, a.valuationMethod, a.confidenceLevel,
             a.lastUpdatedAt, a.createdAt, a.memo, a.subType, a.loanAmount,
-            a.maturityDate, a.liquidityType, a.areaPyeong,
+            a.maturityDate, a.liquidityType, a.areaPyeong, a.priceAsOf,
         )
     }
 }

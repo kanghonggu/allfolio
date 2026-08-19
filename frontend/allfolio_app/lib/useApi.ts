@@ -11,7 +11,6 @@ import { createCashFlowApi } from './cashflow-api'
 import { createBenchmarkApi } from './benchmark-api'
 import { createExclusionPresetAdminApi } from './exclusion-preset-admin-api'
 import { createMarketApi } from './market-api'
-import { createRealAssetApi } from './real-asset-api'
 import { createDisclosureApi } from './disclosure-api'
 
 export function useUnifiedApi() {
@@ -82,14 +81,6 @@ export function useMarketApi() {
   const { accessToken } = useAuth()
   return useMemo(
     () => (accessToken ? createMarketApi(accessToken) : null),
-    [accessToken],
-  )
-}
-
-export function useRealAssetApi() {
-  const { accessToken } = useAuth()
-  return useMemo(
-    () => (accessToken ? createRealAssetApi(accessToken) : null),
     [accessToken],
   )
 }

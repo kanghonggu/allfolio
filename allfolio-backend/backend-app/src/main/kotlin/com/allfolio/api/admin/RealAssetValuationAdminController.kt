@@ -10,7 +10,8 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
-import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneOffset
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -48,14 +49,16 @@ class RealAssetValuationAdminController(
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) valuedOn: LocalDate?,
     ): ResponseEntity<RealAssetValuationSummary> {
         val target = valuedOn ?: LocalDate.now(KST)
-        val summary = service.valuate(target, Instant.now())
+        // 컨테이너가 UTC라 LocalDateTime.now()를 그냥 부르면 KST와 9시간 어긋난다.
+        // 저장되는 last_updated_at은 형제 배치들과 같은 규약(UTC)을 따른다.
+        val summary = service.valuate(target, LocalDateTime.now(ZoneOffset.UTC))
 
         // 저장 0 + 실패 있음 = 우리 문제다. 500으로 내고 사유를 그대로 싣는다 —
         // 첫 배포에서 기대되는 실패(테이블 부재)가 정확히 이 경로로 온다.
         //
         // **저장 0 + 전부 건너뜀은 200이다.** 연휴라 시세가 없거나(정상) 아직 어댑터가 없는
         // 유형만 등록된 것이라(정상) 실패가 아니다. `skipped`가 이름을 대므로 조용하지도 않다.
-        if (summary.valued == 0 && summary.failed > 0) {
+        if (summary.updated == 0 && summary.failed > 0) {
             throw ResponseStatusException(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 "실물자산 평가를 한 건도 저장하지 못했습니다 — 전량 실패 " +

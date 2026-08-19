@@ -28,6 +28,14 @@ class Asset private constructor(
     val maturityDate: LocalDate?,
     val liquidityType: AssetLiquidityType,
     val areaPyeong: BigDecimal?,
+    /**
+     * 이 `currentValue`가 어느 날짜의 시세로 계산됐는지. 자동 평가된 자산만 채워진다.
+     *
+     * **[lastUpdatedAt]과 다른 값이다** — 그쪽은 "우리가 언제 썼나"이고 이쪽은 "시세가
+     * 언제 것인가"다. 금은 D+1 공표라 평일에도 둘이 하루 이상 벌어지고, 연휴 뒤엔 4일까지
+     * 간다. 화면이 "8/14 종가 기준"이라고 말할 수 있으려면 이 값이어야 한다.
+     */
+    val priceAsOf: LocalDate? = null,
 ) {
     // ILLIQUID(부동산·차량 등): purchasePrice가 총액이므로 수량을 곱하지 않음
     fun totalPurchaseCost(): BigDecimal =
@@ -117,11 +125,12 @@ class Asset private constructor(
             maturityDate: LocalDate? = null,
             liquidityType: AssetLiquidityType = AssetLiquidityType.LIQUID,
             areaPyeong: BigDecimal? = null,
+            priceAsOf: LocalDate? = null,
         ) = Asset(
             id, userId, accountId, category, type, sourceType, name, symbol,
             quantity, purchasePrice, currentValue, currency, valuationMethod,
             confidenceLevel, lastUpdatedAt, createdAt, memo, subType, loanAmount,
-            maturityDate, liquidityType, areaPyeong,
+            maturityDate, liquidityType, areaPyeong, priceAsOf,
         )
     }
 }
