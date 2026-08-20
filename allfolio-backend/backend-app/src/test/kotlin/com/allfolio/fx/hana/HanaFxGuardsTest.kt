@@ -248,7 +248,9 @@ class HanaFxGuardsTest {
             force = false,
         )
 
-        assertThat(anomalies).singleElement().matches { it.contains("2%를 넘습니다") }
+        // 실제 규칙은 상대·절대 **둘 다**다. 메시지가 상대만 말하면 운영자가
+        // "2.5% 움직였는데 왜 안 걸렸지"를 코드를 열어야만 알 수 있다
+        assertThat(anomalies).singleElement().matches { it.contains("2%") && it.contains("0.01") }
     }
 
     @Test
@@ -262,5 +264,63 @@ class HanaFxGuardsTest {
         )
 
         assertThat(anomalies).isEmpty()
+    }
+
+    @Test
+    fun `저가 통화의 1틱 반올림 변동은 2퍼센트를 넘어도 걸리지 않는다`() {
+        // KHR은 소수 2자리로 고시된다. 최소 표현 단위 0.01이 0.34 기준으로 이미 2.94%라
+        // 상대 임계값만으로는 이 통화가 **원리적으로** 가드를 만족할 수 없다.
+        // 실제로 2026-08-19~20 수집이 이 한 통화 때문에 4연속 422로 막혔고,
+        // 그동안 평가 경로가 쓰는 USD까지 함께 저장되지 못했다
+        val anomalies = guards.check(
+            rows = rows("USD" to "1394.4", "KHR" to "0.35"),
+            previousRates = mapOf("USD" to BigDecimal("1390"), "KHR" to BigDecimal("0.34")),
+            previousRowCount = 2,
+            force = false,
+        )
+
+        assertThat(anomalies).isEmpty()
+    }
+
+    @Test
+    fun `저가 통화도 절대 하한을 넘게 움직이면 걸린다`() {
+        // 하한은 반올림 잡음을 걸러내려는 것이지 저가 통화를 검사에서 빼려는 게 아니다.
+        // 2틱은 더 이상 표현 한계로 설명되지 않는다
+        val anomalies = guards.check(
+            rows = rows("USD" to "1394.4", "KHR" to "0.36"),
+            previousRates = mapOf("USD" to BigDecimal("1390"), "KHR" to BigDecimal("0.34")),
+            previousRowCount = 2,
+            force = false,
+        )
+
+        assertThat(anomalies).singleElement().matches { it.contains("KHR") && it.contains("변동") }
+    }
+
+    @Test
+    fun `절대 하한을 아주 조금만 넘어도 걸린다`() {
+        // 경계를 양쪽에서 조여야 하한 상수를 바꾼 변이가 잡힌다.
+        // 위 테스트만 있으면 하한을 0.02로 올려도 통과한다
+        val anomalies = guards.check(
+            rows = rows("USD" to "1394.4", "KHR" to "0.3501"),
+            previousRates = mapOf("USD" to BigDecimal("1390"), "KHR" to BigDecimal("0.34")),
+            previousRowCount = 2,
+            force = false,
+        )
+
+        assertThat(anomalies).singleElement().matches { it.contains("KHR") && it.contains("변동") }
+    }
+
+    @Test
+    fun `절대 하한이 고액 통화의 2퍼센트 가드를 약화시키지 않는다`() {
+        // 하한을 넉넉하게 잡고 싶은 유혹이 있는데, 그러면 이 가드가 지키려던 USD가 뚫린다.
+        // USD의 2%는 27원대라 어떤 반올림 잡음보다도 세 자릿수 크다
+        val anomalies = guards.check(
+            rows = rows("USD" to "1420"),
+            previousRates = mapOf("USD" to BigDecimal("1385")),
+            previousRowCount = 1,
+            force = false,
+        )
+
+        assertThat(anomalies).singleElement().matches { it.contains("USD") && it.contains("변동") }
     }
 }
