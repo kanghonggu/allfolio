@@ -27,6 +27,17 @@ export interface Position {
   returnRate: number
   weight: number
   currency: string
+  /**
+   * 이 평가액이 어느 날짜 시세로 계산됐는지 (A1). **자동 평가된 자산만 채워진다.**
+   *
+   * 주식·코인(브로커 동기화)과 수동 입력 자산은 `null`이다 —
+   * **`null`을 오늘로 읽어 오늘 날짜를 찍지 말 것.** "모른다"이지 "오늘 시세"가 아니다.
+   */
+  priceAsOf: string | null
+  /** MARKET_PRICE | BALANCE | USER_INPUT */
+  valuationMethod: string
+  /** HIGH | MEDIUM | LOW */
+  confidenceLevel: string
 }
 
 export interface RealAsset {
