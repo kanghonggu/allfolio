@@ -130,13 +130,17 @@ class StockSyncAdapter(
      * 떨어지는 것보다 하루 늦은 공식 종가가 낫다.
      *
      * **국내 코드의 폴백은 두 단이다.** FSC 주식시세정보는 ETF를 담고 있지 않다 —
-     * 2026-08-21 실측: `likeSrtnCd=395270`(HANARO K-반도체)에 `totalCount=0`이 온다.
+     * 2026-08-21 실측: `likeSrtnCd=395270`(HANARO Fn K-반도체)에 `totalCount=0`이 온다.
      * 그래서 ETF만 Yahoo가 막히면 폴백 없이 원가로 떨어져 수익률이 영구히 0%였다.
      * ETF는 증권상품시세정보라는 **다른 서비스**에 있고, 그게 세 번째 단이다.
      *
      * ETF인지 미리 가려내지 않고 그냥 순서대로 묻는다. 종목이 ETF인지 아는 방법이 상장종목
      * 마스터를 뒤지는 것뿐인데, 그 대가로 얻는 건 폴백의 폴백에서 헛호출 한 번을 아끼는
      * 것뿐이다 — 애초에 Yahoo가 막혔을 때만 도는 경로다.
+     *
+     * **세 단이 이 순서인 근거는 이제 잰 값이다.** 2026-08-21 11:42 KST 같은 시각 관측:
+     * FSC는 주식(005930)도 ETF(395270)도 최신 `basDt`가 `20260820`으로 **둘 다 D+1**이고,
+     * Yahoo는 같은 종목에 당일 값을 준다. 신선한 쪽이 먼저, 공식이되 하루 늦은 쪽이 뒤다.
      */
     private fun fetchLivePrice(symbol: String, stockName: String, accountId: String): BigDecimal? {
         val isKrCode = symbol.matches(Regex("\\d{6}"))
