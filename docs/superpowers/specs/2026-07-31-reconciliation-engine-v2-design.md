@@ -1,6 +1,7 @@
 # 코드 룰 기반 대사·검증 엔진 v2 설계 (P2 BE 코어) — 파킹 스펙 개정판
 
-- 작성일: 2026-07-31 (원본: `feat/reconciliation-engine` 브랜치 `2026-07-15-reconciliation-engine-design.md`, 파킹)
+- 작성일: 2026-07-31 (원본: [`2026-07-15-reconciliation-engine-design.md`](./2026-07-15-reconciliation-engine-design.md), 파킹.
+  원래는 `feat/reconciliation-engine` 브랜치에만 있었고 2026-08-21에 이 디렉터리로 옮겼다 — 브랜치는 정리했다)
 - 상태: 개정 초안 — **사용자 리뷰 후 착수** (P2 #12~#17 대응)
 - 관련 모듈: `reconciliation`(신규), `backend-app`(조립)
 
