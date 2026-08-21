@@ -1,6 +1,7 @@
 package com.allfolio.unifiedasset.domain.account
 
 import java.time.LocalDateTime
+import java.time.ZoneOffset
 import java.util.UUID
 
 class Account private constructor(
@@ -22,7 +23,13 @@ class Account private constructor(
     val chain: String?,
 ) {
     fun startSync(): Account = copy(status = AccountStatus.SYNCING)
-    fun completeSync(): Account = copy(status = AccountStatus.ACTIVE, lastSyncedAt = LocalDateTime.now())
+    /**
+     * **저장 시각은 UTC다.** `last_synced_at`은 존 없는 `TIMESTAMP`라 값 자체가 어느 존의
+     * 벽시계인지 말해주지 않는다. `LocalDateTime.now()`는 호스트 타임존을 따라가므로 운영
+     * 컨테이너(UTC)에선 맞고 KST 데스크톱에선 9시간 미래가 들어간다. 존을 명시해 그 우연을
+     * 없앤다 — 읽는 쪽 `atOffset(ZoneOffset.UTC)`가 이 전제 위에 서 있다.
+     */
+    fun completeSync(): Account = copy(status = AccountStatus.ACTIVE, lastSyncedAt = LocalDateTime.now(ZoneOffset.UTC))
     fun failSync(reason: String): Account = copy(status = AccountStatus.ERROR)
 
     private fun copy(
@@ -60,7 +67,7 @@ class Account private constructor(
                 currency      = com.allfolio.unifiedasset.domain.common.Currencies.normalize(currency),
                 status        = AccountStatus.ACTIVE,
                 lastSyncedAt  = null,
-                createdAt     = LocalDateTime.now(),
+                createdAt     = LocalDateTime.now(ZoneOffset.UTC),
                 apiKey        = apiKey,
                 apiSecret     = apiSecret,
                 walletAddress = walletAddress?.trim(),
