@@ -23,24 +23,26 @@ import java.util.concurrent.atomic.AtomicReference
  * ETF 현재가 폴백([FscStockClient.getEtfPrice]).
  *
  * **왜 별도 오퍼레이션인가.** 주식시세정보(`getStockPriceInfo`)는 ETF를 담고 있지 않다 —
- * 2026-08-21 실측: `likeSrtnCd=395270`(HANARO K-반도체)로 물으면 `totalCount=0`이 온다.
+ * 2026-08-21 실측: `likeSrtnCd=395270`(HANARO Fn K-반도체)로 물으면 `totalCount=0`이 온다.
  * 그래서 Yahoo가 막히면 ETF만 폴백 없이 평균 매입단가로 떨어졌다(수익률 0%).
  * ETF는 증권상품시세정보(`GetSecuritiesProductInfoService/getETFPriceInfo`)라는 다른
  * 서비스에 있다.
  *
- * **픽스처 출처를 분명히 해 둔다.** 이 키는 15094806에 아직 **미승인**이라
- * (`SERVICE_KEY_IS_NOT_REGISTERED_ERROR`) 성공 응답을 실물로 받아 보지 못했다. 대신:
+ * **픽스처는 2026-08-21 11:42 KST에 실제로 받은 응답 그대로다.** 처음 이 테스트를 쓸 땐
+ * 키가 15094806에 미승인이라 항목명만 포털 명세로 확정하고 값은 지어냈었는데, 승인 후
+ * 실물로 교체했다. 여기서 단언이 깨지면 우리가 형식을 잘못 읽었거나 상류가 바꾼 것이다.
  *
- *  - **항목명은 포털 명세에서 확인했다**(2026-08-21, 데이터셋 15094806 페이지의 API 명세):
- *    `Item_ETFPriceInfo`에 `basDt`·`srtnCd`·`itmsNm`·`clpr`·`nav`·`bssIdxIdxNm`이 있다.
- *    형제 오퍼레이션에서 추정한 게 아니다.
- *  - **`likeSrtnCd`도 명세에 있다** — "단축코드가 검색값을 포함하는 데이터를 검색"
- *    (공식 활용자가이드의 예시값도 `069500`이다). 참고로 이 오퍼레이션에 *일치* 검색용
- *    `srtnCd`는 없다(`isinCd`·`itmsNm`만 일치형이 있다).
- *  - 응답 봉투(`response.body.items.item[]`)와 값의 표기 방식은 같은 기관의 형제 셋
- *    (주식시세·지수시세·금시세)에서 실제로 받아 확인한 형태다.
+ * 실호출로 확정된 것들:
  *
- * **남은 미확인은 정렬 방향 하나다**(명세에 정렬 언급이 없다). 승인 후 첫 호출로 볼 것.
+ *  - 봉투는 형제 오퍼레이션과 같은 `response.body.items.item[]`이다.
+ *  - 🔴 **`clpr`이 문자열로 온다**(`"56905"`). 포털 명세는 `number`로 선언해 두었다 —
+ *    선언이 런타임을 검사하지 않는다는 걸 그대로 보여 준다([[af-104-market-screen]]).
+ *  - `likeSrtnCd`로 물으면 응답 `srtnCd`가 요청값과 정확히 일치한다. 참고로 이 오퍼레이션에
+ *    *일치* 검색용 `srtnCd`는 없다(`isinCd`·`itmsNm`만 일치형이 있다) — 그래서 *포함* 검색을
+ *    쓰고 응답을 대조한다.
+ *  - **정렬은 최신순**이다: `likeSrtnCd=395270`에 1페이지가 `20260820`, 마지막 페이지
+ *    (1236)가 `20210730`.
+ *  - **D+1이다**: 8/21에 물었는데 최신이 `20260820`이다. 폴백이 Yahoo 뒤인 근거다.
  */
 class FscEtfPriceTest {
 
@@ -49,15 +51,17 @@ class FscEtfPriceTest {
 
         val KST: ZoneId = ZoneId.of("Asia/Seoul")
 
-        /** HANARO K-반도체 — 주식시세정보에서 0건이 나온 그 종목 */
+        /** HANARO Fn K-반도체 — 주식시세정보에서 0건이 나온 그 종목 */
         const val ETF = "395270"
 
         val ETF_BODY = """
             {"response":{"header":{"resultCode":"00","resultMsg":"NORMAL SERVICE."},
-            "body":{"numOfRows":1,"pageNo":1,"totalCount":412,"items":{"item":[
-            {"basDt":"20260819","srtnCd":"395270","isinCd":"KR7395270005","itmsNm":"HANARO K-반도체",
-            "clpr":"18450","vs":"-320","fltRt":"-1.70","nav":"18462.35","mkp":"18700","hipr":"18780",
-            "lopr":"18400","trqu":"152344","trPrc":"2830000000"}
+            "body":{"numOfRows":1,"pageNo":1,"totalCount":1236,"items":{"item":[
+            {"basDt":"20260820","srtnCd":"395270","isinCd":"KR7395270002","itmsNm":"HANARO Fn K-반도체",
+            "clpr":"56905","vs":"4455","fltRt":"8.49","nav":"56879.44","mkp":"54800","hipr":"57155",
+            "lopr":"53410","trqu":"1534005","trPrc":"85599304384","mrktTotAmt":"3596396000000",
+            "stLstgCnt":"63200000","bssIdxIdxNm":"FnGuide K-반도체 지수","bssIdxClpr":"17028.87",
+            "nPptTotAmt":"3597624534492"}
             ]}}}}
         """.trimIndent()
     }
@@ -89,16 +93,16 @@ class FscEtfPriceTest {
     private fun client(port: Int, key: String = API_KEY) =
         FscStockClient(key, ObjectMapper()).apply {
             baseUrl = "http://127.0.0.1:$port"
-            // 픽스처의 기준일자(2026-08-19) 바로 다음 영업일에 물어본 것으로 둔다 —
-            // 그러지 않으면 이 파일 전체가 2026-09월이 되는 순간 신선도 가드에 걸려 죽는다
-            clock = Clock.fixed(Instant.parse("2026-08-20T09:00:00Z"), KST)
+            // 이 픽스처를 실제로 받은 시각(2026-08-21 11:42 KST)에 고정한다 — 그러지 않으면
+            // 이 파일 전체가 2026-09월이 되는 순간 신선도 가드에 걸려 죽는다
+            clock = Clock.fixed(Instant.parse("2026-08-21T02:42:00Z"), KST)
         }
 
     @Test
     fun `ETF 종가를 돌려준다`() {
         val price = client(serving(ETF_BODY)).getEtfPrice(ETF)
 
-        assertThat(price).isEqualByComparingTo(BigDecimal("18450"))
+        assertThat(price).isEqualByComparingTo(BigDecimal("56905"))
     }
 
     @Test
@@ -138,17 +142,18 @@ class FscEtfPriceTest {
     }
 
     /**
-     * 이 오퍼레이션의 **정렬 방향을 아직 실호출로 확인하지 못했다**(키 미승인). 형제
-     * 오퍼레이션들은 최신순이지만 — 2026-08-21 실측: `getStockPriceInfo`의 1페이지가
-     * 20260819, 마지막 페이지가 20200102 — 만약 이쪽이 오래된 순이라면 1페이지 첫 행은
-     * **몇 년 전 종가**다. 그걸 조용히 "현재가"로 쓰면 안 된다.
+     * **정렬은 최신순으로 확인됐다**(2026-08-21 실측: `likeSrtnCd=395270`에 1페이지가
+     * `20260820`, 마지막 페이지 1236이 `20210730`). 그러니 평시에 이 가드는 걸리지 않는다.
      *
-     * 14일: 설 연휴(5영업일)+주말+D+1 지연을 다 겪어도 못 넘는 폭이고, 정렬이 뒤집혔을 때의
-     * 수년 차이와는 자릿수가 다르다.
+     * **그래도 지우지 말 것.** 이 가드가 막는 건 정렬 사고가 아니라 **최신 행 자체가 오래된
+     * 종목**이다 — 거래정지·상장폐지된 ETF는 마지막 거래일에 멈춰 있고, 그 값을 조용히
+     * "현재가"로 쓰면 화면엔 멀쩡한 숫자가 뜬다. 값이 없는 편이 낫다.
+     *
+     * 14일: 설 연휴(최장 5영업일)+주말+D+1을 다 겪어도 못 넘는 폭이라 정상 휴장과 갈린다.
      */
     @Test
     fun `기준일자가 너무 오래된 값은 쓰지 않는다`() {
-        val stale = ETF_BODY.replace("\"basDt\":\"20260819\"", "\"basDt\":\"20200102\"")
+        val stale = ETF_BODY.replace("\"basDt\":\"20260820\"", "\"basDt\":\"20200102\"")
 
         val price = client(serving(stale)).getEtfPrice(ETF)
 
@@ -161,8 +166,9 @@ class FscEtfPriceTest {
      * null이라 그냥 "값 없음"이 되고, 그러면 *승인이 아직인 것*과 *승인 후에 안 되는 것*이
      * 로그에서 갈리지 않는다. 폴백을 붙였다는 사실이 폴백이 동작한다는 착각으로 굳는 자리다.
      *
-     * **이 픽스처는 지어낸 게 아니라 2026-08-21에 실제로 받은 본문이다** — 이 키는 지금
-     * 15094806에 미승인이라, 오히려 오류 경로 쪽이 실측이고 성공 경로 쪽이 추정이다.
+     * **이 픽스처는 승인 전(2026-08-21 오전)에 실제로 받은 본문이다.** 지금은 승인돼 같은
+     * 호출이 정상 응답을 주지만, 그렇다고 이 경로가 죽은 건 아니다 — 쿼터 초과나 키 교체
+     * 때 같은 봉투가 다시 온다.
      */
     @Test
     fun `미승인 인증키는 구분되는 경고로 남긴다`() {
@@ -215,17 +221,17 @@ class FscEtfPriceTest {
     @Test
     fun `종가가 숫자로 와도 문자열로 와도 같은 값이다`() {
         val numeric = ETF_BODY
-            .replace("\"clpr\":\"18450\"", "\"clpr\":18450")
-            .replace("\"vs\":\"-320\"", "\"vs\":-320")
-            .replace("\"fltRt\":\"-1.70\"", "\"fltRt\":-1.70")
+            .replace("\"clpr\":\"56905\"", "\"clpr\":56905")
+            .replace("\"vs\":\"4455\"", "\"vs\":4455")
+            .replace("\"fltRt\":\"8.49\"", "\"fltRt\":8.49")
 
         // 치환이 안 먹으면 이 테스트는 성공 경로를 한 번 더 도는 것뿐이다
         assertThat(numeric).describedAs("픽스처가 실제로 숫자형이어야 증명이 된다")
-            .contains("\"clpr\":18450")
+            .contains("\"clpr\":56905")
 
         val price = client(serving(numeric)).getEtfPrice(ETF)
 
-        assertThat(price).isEqualByComparingTo(BigDecimal("18450"))
+        assertThat(price).isEqualByComparingTo(BigDecimal("56905"))
     }
 
     /** 키가 없으면 네트워크로 나가지도 않는다 — 죽은 포트로 겨눠도 조용히 null이어야 한다 */
