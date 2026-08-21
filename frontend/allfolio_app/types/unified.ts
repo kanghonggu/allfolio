@@ -55,7 +55,10 @@ export interface Asset {
   category:         AssetCategory
   sourceType:       AssetSourceType
   quantity:         number
+  /** 사용자가 적은 면적(평). **전용인지 공급인지 모른다** — 표시용이다 */
   areaPyeong:       number | null
+  /** 전용면적(㎡). 실거래가 매칭 키 — 소스가 확정한 값만 들어 있다 */
+  exclusiveAreaM2:  number | null
   purchasePrice:    number
   currentValue:     number
   loanAmount:       number | null
@@ -77,6 +80,7 @@ export interface CreateManualAssetPayload {
   subType?:      string
   quantity:      number
   areaPyeong?:   number | null
+  exclusiveAreaM2?: number | null
   purchasePrice: number
   currentValue:  number
   loanAmount?:   number | null

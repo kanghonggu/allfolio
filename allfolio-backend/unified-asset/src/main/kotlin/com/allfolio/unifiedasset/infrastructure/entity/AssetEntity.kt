@@ -88,21 +88,41 @@ class AssetEntity(
      */
     @Column(name = "price_as_of")
     val priceAsOf: LocalDate? = null,
+
+    /**
+     * 전용면적(㎡) — 실거래가 매칭 키 (A1 v3).
+     *
+     * **[areaPyeong]과 역할이 다르다.** 그쪽은 사용자가 적은 값이라 전용인지 공급인지
+     * 모르고 표시용이다. 이쪽은 소스가 확정한 값만 담고 매칭에 쓴다. 자세한 이유는
+     * `Asset.exclusiveAreaM2` KDoc 참고.
+     */
+    @Column(name = "exclusive_area_m2", precision = 10, scale = 4)
+    val exclusiveAreaM2: BigDecimal? = null,
 ) {
+    // 위치 인자로 넘기지 않는다 — areaPyeong과 exclusiveAreaM2가 둘 다 BigDecimal?이라
+    // 순서가 바뀌어도 컴파일된다. 그러면 표시용 값이 매칭 키로 들어가고 조용히 틀린다.
     fun toDomain() = Asset.reconstruct(
-        id, userId, accountId, category, type, sourceType, name, symbol,
-        quantity, purchasePrice, currentValue, currency, valuationMethod,
-        confidenceLevel, lastUpdatedAt, createdAt, memo, subType, loanAmount,
-        maturityDate, liquidityType, areaPyeong, priceAsOf,
+        id = id, userId = userId, accountId = accountId, category = category, type = type,
+        sourceType = sourceType, name = name, symbol = symbol, quantity = quantity,
+        purchasePrice = purchasePrice, currentValue = currentValue, currency = currency,
+        valuationMethod = valuationMethod, confidenceLevel = confidenceLevel,
+        lastUpdatedAt = lastUpdatedAt, createdAt = createdAt, memo = memo,
+        subType = subType, loanAmount = loanAmount, maturityDate = maturityDate,
+        liquidityType = liquidityType, areaPyeong = areaPyeong, priceAsOf = priceAsOf,
+        exclusiveAreaM2 = exclusiveAreaM2,
     )
 
     companion object {
         fun fromDomain(a: Asset) = AssetEntity(
-            a.id, a.userId, a.accountId, a.category, a.type, a.sourceType,
-            a.name, a.symbol, a.quantity, a.purchasePrice, a.currentValue,
-            a.currency, a.valuationMethod, a.confidenceLevel,
-            a.lastUpdatedAt, a.createdAt, a.memo, a.subType, a.loanAmount,
-            a.maturityDate, a.liquidityType, a.areaPyeong, a.priceAsOf,
+            id = a.id, userId = a.userId, accountId = a.accountId, category = a.category,
+            type = a.type, sourceType = a.sourceType, name = a.name, symbol = a.symbol,
+            quantity = a.quantity, purchasePrice = a.purchasePrice,
+            currentValue = a.currentValue, currency = a.currency,
+            valuationMethod = a.valuationMethod, confidenceLevel = a.confidenceLevel,
+            lastUpdatedAt = a.lastUpdatedAt, createdAt = a.createdAt, memo = a.memo,
+            subType = a.subType, loanAmount = a.loanAmount, maturityDate = a.maturityDate,
+            liquidityType = a.liquidityType, areaPyeong = a.areaPyeong,
+            priceAsOf = a.priceAsOf, exclusiveAreaM2 = a.exclusiveAreaM2,
         )
     }
 }

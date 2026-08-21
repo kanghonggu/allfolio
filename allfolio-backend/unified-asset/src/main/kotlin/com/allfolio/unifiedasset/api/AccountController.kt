@@ -64,6 +64,12 @@ data class CreateManualAssetRequest(
     val subType: String? = null,          // OWN/JEONSE/MONTHLY/PRESALE/LEASE/RENTAL
     val quantity: java.math.BigDecimal = java.math.BigDecimal.ONE,
     val areaPyeong: java.math.BigDecimal? = null,
+    /**
+     * 전용면적(㎡). **[areaPyeong]과 역할이 다르다** — 그쪽은 사용자가 적은 값이라
+     * 전용인지 공급인지 모르고 표시용이다. 이쪽은 실거래가 매칭 키라 소스가 확정한
+     * 값만 들어온다(R2 단지·평형 선택). 자세한 이유는 `Asset.exclusiveAreaM2` 참고.
+     */
+    val exclusiveAreaM2: java.math.BigDecimal? = null,
     val purchasePrice: java.math.BigDecimal,
     val currentValue: java.math.BigDecimal,
     val loanAmount: java.math.BigDecimal? = null,
@@ -259,6 +265,7 @@ class AccountController(
             loanAmount      = req.loanAmount,
             maturityDate    = req.maturityDate,
             areaPyeong      = if (isAreaType) req.areaPyeong else null,
+            exclusiveAreaM2 = if (isAreaType) req.exclusiveAreaM2 else null,
         )
         val saved = assetRepository.save(asset)
         snapshotService.record(
@@ -410,6 +417,8 @@ data class AssetResponse(
     val sourceType: String,
     val quantity: java.math.BigDecimal,
     val areaPyeong: java.math.BigDecimal?,
+    /** 전용면적(㎡). 실거래가 매칭 키 — 소스가 확정한 값만 들어 있다 */
+    val exclusiveAreaM2: java.math.BigDecimal?,
     val purchasePrice: java.math.BigDecimal,
     val currentValue: java.math.BigDecimal,
     val loanAmount: java.math.BigDecimal?,
@@ -436,6 +445,7 @@ fun Asset.toResponse() = AssetResponse(
     sourceType       = sourceType.name,
     quantity         = quantity,
     areaPyeong       = areaPyeong,
+    exclusiveAreaM2  = exclusiveAreaM2,
     purchasePrice    = purchasePrice,
     currentValue     = currentValue,
     loanAmount       = loanAmount,
