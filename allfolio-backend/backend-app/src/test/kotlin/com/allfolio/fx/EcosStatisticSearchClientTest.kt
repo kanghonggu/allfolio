@@ -197,7 +197,11 @@ class EcosStatisticSearchClientTest {
     @Test
     fun `타임아웃은 EcosApiException으로 통일되고 인증키가 새지 않는다`() {
         // catch (Throwable) 종단 절의 실제 유일한 사용자. 기본 30초라 타임아웃을 주입해 싸게 만든다.
-        val port = serve { Thread.sleep(30_000) } // 응답을 주지 않고 물고 있는다
+        //
+        // **핸들러 sleep을 길게 잡지 말 것.** `HttpServer.stop()`은 디스패처 스레드를 join하므로
+        // 잠든 시간을 tearDown이 통째로 기다린다 — 클라이언트가 300ms에 타임아웃해도 여기서 30초를
+        // 주면 이 테스트 하나가 CI에서 30초를 먹는다. 타임아웃(300ms)보다 넉넉히 길기만 하면 된다.
+        val port = serve { Thread.sleep(2_000) } // 응답을 주지 않고 물고 있는다
         val client = client(port).apply { timeout = Duration.ofMillis(300) }
 
         val raw = catchThrowable {
@@ -213,7 +217,10 @@ class EcosStatisticSearchClientTest {
     fun `인터럽트되면 플래그를 남긴 채 EcosApiException으로 나간다`() {
         // 플래그가 지워지면 종료 중 끊긴 백필이 ECOS 장애로 읽히고 Task 10 루프가 다음 통화로 넘어간다.
         // (실측상 지금은 reactor-core가 복원해 주지만, 그 의존을 테스트로 못 박아 둔다.)
-        val port = serve { Thread.sleep(30_000) }
+        // **핸들러 sleep을 길게 잡지 말 것.** `HttpServer.stop()`은 디스패처 스레드를 join하므로
+        // 잠든 시간을 tearDown이 통째로 기다린다. 여기서 끊는 시점은 아래 500ms이므로 그보다
+        // 넉넉히 길기만 하면 된다 — 30초를 주면 그 30초를 tearDown이 그대로 기다린다.
+        val port = serve { Thread.sleep(2_000) }
         val client = client(port).apply { timeout = Duration.ofSeconds(20) }
 
         val started = CountDownLatch(1)
