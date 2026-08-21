@@ -50,8 +50,19 @@ class JpaValuableAssetStore(
  */
 internal fun Asset.revalued(valuation: Valuation, valuedAt: java.time.LocalDateTime): Asset =
     Asset.reconstruct(
-        id, userId, accountId, category, type, sourceType, name, symbol,
-        quantity, purchasePrice,
+        // **전부 이름 인자로 넘긴다.** `Asset`은 불변이라 여기서 안 적은 필드는 기본값으로
+        // 떨어지는데, 그건 "안 바꿈"이 아니라 **지움**이다. 위치 인자로 두면 필드가 늘 때
+        // 조용히 빠지고, 특히 `exclusiveAreaM2`처럼 같은 타입이 이웃하면 컴파일도 통과한다.
+        id = id,
+        userId = userId,
+        accountId = accountId,
+        category = category,
+        type = type,
+        sourceType = sourceType,
+        name = name,
+        symbol = symbol,
+        quantity = quantity,
+        purchasePrice = purchasePrice,
         currentValue = valuation.valuationKrw,
         currency = currency,
         valuationMethod = ValuationMethod.MARKET_PRICE,
@@ -65,4 +76,6 @@ internal fun Asset.revalued(valuation: Valuation, valuedAt: java.time.LocalDateT
         liquidityType = liquidityType,
         areaPyeong = areaPyeong,
         priceAsOf = valuation.priceAsOf,
+        // 매칭 키다 — 여기서 흘리면 다음 평가 때 그 자산을 못 찾는다
+        exclusiveAreaM2 = exclusiveAreaM2,
     )

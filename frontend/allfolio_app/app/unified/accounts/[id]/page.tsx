@@ -149,6 +149,7 @@ function defaultForm(type: AssetType = 'REAL_ESTATE'): CreateManualAssetPayload 
     symbol: '',
     quantity: 1,
     areaPyeong: null,
+    exclusiveAreaM2: null,
     purchasePrice: 0,
     currentValue: 0,
     loanAmount: null,
@@ -299,6 +300,7 @@ export default function AccountDetailPage() {
       ...assetForm,
       quantity:      isAreaType ? 1 : assetForm.quantity,
       areaPyeong:    isAreaType ? (assetForm.areaPyeong ?? undefined) : undefined,
+      exclusiveAreaM2: isAreaType ? (assetForm.exclusiveAreaM2 ?? undefined) : undefined,
       purchasePrice: assetForm.purchasePrice ?? 0,
       currentValue:  assetForm.currentValue  ?? 0,
       loanAmount:    assetForm.loanAmount ?? undefined,
@@ -438,7 +440,11 @@ export default function AccountDetailPage() {
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
 
-              {/* 면적 (평) — 부동산 전용 */}
+              {/* 면적 — 부동산 전용.
+                  평과 전용면적을 나눠 받는다. "34평"은 보통 공급면적이고 그 집의 전용은
+                  84㎡(≈25.4평)라, 한 칸으로 받으면 어느 쪽인지 알 수 없다. 그 값으로
+                  실거래를 고르면 한 평형 위 단지의 시세를 가져오는데 금액이 그럴듯해서
+                  화면으로는 안 보인다. 그래서 매칭에 쓸 값은 단위를 명시해 따로 받는다. */}
               {isAreaType && (
                 <div>
                   <label className="mb-1.5 block font-mono text-[10px] tracking-label text-fg-muted">면적 (평)</label>
@@ -447,6 +453,20 @@ export default function AccountDetailPage() {
                     value={assetForm.areaPyeong ?? 0}
                     onChange={v => set('areaPyeong', v)}
                   />
+                  <p className="mt-1 text-[10px] text-fg-muted">표시용입니다.</p>
+                </div>
+              )}
+              {isAreaType && (
+                <div>
+                  <label className="mb-1.5 block font-mono text-[10px] tracking-label text-fg-muted">전용면적 (㎡)</label>
+                  <DecimalInput
+                    placeholder="예: 84.97"
+                    value={assetForm.exclusiveAreaM2 ?? 0}
+                    onChange={v => set('exclusiveAreaM2', v)}
+                  />
+                  <p className="mt-1 text-[10px] text-fg-muted">
+                    등기부·분양계약서의 전용면적입니다. 공급(분양)면적이 아닙니다.
+                  </p>
                 </div>
               )}
 
