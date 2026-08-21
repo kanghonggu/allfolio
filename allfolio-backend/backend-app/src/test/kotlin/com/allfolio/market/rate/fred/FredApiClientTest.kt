@@ -185,7 +185,8 @@ class FredApiClientTest {
         //
         // **핸들러 sleep을 길게 잡지 말 것.** `HttpServer.stop()`은 디스패처 스레드를 join하므로
         // 잠든 시간을 tearDown이 통째로 기다린다 — 여기서 30초를 주면 이 테스트 하나가 CI에서
-        // 30초를 먹는다(`EcosStatisticSearchClientTest`의 같은 테스트들이 실제로 그렇다).
+        // 30초를 먹는다 — `EcosStatisticSearchClientTest`의 같은 테스트 둘이 실제로 그랬고,
+        // 클래스 하나가 60.9초였다(2026-08-21에 여기와 같은 2초로 맞춰 4.9초가 됐다).
         // 타임아웃(300ms)보다 넉넉히 길기만 하면 된다.
         val port = serve { Thread.sleep(2_000) }
         val client = client(port).apply { timeout = Duration.ofMillis(300) }
