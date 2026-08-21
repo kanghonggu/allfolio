@@ -57,7 +57,7 @@ class FscStockClient(
      * 종목 현재가(종가) 조회.
      * 6자리 한국 종목코드 전용. 설정 없거나 조회 실패 시 null 반환.
      */
-    fun getPrice(symbol: String): BigDecimal? {
+    fun getPrice(symbol: String): FscQuote? {
         if (!isConfigured()) return null
         return runCatching {
             val json = client.get()
@@ -76,9 +76,10 @@ class FscStockClient(
 
             val resp = objectMapper.readValue(json, FscPriceResponse::class.java)
             val item = resp.response?.body?.items?.item?.firstOrNull() ?: return null
-            val price = item.clpr?.toBigDecimalOrNull()
-            if (price != null) log.debug("[FSC] {} price={}", symbol, price)
-            price
+            val price = item.clpr?.toBigDecimalOrNull() ?: return null
+            val asOf = parseBasDt(item.basDt)
+            log.debug("[FSC] {} price={} (기준일 {})", symbol, price, asOf)
+            FscQuote(price, asOf)
         }.onFailure { e ->
             log.warn("[FSC] price lookup failed for {}: {}", symbol, e.message)
         }.getOrNull()
@@ -110,7 +111,7 @@ class FscStockClient(
      * 남긴다** — 미승인이면 폴백이 영원히 조용한 null이 되고, 그 상태가 "폴백을 붙였다"는
      * 사실에 가려진다.
      */
-    fun getEtfPrice(symbol: String): BigDecimal? {
+    fun getEtfPrice(symbol: String): FscQuote? {
         if (!isConfigured()) return null
         return runCatching {
             val json = client.get()
@@ -178,7 +179,7 @@ class FscStockClient(
             // 그래도 남겨 두는 이유는 정렬이 뒤집힐까 봐가 아니라 **최신 행 자체가 오래될 수
             // 있어서**다 — 상장폐지·거래정지된 종목은 마지막 거래일에 멈춰 있고, 그 값을
             // 조용히 "현재가"로 쓰느니 없는 편이 낫다
-            val quoteDate = item.basDt?.let { runCatching { LocalDate.parse(it, BAS_DT) }.getOrNull() }
+            val quoteDate = parseBasDt(item.basDt)
             if (quoteDate == null) {
                 log.warn("[FSC] ETF 응답에 기준일자가 없다(형식 변경 의심): symbol={}, basDt={}", symbol, item.basDt)
                 return null
@@ -192,9 +193,9 @@ class FscStockClient(
                 return null
             }
 
-            val price = item.clpr?.toBigDecimalOrNull()
-            if (price != null) log.debug("[FSC] ETF {} price={} (기준일 {})", symbol, price, quoteDate)
-            price
+            val price = item.clpr?.toBigDecimalOrNull() ?: return null
+            log.debug("[FSC] ETF {} price={} (기준일 {})", symbol, price, quoteDate)
+            FscQuote(price, quoteDate)
         }.onFailure { e ->
             log.warn("[FSC] ETF price lookup failed for {}: {}", symbol, e.message)
         }.getOrNull()
@@ -260,6 +261,16 @@ class FscStockClient(
 
     data class KrStockItem(val symbol: String, val name: String, val market: String)
 
+    /**
+     * FSC가 준 시세 한 건.
+     *
+     * **가격만 돌려주면 안 되는 이유**: FSC는 D+1이라 이 값은 오늘 것이 아니다. 어느 날짜의
+     * 종가인지를 같이 실어 보내야 화면이 "8/20 종가 기준"이라고 말할 수 있다(A1·N2의 금과
+     * 같은 이유다). [asOf]는 응답의 `basDt`이고, 없거나 못 읽으면 null이다 —
+     * **날짜를 못 읽었다고 멀쩡한 종가를 버리지는 않는다.**
+     */
+    data class FscQuote(val price: BigDecimal, val asOf: LocalDate?)
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class FscPriceResponse(val response: FscPriceBody? = null)
 
@@ -324,6 +335,10 @@ class FscStockClient(
         @JsonProperty("corpNm")  val corpNm: String? = null,
         @JsonProperty("mrktCtg") val mrktCtg: String? = null,
     )
+
+    /** `yyyyMMdd` → 날짜. 비었거나 형식이 다르면 null */
+    private fun parseBasDt(basDt: String?): LocalDate? =
+        basDt?.let { runCatching { LocalDate.parse(it, BAS_DT) }.getOrNull() }
 
     private companion object {
         const val ETF_PRICE_PATH = "GetSecuritiesProductInfoService/getETFPriceInfo"

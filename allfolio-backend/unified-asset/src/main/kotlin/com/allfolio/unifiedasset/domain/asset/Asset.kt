@@ -93,6 +93,7 @@ class Asset private constructor(
             maturityDate: LocalDate? = null,
             areaPyeong: BigDecimal? = null,
             exclusiveAreaM2: BigDecimal? = null,
+            priceAsOf: LocalDate? = null,
         ): Asset {
             // QA P2: 자산명 서버 사이드 산티타이징 + 통화 화이트리스트 검증
             val safeName = com.allfolio.unifiedasset.domain.common.sanitizeUserText(name)
@@ -132,6 +133,7 @@ class Asset private constructor(
                                   else AssetLiquidityType.LIQUID,
                 areaPyeong      = areaPyeong,
                 exclusiveAreaM2 = exclusiveAreaM2,
+                priceAsOf       = priceAsOf,
             )
         }
 

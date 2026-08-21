@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.LocalDate
 
 /**
  * STOCK 계좌 동기화 어댑터
@@ -83,7 +84,7 @@ class StockSyncAdapter(
         return positions.values
             .filter { it.quantity > BigDecimal.ZERO }
             .map { pos ->
-                val livePrice = pos.symbol?.let { sym ->
+                val live = pos.symbol?.let { sym ->
                     fetchLivePrice(sym, pos.stockName, account.id.toString())
                 } ?: run {
                     log.warn(
@@ -94,7 +95,7 @@ class StockSyncAdapter(
                     null
                 }
 
-                val currentPrice = livePrice ?: pos.avgCost
+                val currentPrice = live?.price ?: pos.avgCost
                 val currentValue = currentPrice.multiply(pos.quantity).setScale(2, RoundingMode.HALF_UP)
 
                 Asset.create(
@@ -109,7 +110,9 @@ class StockSyncAdapter(
                     purchasePrice   = pos.avgCost,
                     currentValue    = currentValue,
                     currency        = account.currency,
-                    valuationMethod = if (livePrice != null) ValuationMethod.MARKET_PRICE else ValuationMethod.USER_INPUT,
+                    valuationMethod = if (live != null) ValuationMethod.MARKET_PRICE else ValuationMethod.USER_INPUT,
+                    // Yahoo 값이면 null이다 — 근거는 [LivePrice.asOf]
+                    priceAsOf       = live?.asOf,
                 )
             }
     }
@@ -142,17 +145,31 @@ class StockSyncAdapter(
      * FSC는 주식(005930)도 ETF(395270)도 최신 `basDt`가 `20260820`으로 **둘 다 D+1**이고,
      * Yahoo는 같은 종목에 당일 값을 준다. 신선한 쪽이 먼저, 공식이되 하루 늦은 쪽이 뒤다.
      */
-    private fun fetchLivePrice(symbol: String, stockName: String, accountId: String): BigDecimal? {
+    private fun fetchLivePrice(symbol: String, stockName: String, accountId: String): LivePrice? {
         val isKrCode = symbol.matches(Regex("\\d{6}"))
         // 6자리 코드면 getPrice가 .KS → .KQ 순으로 알아서 붙인다
-        val price = yahooFinanceClient.getPrice(symbol)
+        val live = yahooFinanceClient.getPrice(symbol)?.let { LivePrice(it, asOf = null) }
             ?: if (isKrCode) {
-                fscStockClient.getPrice(symbol) ?: fscStockClient.getEtfPrice(symbol)
+                (fscStockClient.getPrice(symbol) ?: fscStockClient.getEtfPrice(symbol))
+                    ?.let { LivePrice(it.price, it.asOf) }
             } else null
-        if (price == null) log.warn(
+        if (live == null) log.warn(
             "[StockSync] 실시간 시세 조회 실패: symbol={}, stockName={}, accountId={}",
             symbol, stockName, accountId,
         )
-        return price
+        return live
     }
+
+    /**
+     * 현재가 한 건과 그 값이 **언제 것인지**.
+     *
+     * @param asOf **Yahoo 값이면 null이다.** 둘째 이유가 더 중요하다:
+     *  1. Yahoo는 당일 값이라 "옛날 값"이라는 경고가 필요 없다.
+     *  2. 🔴 **장중이면 그 값은 종가가 아니다.** 화면 라벨이 `"8/20 종가 기준"`으로 박혀 있어
+     *     (`frontend/lib/price-as-of.ts`) 장중 값에 날짜를 달면 없느니만 못한 거짓말이 된다.
+     *
+     * FSC로 떨어졌을 때만 채운다 — 그쪽은 D+1 확정 종가라 날짜가 곧 사실이고, 사용자가
+     * 그 숫자를 지금 시세로 오해하는 걸 막는 게 이 필드의 존재 이유다(A1·N2의 금과 같다).
+     */
+    private data class LivePrice(val price: BigDecimal, val asOf: LocalDate?)
 }
