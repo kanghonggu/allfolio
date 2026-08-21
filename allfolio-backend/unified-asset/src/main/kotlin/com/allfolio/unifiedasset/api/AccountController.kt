@@ -18,6 +18,8 @@ import org.springframework.web.multipart.MultipartFile
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
 import java.util.UUID
 
 // ── DTOs ─────────────────────────────────────────────────────────
@@ -49,7 +51,13 @@ data class AccountResponse(
     val accountName: String,
     val currency: String,
     val status: String,
-    val lastSyncedAt: LocalDateTime?,
+    /**
+     * **오프셋을 달고 나간다.** 존 없는 `LocalDateTime`으로 내보내면 Jackson이 오프셋 없이
+     * 적고(`"2026-08-21T06:55:18"`) 브라우저의 `new Date(...)`가 읽는 쪽 로컬 시각으로
+     * 해석한다 — 저장은 UTC라 한국 사용자에게 9시간 어긋난다(2026-08-21 실측: 15:55 동기화가
+     * `오전 6:55`로 표시). `generatedAt`이 같은 결론이다(ReportGeneratedAtOffsetTest).
+     */
+    val lastSyncedAt: OffsetDateTime?,
     val createdAt: LocalDateTime,
     /** 기관명 (externalId가 계좌번호형이면 null — 계좌번호는 accountNumber로) */
     val brokerage: String?,
@@ -381,7 +389,7 @@ class AccountController(
         accountName  = accountName,
         currency     = currency,
         status       = status.name,
-        lastSyncedAt = lastSyncedAt,
+        lastSyncedAt = lastSyncedAt?.atOffset(ZoneOffset.UTC),   // 저장 벽시계가 UTC다
         createdAt    = createdAt,
         brokerage    = externalId?.takeUnless { com.allfolio.unifiedasset.domain.common.isAccountNumberLike(it) },
         accountNumber = externalId
