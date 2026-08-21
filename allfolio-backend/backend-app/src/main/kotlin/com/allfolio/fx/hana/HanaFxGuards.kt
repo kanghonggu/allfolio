@@ -19,6 +19,27 @@ class HanaFxGuards {
         private const val REQUIRED = "USD"
         private val MIN_ROW_RATIO = BigDecimal("0.5")
         private val MAX_CHANGE_RATIO = BigDecimal("0.02")
+
+        /**
+         * 변동 가드의 절대 하한. 상대 임계값과 **함께** 넘어야 이상으로 본다.
+         *
+         * 하나은행은 1단위 통화를 소수 2자리로 고시한다. 그래서 최소 표현 단위가 0.01원이고,
+         * 고시가가 낮은 통화는 **한 틱만 움직여도 2%를 넘는다** — UZS(0.12)는 8.33%,
+         * KHR(0.35)은 2.86%, MNT(0.39)는 2.56%, COP(0.46)은 2.17%다. 이 네 통화에서
+         * 상대 임계값은 원리적으로 만족될 수 없고, 반올림 경계에서 값이 깜빡일 때마다 걸린다.
+         *
+         * 그게 실제로 터졌다 — 2026-08-19 15:10 KST 이후 수집이 KHR 0.34↔0.35 하나 때문에
+         * 4연속 422로 막혔다. 이상 항목이 하나라도 있으면 저장 전체가 막히므로(호출자 계약),
+         * 캄보디아 리엘의 반올림이 **평가 경로가 쓰는 USD까지** 저장을 못 하게 세웠다.
+         *
+         * 0.01원은 어떤 통화에서도 "고시가 표현할 수 있는 가장 작은 차이"라 시장 변동으로
+         * 읽을 수 없다. 100단위 고시(JPY·VND·IDR 등)는 파서가 100으로 나눠 실효 틱이
+         * 0.0001원이므로 애초에 상대 임계값에 걸리지 않아 이 하한과 무관하다.
+         *
+         * 이 값을 키우면 가드가 지키려던 대상이 뚫린다. USD의 2%는 27원대라 세 자릿수 여유가
+         * 있지만, 하한은 "반올림 잡음"만 걷어내는 크기여야지 변동 판정을 대신하면 안 된다.
+         */
+        private val MIN_CHANGE_ABSOLUTE = BigDecimal("0.01")
     }
 
     /**
@@ -57,12 +78,17 @@ class HanaFxGuards {
             rows.forEach { row ->
                 val previous = previousRates[row.currency] ?: return@forEach
                 if (previous <= BigDecimal.ZERO) return@forEach
-                val change = (row.baseRate - previous).abs()
-                    .divide(previous, 6, RoundingMode.HALF_UP)
+                val absolute = (row.baseRate - previous).abs()
+                // 상대·절대를 **모두** 넘어야 한다. 둘 중 하나만 보면 한쪽이 무너진다 —
+                // 상대만 보면 저가 통화의 1틱이 걸리고, 절대만 보면 USD가 0.02원 움직여도 걸린다
+                if (absolute <= MIN_CHANGE_ABSOLUTE) return@forEach
+                val change = absolute.divide(previous, 6, RoundingMode.HALF_UP)
                 if (change > MAX_CHANGE_RATIO) {
-                    // 임계값을 문자열에 박아두면 상수를 조정한 날 메시지가 코드에 없는 숫자를 주장한다
+                    // 임계값을 문자열에 박아두면 상수를 조정한 날 메시지가 코드에 없는 숫자를 주장한다.
+                    // 두 임계값을 다 적는 이유도 같다 — 상대만 적으면 메시지가 규칙의 절반만 말한다
                     val limit = MAX_CHANGE_RATIO.movePointRight(2).stripTrailingZeros().toPlainString()
-                    anomalies += "${row.currency} 변동이 $limit%를 넘습니다 ($previous → ${row.baseRate})"
+                    val floor = MIN_CHANGE_ABSOLUTE.stripTrailingZeros().toPlainString()
+                    anomalies += "${row.currency} 변동이 $limit%와 ${floor}원을 함께 넘습니다 ($previous → ${row.baseRate})"
                 }
             }
         }
