@@ -20,7 +20,8 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import java.time.LocalDate
-import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
 import java.util.UUID
 
 @RestController
@@ -40,7 +41,18 @@ class ReportArchiveController(
         val asOfDate: LocalDate,
         val status: String,
         val warnings: List<ReportWarning>,
-        val createdAt: LocalDateTime,
+        /**
+         * **오프셋을 달고 나가야 한다.** 이 필드는 `LocalDateTime`이었다 — Jackson은 오프셋 없이
+         * 적고(`"2026-08-20T15:37:00"`), 브라우저의 `new Date(...)`는 오프셋 없는 값을 **읽는 쪽
+         * 로컬 시각**으로 해석한다. 운영 컨테이너 벽시계가 UTC라 한국 사용자에게 9시간 어긋났다.
+         *
+         * 보관함에서는 그게 시각만의 문제가 아니다 — 밀림이 자정을 넘기면 목록에 뜨는 **날짜가
+         * 하루 틀린다**(UTC 8/20 15:37 = KST 8/21 00:37이 8/20자로 보였다).
+         *
+         * 프런트에 KST를 박는 건 답이 아니다. 한국 사용자에게만 맞고 다른 시간대 사용자에게는
+         * 반대 방향으로 틀린다. 오프셋을 실으면 누가 읽든 같은 순간이 된다.
+         */
+        val createdAt: OffsetDateTime,
     )
 
     data class ArchiveDetailResponse(
@@ -89,6 +101,8 @@ class ReportArchiveController(
         asOfDate    = asOfDate,
         status      = status.name,
         warnings    = warnings,
-        createdAt   = createdAt,
+        // 컬럼이 존 없는 `TIMESTAMP`고 값은 UTC 벽시계로 저장된다([ReportArchive.create] 참조).
+        // 그 전제를 여기서 오프셋으로 명시한다 — KST로 달면 9시간 과거를 가리킨다.
+        createdAt   = createdAt.atOffset(ZoneOffset.UTC),
     )
 }
