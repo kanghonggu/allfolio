@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 
@@ -36,6 +37,7 @@ class KisAdapter(
 
     private val log      = LoggerFactory.getLogger(javaClass)
     private val DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd")
+    private val KST      = ZoneId.of("Asia/Seoul")
 
     override fun fetchTrades(portfolioId: UUID, accountId: String, cursor: String): BrokerTradeResult {
         val (accountNo, productCode) = parseAccountId(accountId)
@@ -51,7 +53,17 @@ class KisAdapter(
             return BrokerTradeResult(emptyList(), cursor)
         }
 
-        val today    = LocalDate.now()
+        // **한국 거래소 달력의 오늘.** `LocalDate.now()`는 호스트 벽시계 기준이라, 운영(Render)
+        // 컨테이너가 UTC인 탓에 KST 00:00~09:00에 폴러가 돌면 "어제"를 오늘로 잡아 그날 체결분이
+        // 창 밖으로 빠진다.
+        //
+        // **여기 KST를 박는 건 표시 계층의 규약과 충돌하지 않는다 — 걷어내지 말 것.**
+        // 사용자에게 보여줄 시각은 읽는 쪽 달력이 무엇인지 서버가 모르므로 오프셋만 실어
+        // 보내고 존은 브라우저가 정한다(ReportGeneratedAtOffsetTest 참고). 반면 이건
+        // **외부 API 계약**이다 — KIS가 INQR_STRT_DT/INQR_END_DT를 한국 거래소 달력으로
+        // 해석하므로, 어느 사용자가 어디서 보든 이 값은 KST 달력이어야 한다.
+        // 사용자 달력과 거래소 달력은 다른 문제다.
+        val today    = LocalDate.now(KST)
         val fromDate = today.minusDays(90).format(DATE_FMT)
         val toDate   = today.format(DATE_FMT)
 
