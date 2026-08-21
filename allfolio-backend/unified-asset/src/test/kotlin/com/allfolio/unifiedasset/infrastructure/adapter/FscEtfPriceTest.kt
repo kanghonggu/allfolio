@@ -16,6 +16,7 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.time.Clock
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.util.concurrent.atomic.AtomicReference
 
@@ -100,9 +101,20 @@ class FscEtfPriceTest {
 
     @Test
     fun `ETF 종가를 돌려준다`() {
-        val price = client(serving(ETF_BODY)).getEtfPrice(ETF)
+        val price = client(serving(ETF_BODY)).getEtfPrice(ETF)?.price
 
         assertThat(price).isEqualByComparingTo(BigDecimal("56905"))
+    }
+
+    /**
+     * **가격만 주면 화면이 "언제 값인지"를 말할 수 없다.** FSC는 D+1이라 그게 곧 사실과
+     * 갈린다 — `StockSyncAdapter`가 이 값을 `ua_assets.price_as_of`에 그대로 싣는다.
+     */
+    @Test
+    fun `종가와 함께 기준일자를 준다`() {
+        val quote = client(serving(ETF_BODY)).getEtfPrice(ETF)
+
+        assertThat(quote?.asOf).isEqualTo(LocalDate.of(2026, 8, 20))
     }
 
     @Test
@@ -136,7 +148,7 @@ class FscEtfPriceTest {
     fun `다른 종목의 행이 오면 쓰지 않는다`() {
         val other = ETF_BODY.replace("\"srtnCd\":\"395270\"", "\"srtnCd\":\"069500\"")
 
-        val price = client(serving(other)).getEtfPrice(ETF)
+        val price = client(serving(other)).getEtfPrice(ETF)?.price
 
         assertThat(price).isNull()
     }
@@ -155,7 +167,7 @@ class FscEtfPriceTest {
     fun `기준일자가 너무 오래된 값은 쓰지 않는다`() {
         val stale = ETF_BODY.replace("\"basDt\":\"20260820\"", "\"basDt\":\"20200102\"")
 
-        val price = client(serving(stale)).getEtfPrice(ETF)
+        val price = client(serving(stale)).getEtfPrice(ETF)?.price
 
         assertThat(price).isNull()
     }
@@ -182,7 +194,7 @@ class FscEtfPriceTest {
         val appender = ListAppender<ILoggingEvent>().apply { start() }
         logger.addAppender(appender)
         try {
-            val price = client(serving(notRegistered)).getEtfPrice(ETF)
+            val price = client(serving(notRegistered)).getEtfPrice(ETF)?.price
 
             assertThat(price).isNull()
             val warned = appender.list.filter { it.level == Level.WARN }.joinToString("\n") { it.formattedMessage }
@@ -206,7 +218,7 @@ class FscEtfPriceTest {
             "body":{"numOfRows":1,"pageNo":1,"totalCount":0,"items":{"item":[]}}}}
         """.trimIndent()
 
-        val price = client(serving(empty)).getEtfPrice(ETF)
+        val price = client(serving(empty)).getEtfPrice(ETF)?.price
 
         assertThat(price).isNull()
     }
@@ -229,7 +241,7 @@ class FscEtfPriceTest {
         assertThat(numeric).describedAs("픽스처가 실제로 숫자형이어야 증명이 된다")
             .contains("\"clpr\":56905")
 
-        val price = client(serving(numeric)).getEtfPrice(ETF)
+        val price = client(serving(numeric)).getEtfPrice(ETF)?.price
 
         assertThat(price).isEqualByComparingTo(BigDecimal("56905"))
     }
@@ -239,7 +251,7 @@ class FscEtfPriceTest {
     fun `인증키가 없으면 호출하지 않는다`() {
         val deadPort = ServerSocket(0).use { it.localPort }
 
-        val price = client(deadPort, key = "").getEtfPrice(ETF)
+        val price = client(deadPort, key = "").getEtfPrice(ETF)?.price
 
         assertThat(price).isNull()
     }

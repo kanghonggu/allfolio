@@ -48,16 +48,18 @@ class StockSyncAdapterPriceSourceTest {
     private class FakeFsc(
         private val price: BigDecimal?,
         private val etfPrice: BigDecimal? = null,
+        private val priceAsOf: LocalDate? = null,
+        private val etfPriceAsOf: LocalDate? = null,
     ) : FscStockClient("", ObjectMapper()) {
         var callCount = 0
         var etfCallCount = 0
-        override fun getPrice(symbol: String): BigDecimal? {
+        override fun getPrice(symbol: String): FscStockClient.FscQuote? {
             callCount++
-            return price
+            return price?.let { FscStockClient.FscQuote(it, priceAsOf) }
         }
-        override fun getEtfPrice(symbol: String): BigDecimal? {
+        override fun getEtfPrice(symbol: String): FscStockClient.FscQuote? {
             etfCallCount++
-            return etfPrice
+            return etfPrice?.let { FscStockClient.FscQuote(it, etfPriceAsOf) }
         }
     }
 
@@ -178,5 +180,78 @@ class StockSyncAdapterPriceSourceTest {
         assertEquals(0, fsc.callCount)
         assertEquals(0, fsc.etfCallCount)
         assertEquals(ValuationMethod.USER_INPUT, asset.valuationMethod)
+    }
+
+    // ── 시세 기준일(price_as_of) ────────────────────────────────────
+
+    /**
+     * **FSC로 떨어진 값에는 기준일이 붙는다.** FSC는 D+1이라 그 숫자는 오늘 것이 아니다 —
+     * 화면이 "8/20 종가 기준"이라고 말해 주지 않으면 사용자는 지금 시세인 줄 안다.
+     * 금(A1·N2)이 이미 같은 이유로 기준일을 달고 있다.
+     */
+    @Test
+    fun `FSC 주식시세로 떨어지면 기준일이 함께 실린다`() {
+        val account = stockAccount()
+        val fsc = FakeFsc(price = BigDecimal("247500"), priceAsOf = LocalDate.of(2026, 8, 20))
+        val adapter = StockSyncAdapter(
+            FakeStockTradeRepository(listOf(buy(account, samsung, "10", "255000"))),
+            FakeYahoo(emptyMap()), fsc,
+        )
+
+        val asset = adapter.sync(account).single()
+
+        assertEquals(LocalDate.of(2026, 8, 20), asset.priceAsOf)
+    }
+
+    /** ETF 폴백도 같다 — 같은 서비스군이고 같은 D+1이다 */
+    @Test
+    fun `FSC ETF시세로 떨어지면 기준일이 함께 실린다`() {
+        val account = stockAccount()
+        val fsc = FakeFsc(
+            price = null,
+            etfPrice = BigDecimal("56905"), etfPriceAsOf = LocalDate.of(2026, 8, 20),
+        )
+        val adapter = StockSyncAdapter(
+            FakeStockTradeRepository(listOf(buy(account, etf, "10", "50000", name = "HANARO Fn K-반도체"))),
+            FakeYahoo(emptyMap()), fsc,
+        )
+
+        val asset = adapter.sync(account).single()
+
+        assertEquals(LocalDate.of(2026, 8, 20), asset.priceAsOf)
+    }
+
+    /**
+     * **Yahoo 값에는 기준일을 달지 않는다.** Yahoo는 당일 값을 주므로 "옛날 값"이라는
+     * 경고가 필요 없고, 무엇보다 **장중이면 종가가 아니다** — 화면 라벨이 "종가 기준"으로
+     * 박혀 있어서(`lib/price-as-of.ts`) 장중 값에 기준일을 달면 없느니만 못한 거짓말이 된다.
+     */
+    @Test
+    fun `Yahoo 값이면 기준일은 비어 있다`() {
+        val account = stockAccount()
+        val fsc = FakeFsc(price = BigDecimal("247500"), priceAsOf = LocalDate.of(2026, 8, 20))
+        val adapter = StockSyncAdapter(
+            FakeStockTradeRepository(listOf(buy(account, samsung, "10", "255000"))),
+            FakeYahoo(mapOf(samsung to BigDecimal("273000"))), fsc,
+        )
+
+        val asset = adapter.sync(account).single()
+
+        assertEquals(null, asset.priceAsOf, "Yahoo 값에 기준일을 달면 장중에 '종가 기준'이 된다")
+    }
+
+    /** 시세를 아무 데서도 못 받아 원가로 떨어진 값에 기준일이 붙으면 안 된다 */
+    @Test
+    fun `원가로 떨어지면 기준일이 없다`() {
+        val account = stockAccount()
+        val adapter = StockSyncAdapter(
+            FakeStockTradeRepository(listOf(buy(account, samsung, "10", "255000"))),
+            FakeYahoo(emptyMap()), FakeFsc(price = null),
+        )
+
+        val asset = adapter.sync(account).single()
+
+        assertEquals(ValuationMethod.USER_INPUT, asset.valuationMethod)
+        assertEquals(null, asset.priceAsOf)
     }
 }
