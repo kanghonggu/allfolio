@@ -24,7 +24,8 @@ import java.math.RoundingMode
  * - 평균 매수가: 이동평균법 — BUY 시 (보유금액 + 매수금액) / (보유수량 + 매수수량)
  *   SELL 시 평균가 유지, 전량 매도 후 재매수 시 신규 평균가로 초기화
  * - currentValue: 종목코드가 있으면 Yahoo Finance 당일 시세, 국내 6자리 코드는 FSC(금융위원회)
- *   전일 종가로 폴백, 코드가 없으면 평균 매수가 (순서의 근거는 [fetchLivePrice] 참조)
+ *   전일 종가(주식시세정보 → ETF는 증권상품시세정보)로 폴백, 코드가 없으면 평균 매수가
+ *   (순서의 근거는 [fetchLivePrice] 참조)
  */
 @Component
 class StockSyncAdapter(
@@ -126,14 +127,24 @@ class StockSyncAdapter(
      * 바꿨고, 그게 3개월 반 동안 안 보인 회귀였다.
      *
      * FSC를 남겨 두는 이유는 Yahoo가 비공식이라 언제든 막힐 수 있어서다 — 그때 원가로
-     * 떨어지는 것보다 하루 늦은 공식 종가가 낫다. 다만 FSC 주식시세정보는 ETF를 커버하지
-     * 않으므로(ETF는 증권상품시세정보라는 별도 서비스다) ETF는 이 폴백이 받아 주지 못한다.
+     * 떨어지는 것보다 하루 늦은 공식 종가가 낫다.
+     *
+     * **국내 코드의 폴백은 두 단이다.** FSC 주식시세정보는 ETF를 담고 있지 않다 —
+     * 2026-08-21 실측: `likeSrtnCd=395270`(HANARO K-반도체)에 `totalCount=0`이 온다.
+     * 그래서 ETF만 Yahoo가 막히면 폴백 없이 원가로 떨어져 수익률이 영구히 0%였다.
+     * ETF는 증권상품시세정보라는 **다른 서비스**에 있고, 그게 세 번째 단이다.
+     *
+     * ETF인지 미리 가려내지 않고 그냥 순서대로 묻는다. 종목이 ETF인지 아는 방법이 상장종목
+     * 마스터를 뒤지는 것뿐인데, 그 대가로 얻는 건 폴백의 폴백에서 헛호출 한 번을 아끼는
+     * 것뿐이다 — 애초에 Yahoo가 막혔을 때만 도는 경로다.
      */
     private fun fetchLivePrice(symbol: String, stockName: String, accountId: String): BigDecimal? {
         val isKrCode = symbol.matches(Regex("\\d{6}"))
         // 6자리 코드면 getPrice가 .KS → .KQ 순으로 알아서 붙인다
         val price = yahooFinanceClient.getPrice(symbol)
-            ?: if (isKrCode) fscStockClient.getPrice(symbol) else null
+            ?: if (isKrCode) {
+                fscStockClient.getPrice(symbol) ?: fscStockClient.getEtfPrice(symbol)
+            } else null
         if (price == null) log.warn(
             "[StockSync] 실시간 시세 조회 실패: symbol={}, stockName={}, accountId={}",
             symbol, stockName, accountId,
