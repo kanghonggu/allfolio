@@ -105,16 +105,15 @@ class FscIndexClient(
                         .queryParam("beginBasDt", DATE_FORMAT.format(from))
                         // **🔴 하루를 더하는 것은 `endBasDt`가 배타적이기 때문이다 — 지우지 말 것.**
                         // 활용가이드가 `endBasDt`를 "기준일자가 검색값보다 **작은** 데이터를 검색"으로
-                        // 정의한다(`beginBasDt`만 "크거나 같은"). 금시세(`getGoldPriceInfo`)에서
-                        // 운영 키로 잰 것도 같다(2026-08-21): `beginBasDt=endBasDt=20260819`는
-                        // `totalCount=0`이고 `endBasDt=20260820`이라야 `basDt=20260819`가 온다.
-                        // 같은 포털의 같은 파라미터라 지수시세도 같게 본다 —
-                        // **이 오퍼레이션 자체로 실측하지는 않았다.**
+                        // 정의한다(`beginBasDt`만 "크거나 같은"). **이 오퍼레이션으로 직접 쟀다**
+                        // (2026-08-21, 운영 키, `idxNm=코스피`):
+                        //   `beginBasDt=endBasDt=20260819` → `resultCode=00` · `totalCount=0`
+                        //   `beginBasDt=20260819&endBasDt=20260820` → `basDt=20260819`
+                        // **뒤 호출이 대조군이다** — 그게 없으면 앞의 0건이 "배타적"인지 "그날 값이
+                        // 없다"인지 못 가른다. (금시세 `getGoldPriceInfo`도 같은 날 같은 결과였다.)
                         //
-                        // 그 추정이 틀려(포함이라) 하루가 더 와도 손해가 없다 —
-                        // `FscIndexCollectService`가 구간 밖 행을 어차피 걷어낸다.
-                        // 반대로 안 더하면 마지막 날이 조용히 빠진다: 기본 창(14일)은 다음 실행이
-                        // 메우지만, 백필은 끝날을 잃고 `from == to` 조회는 언제나 0건이다.
+                        // 안 더하면 마지막 날이 조용히 빠진다: 기본 창(14일)은 다음 실행이 메우지만,
+                        // 백필은 끝날을 잃고 `from == to` 조회는 언제나 0건이다.
                         .queryParam("endBasDt", DATE_FORMAT.format(to.plusDays(1)))
                         .build()
                 }
