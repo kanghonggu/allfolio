@@ -69,7 +69,8 @@ class FscIndexClient(
     fun isConfigured(): Boolean = apiKey.isNotBlank()
 
     /**
-     * `from..to`(포함) 구간에서 [item]이 가리키는 지수의 일별 종가를 가져온다.
+     * `from..to`(**포함**) 구간에서 [item]이 가리키는 지수의 일별 종가를 가져온다 —
+     * **포털 파라미터는 그 반대라 아래에서 하루를 더한다**(`endBasDt` 주석 참조).
      *
      * 반환이 `List<Pair<LocalDate, BigDecimal>>`인 것은 우연이 아니다 —
      * `BenchmarkDailyStore.upsert`가 받는 타입 그대로라 중간 변환이 없다.
@@ -102,7 +103,19 @@ class FscIndexClient(
                         // **`yyyyMMdd`다. ISO(`yyyy-MM-dd`)가 아니다** —
                         // LocalDate.toString()을 그대로 넘기면 조용히 0건이 된다
                         .queryParam("beginBasDt", DATE_FORMAT.format(from))
-                        .queryParam("endBasDt", DATE_FORMAT.format(to))
+                        // **🔴 하루를 더하는 것은 `endBasDt`가 배타적이기 때문이다 — 지우지 말 것.**
+                        // 활용가이드가 `endBasDt`를 "기준일자가 검색값보다 **작은** 데이터를 검색"으로
+                        // 정의한다(`beginBasDt`만 "크거나 같은"). 금시세(`getGoldPriceInfo`)에서
+                        // 운영 키로 잰 것도 같다(2026-08-21): `beginBasDt=endBasDt=20260819`는
+                        // `totalCount=0`이고 `endBasDt=20260820`이라야 `basDt=20260819`가 온다.
+                        // 같은 포털의 같은 파라미터라 지수시세도 같게 본다 —
+                        // **이 오퍼레이션 자체로 실측하지는 않았다.**
+                        //
+                        // 그 추정이 틀려(포함이라) 하루가 더 와도 손해가 없다 —
+                        // `FscIndexCollectService`가 구간 밖 행을 어차피 걷어낸다.
+                        // 반대로 안 더하면 마지막 날이 조용히 빠진다: 기본 창(14일)은 다음 실행이
+                        // 메우지만, 백필은 끝날을 잃고 `from == to` 조회는 언제나 0건이다.
+                        .queryParam("endBasDt", DATE_FORMAT.format(to.plusDays(1)))
                         .build()
                 }
                 .retrieve()
