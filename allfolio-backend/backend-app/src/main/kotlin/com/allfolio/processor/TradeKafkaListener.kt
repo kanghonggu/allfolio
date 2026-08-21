@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.event.TransactionPhase
 import org.springframework.transaction.event.TransactionalEventListener
 import java.time.LocalDateTime
+import java.time.ZoneOffset
 
 /**
  * Outbox → Kafka 전파 리스너 (TradeEventListener와 완전 독립)
@@ -64,7 +65,8 @@ class TradeKafkaListener(
             // PROCESSED보다 높은 상태이므로 이미 DEAD/FAILED인 경우 덮어쓰지 않음
             if (entity.status == OutboxStatus.PROCESSED || entity.status == OutboxStatus.PENDING) {
                 entity.status      = OutboxStatus.PROCESSED_KAFKA
-                entity.processedAt = LocalDateTime.now()
+                // 존 명시 — OutboxEventPublisher.createdAt과 같은 이유
+                entity.processedAt = LocalDateTime.now(ZoneOffset.UTC)
                 outboxRepository.save(entity)
             }
         }
