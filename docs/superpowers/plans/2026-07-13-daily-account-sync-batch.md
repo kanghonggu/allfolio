@@ -518,3 +518,16 @@ Expected: BUILD SUCCESSFUL — Spring 컨텍스트가 `DailyAccountSyncer`(Accou
 3. `SyncAccountUseCase`가 sync 성공 시 무조건 `ACTIVE`로 승격시키는 로직 재검토
    (INACTIVE 계좌가 되살아나지 않도록).
 4. `DailyAccountSyncerTest`에 INACTIVE 제외 케이스 추가.
+
+**2026-08-21 재확인 — 결론은 그대로 유효하다.** 위 근거를 오늘 main에서 다시 봤다.
+셋은 그대로이고 하나는 코드 위치만 옮겼다:
+
+- `AccountStatus.INACTIVE`는 여전히 enum 정의(`domain/account/AccountStatus.kt:7`)뿐이고,
+  이 값을 세팅하는 운영 코드는 없다(테스트 제외).
+- `DailyAccountSyncer.syncAll()`도 여전히 `findByProviders`로 연다.
+- **삭제 경로가 옮겨졌다.** `AccountController.delete`가 이제 `DeleteAccountUseCase.execute()`를
+  부르고, 그 안에서 asset·stockTrade·cashFlow·syncLog를 지운 뒤
+  `accountRepository.delete(accountId)`로 계좌 자체를 지운다 — **여전히 하드 삭제라 결론은
+  안 바뀐다.** 위 원문의 `deleteByAccountId + deleteById`는 이 위치로 읽을 것.
+- 프런트의 `INACTIVE`는 배지 매핑이 `accounts/page.tsx`·`accounts/sync/page.tsx` 둘로 늘었고
+  `types/unified.ts`에 타입으로 선언돼 있다. **세팅 UI는 여전히 없다.**
