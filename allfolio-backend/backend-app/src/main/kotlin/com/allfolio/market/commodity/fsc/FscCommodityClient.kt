@@ -59,7 +59,8 @@ data class FscGoldFetch(val rows: List<FscGoldRow>, val skipped: Int)
  *     `NO_KEY`를 던진다. `isConfigured()` 자체는 관례대로 남겨 두되 그 뒤가 다르다.
  *  2. **`runCatching`으로 실패를 삼키지 않는다.** 사유는 종목별 실패로 요약에 실려야 한다.
  *  3. **베이스 URL이 설정이다**(`fsc.base-url`). 상수로 박으면 루프백 스텁으로 요청 형태와
- *     키 유출을 검증할 수 없다 — 기본값은 `FscStockClient`의 상수와 같은 주소다.
+ *     키 유출을 검증할 수 없다 — 기본값은 `FscStockClient`가 쓰는 것과 같은 주소다
+ *     (그쪽도 같은 이유로 테스트에서만 덮을 수 있게 열려 있다).
  *
  * **🔴 인증키가 쿼리 파라미터(`serviceKey=`)에 실린다.** `FredApiClient`와 같은 방어 셋을 지킨다:
  * 전체 URL을 로그에 찍지 않는다 · 예외에 `cause`를 붙이지 않는다(Reactor의 checkpoint 프레임에
@@ -70,7 +71,7 @@ data class FscGoldFetch(val rows: List<FscGoldRow>, val skipped: Int)
 @Component
 class FscCommodityClient(
     @Value("\${fsc.api-key:}") private val apiKey: String,
-    // 기본값은 FscStockClient가 상수로 들고 있는 것과 같은 주소다. 애너테이션 인자는 컴파일
+    // 기본값은 FscStockClient가 들고 있는 것과 같은 주소다. 애너테이션 인자는 컴파일
     // 상수여야 해서 상수 참조로 묶지 못한다 — 주소를 고칠 땐 두 파일을 같이 볼 것
     @Value("\${fsc.base-url:https://apis.data.go.kr/1160100/service}") private val baseUrl: String,
     private val objectMapper: ObjectMapper,
