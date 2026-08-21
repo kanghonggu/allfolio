@@ -23,7 +23,8 @@ import java.math.RoundingMode
  * - 순 수량(BUY - SELL) > 0 인 종목만 자산으로 등록
  * - 평균 매수가: 이동평균법 — BUY 시 (보유금액 + 매수금액) / (보유수량 + 매수수량)
  *   SELL 시 평균가 유지, 전량 매도 후 재매수 시 신규 평균가로 초기화
- * - currentValue: 6자리 숫자 종목코드 → FSC API(금융위원회), 해외종목 → Yahoo Finance, 없으면 평균 매수가
+ * - currentValue: 종목코드가 있으면 Yahoo Finance 당일 시세, 국내 6자리 코드는 FSC(금융위원회)
+ *   전일 종가로 폴백, 코드가 없으면 평균 매수가 (순서의 근거는 [fetchLivePrice] 참조)
  */
 @Component
 class StockSyncAdapter(
@@ -112,15 +113,27 @@ class StockSyncAdapter(
             }
     }
 
-    // 6자리 숫자 코드 → FSC API(KR), 그 외 → Yahoo Finance
+    /**
+     * Yahoo 먼저, 국내 6자리 코드만 FSC로 폴백.
+     *
+     * **이 순서를 뒤집지 말 것.** FSC(공공데이터포털)는 당일 종가를 주지 않는다 — 제공자가
+     * "데이터 갱신은 기준일자로부터 영업일 하루 뒤"라고 명시한다. FSC를 먼저 물으면 값이 늘
+     * 있으므로 폴백까지 내려갈 일이 없고, 그래서 화면의 "현재가"가 영구히 전일 종가가 된다
+     * (2026-08-20 실측: 장 마감 3시간 뒤에도 삼성전자가 8/19 종가 247,500이었다).
+     * 같은 시각 Yahoo는 당일 15:30 종가를 줬다.
+     *
+     * 실제로 2026-05-05 `fb5ae63`이 종목 마스터 갱신을 넣으면서 이 순서를 FSC 우선으로
+     * 바꿨고, 그게 3개월 반 동안 안 보인 회귀였다.
+     *
+     * FSC를 남겨 두는 이유는 Yahoo가 비공식이라 언제든 막힐 수 있어서다 — 그때 원가로
+     * 떨어지는 것보다 하루 늦은 공식 종가가 낫다. 다만 FSC 주식시세정보는 ETF를 커버하지
+     * 않으므로(ETF는 증권상품시세정보라는 별도 서비스다) ETF는 이 폴백이 받아 주지 못한다.
+     */
     private fun fetchLivePrice(symbol: String, stockName: String, accountId: String): BigDecimal? {
         val isKrCode = symbol.matches(Regex("\\d{6}"))
-        val price = if (isKrCode) {
-            fscStockClient.getPrice(symbol) ?: yahooFinanceClient.getPrice("$symbol.KS")
-                ?: yahooFinanceClient.getPrice("$symbol.KQ")
-        } else {
-            yahooFinanceClient.getPrice(symbol)
-        }
+        // 6자리 코드면 getPrice가 .KS → .KQ 순으로 알아서 붙인다
+        val price = yahooFinanceClient.getPrice(symbol)
+            ?: if (isKrCode) fscStockClient.getPrice(symbol) else null
         if (price == null) log.warn(
             "[StockSync] 실시간 시세 조회 실패: symbol={}, stockName={}, accountId={}",
             symbol, stockName, accountId,
