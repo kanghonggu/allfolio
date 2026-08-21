@@ -26,6 +26,7 @@ const STATUS_BADGE: Record<string, BadgeVariant> = {
   DEAD:            'danger',
 }
 
+// 서버가 오프셋을 실어 보내므로 여기서 존을 만지지 않는다 — new Date가 읽는 쪽 존으로 맞춘다.
 function fmt(ts: string | null | undefined) {
   return ts ? new Date(ts).toLocaleString('ko-KR') : '-'
 }
@@ -88,6 +89,8 @@ export default function OpsMonitorPage() {
       eventType: eventType || undefined,
       from: from || undefined,
       to: to || undefined,
+      // 시작일·종료일은 이 브라우저 달력의 날짜다. 컬럼은 UTC 벽시계라 서버가 번역해야 한다.
+      zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       limit: 100,
     }),
     enabled:  !!api && ready,

@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.event.TransactionPhase
 import org.springframework.transaction.event.TransactionalEventListener
 import java.time.LocalDateTime
+import java.time.ZoneOffset
 
 /**
  * Outbox 패턴 1차 처리 경로 (실시간 ~200ms)
@@ -68,7 +69,8 @@ class TradeEventListener(
     private fun markProcessed(outboxEventId: java.util.UUID) {
         outboxRepository.findById(outboxEventId).ifPresent { entity ->
             entity.status      = OutboxStatus.PROCESSED
-            entity.processedAt = LocalDateTime.now()
+            // 존 명시 — OutboxEventPublisher.createdAt과 같은 이유
+            entity.processedAt = LocalDateTime.now(ZoneOffset.UTC)
             outboxRepository.save(entity)
         }
     }

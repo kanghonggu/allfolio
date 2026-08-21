@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneOffset
 import java.util.UUID
 
 /** DEAD 수동 재처리 결과 (AF-7). */
@@ -124,7 +125,8 @@ class OutboxEventProcessor(
                 }
                 groupEvents.forEach { event ->
                     event.status      = OutboxStatus.PROCESSED
-                    event.processedAt = LocalDateTime.now()
+                    // 존 명시 — OutboxEventPublisher.createdAt과 같은 이유
+                    event.processedAt = LocalDateTime.now(ZoneOffset.UTC)
                 }
                 metrics.outboxProcessed(groupEvents.size)
                 log.info("[Outbox-Polling] PROCESSED tenant={} portfolio={} date={} count={}",

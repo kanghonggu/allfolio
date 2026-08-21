@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneOffset
 import java.util.UUID
 
 /**
@@ -44,7 +45,10 @@ class OutboxEventPublisher(
                 eventType     = EVENT_TYPE,
                 payload       = payload,
                 status        = OutboxStatus.PENDING,
-                createdAt     = LocalDateTime.now(),
+                // 컬럼이 존 없는 `TIMESTAMP`라 여기 찍는 벽시계가 곧 DB에 앉는 값이다. 읽는 쪽
+                // (OpsAdminController)은 그 값을 UTC로 전제하고 오프셋을 다는데, 존을 안 쓰면 그 전제가
+                // 호스트 TZ에 기댄 우연이 된다 — KST 호스트에서 돌리면 9시간 미래가 UTC인 척 저장된다.
+                createdAt     = LocalDateTime.now(ZoneOffset.UTC),
             )
         ).id
     }
