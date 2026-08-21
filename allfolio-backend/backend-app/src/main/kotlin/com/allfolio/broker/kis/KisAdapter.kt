@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 
@@ -36,6 +37,7 @@ class KisAdapter(
 
     private val log      = LoggerFactory.getLogger(javaClass)
     private val DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd")
+    private val KST      = ZoneId.of("Asia/Seoul")
 
     override fun fetchTrades(portfolioId: UUID, accountId: String, cursor: String): BrokerTradeResult {
         val (accountNo, productCode) = parseAccountId(accountId)
@@ -51,7 +53,10 @@ class KisAdapter(
             return BrokerTradeResult(emptyList(), cursor)
         }
 
-        val today    = LocalDate.now()
+        // **한국 거래소 달력의 오늘.** `LocalDate.now()`는 호스트 벽시계 기준이라, 운영(Render)
+        // 컨테이너가 UTC인 탓에 KST 00:00~09:00에 폴러가 돌면 "어제"를 오늘로 잡아 그날 체결분이
+        // 창 밖으로 빠진다. KIS는 INQR_STRT_DT/INQR_END_DT를 한국 거래소 달력으로 해석한다.
+        val today    = LocalDate.now(KST)
         val fromDate = today.minusDays(90).format(DATE_FMT)
         val toDate   = today.format(DATE_FMT)
 
