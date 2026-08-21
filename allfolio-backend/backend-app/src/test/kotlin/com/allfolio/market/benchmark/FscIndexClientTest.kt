@@ -15,6 +15,7 @@ import java.net.ServerSocket
 import java.net.URLDecoder
 import java.time.Duration
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -119,6 +120,25 @@ class FscIndexClientTest {
         }
 
     /**
+     * 쿼리에 실린 날짜를 **값으로** 되읽는다. 문자열로 비교하면 경계가 하루 밀린 것과
+     * 형식이 바뀐 것이 같은 모양으로 깨져 무엇이 틀렸는지 안 보인다 —
+     * 형식(`yyyyMMdd`)은 위 테스트가 따로 못박는다.
+     */
+    private fun dateOf(query: Map<String, String>, name: String): LocalDate =
+        LocalDate.parse(query.getValue(name), DateTimeFormatter.ofPattern("yyyyMMdd"))
+
+    /** 요청 쿼리를 잡아 돌려주는 스텁. 응답은 실측 본문 그대로 */
+    private fun capturedQuery(call: (FscIndexClient) -> Unit): Map<String, String> {
+        val seen = AtomicReference<String>()
+        val port = serve { ex ->
+            seen.set(ex.requestURI.rawQuery)
+            respond(ex, 200, REAL_BODY)
+        }
+        call(client(port))
+        return queryOf(seen.get())
+    }
+
+    /**
      * 파라미터 이름·날짜 형식은 2026-08-17 실측으로 확정한 것이다.
      * **`yyyyMMdd`가 여기 고정돼 있다** — ISO(`yyyy-MM-dd`)로 맞추려는 시도가
      * 조용히 0건이 되는 대신 여기서 깨져야 한다.
@@ -146,8 +166,46 @@ class FscIndexClientTest {
             .containsEntry("pageNo", "1")
             .containsEntry("idxNm", "코스피")
             .containsEntry("beginBasDt", "20260805")
-            .containsEntry("endBasDt", "20260813")
+            // 하루 뒤다. 이유는 아래 `endBasDt` 테스트에 있다 — 포털의 끝일은 배타적이다
+            .containsEntry("endBasDt", "20260814")
             .containsKey("numOfRows")
+    }
+
+    /**
+     * **포털의 `endBasDt`는 배타적이다 — `basDt < endBasDt`로 검색한다.**
+     * `to`를 그대로 실으면 `to` 당일 행이 조용히 빠지고, 하루짜리 구간은 0건이 된다.
+     *
+     * 근거는 `FscCommodityClientTest`의 같은 이름 테스트에 있는 **2026-08-21 실측표**
+     * (`getGoldPriceInfo`, 실키)와 포털 명세 문구다 — `endBasDt`는 "기준일자가 검색값보다
+     * **작은** 데이터를 검색". **같은 기관(1160100)의 오퍼레이션들이 같은 문구를 쓴다.**
+     *
+     * **🔴 지수 오퍼레이션(`getStockMarketIndex`) 자체로는 아직 실측하지 않았다** —
+     * 명세와 자매 오퍼레이션의 실측에 기대고 있다. 다만 틀리는 쪽이 안전하다:
+     * 포함이었더라도 `to+1` 행은 [FscIndexCollectService]가 `in from..to`로 걷어내
+     * `outOfRange`로만 세고 저장되지 않는다(반대로 지금은 종가가 하루씩 늦게 들어온다).
+     * 실측하는 날 이 KDoc부터 고칠 것.
+     */
+    @Test
+    fun `endBasDt가 배타적이라 to 다음 날을 싣는다 - 그래야 to 당일이 들어온다`() {
+        val query = capturedQuery { it.fetch(KOSPI, FROM, TO) }
+
+        assertThat(dateOf(query, "beginBasDt")).isEqualTo(FROM)
+        assertThat(dateOf(query, "endBasDt")).isEqualTo(TO.plusDays(1))
+    }
+
+    /**
+     * 하루짜리 구간이 이 어긋남이 가장 크게 드러나는 자리다 — 배타적 끝일을 그대로 보내면
+     * `begin == end`가 되어 **항상 0건**이고, 그 0건은 `emptySeries`(정상적으로 빈 지수)로
+     * 접수돼 요약이 초록으로 끝난다.
+     */
+    @Test
+    fun `하루짜리 구간도 그 하루를 포함한다`() {
+        val day = LocalDate.of(2026, 8, 13)
+
+        val query = capturedQuery { it.fetch(KOSPI, day, day) }
+
+        assertThat(dateOf(query, "beginBasDt")).isEqualTo(day)
+        assertThat(dateOf(query, "endBasDt")).isEqualTo(day.plusDays(1))
     }
 
     /**

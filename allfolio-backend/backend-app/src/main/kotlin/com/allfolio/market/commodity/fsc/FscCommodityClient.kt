@@ -95,8 +95,12 @@ class FscCommodityClient(
     fun isConfigured(): Boolean = apiKey.isNotBlank()
 
     /**
-     * `from..to`(포함) 구간의 금시세를 가져온다. **종목을 가리지 않는다** — 응답에 실린 모든
+     * `from..to`(**양끝 포함**) 구간의 금시세를 가져온다. **종목을 가리지 않는다** — 응답에 실린 모든
      * 종목을 그대로 돌려주고, 고르는 일은 [FscCommoditySource]가 설정을 보고 한다.
+     *
+     * **포함 구간은 여기서 만든다. 포털은 끝일이 배타적이다** — 아래 `endBasDt` 주석 참조.
+     * 호출부([FscCommoditySource]·`CommodityCollectService`)가 `from..to`를 포함으로 잡고
+     * 받은 행도 `in from..to`로 거르므로, 그 어긋남을 밖으로 새게 두지 않는다.
      */
     fun fetchGoldPrices(from: LocalDate, to: LocalDate): FscGoldFetch {
         // 설정 누락은 상류 장애가 아니라 우리 문제다 — 사유가 남아야 운영자가 Render 환경변수를 보러 간다
@@ -118,7 +122,13 @@ class FscCommodityClient(
                         // **`yyyyMMdd`다. FRED의 ISO(`yyyy-MM-dd`)가 아니다** —
                         // LocalDate.toString()을 그대로 넘기면 조용히 0건이 된다
                         .queryParam("beginBasDt", DATE_FORMAT.format(from))
-                        .queryParam("endBasDt", DATE_FORMAT.format(to))
+                        // **🔴 하루를 더한다. 포털의 끝일은 배타적이다**(`basDt < endBasDt`) —
+                        // `to`를 그대로 실으면 `to` 당일이 조용히 빠지고, 하루짜리 구간
+                        // (`from == to`)은 아예 0건이 된다. 시작일은 반대로 포함이다.
+                        // 2026-08-21 실측표와 명세 문구는 `FscCommodityClientTest`의
+                        // `endBasDt가 배타적이라…` 테스트 KDoc에 있다.
+                        // (수집 창이 14일로 겹쳐 도는 탓에 증상은 "하루 늦게 들어온다"로만 보였다)
+                        .queryParam("endBasDt", DATE_FORMAT.format(to.plusDays(1)))
                         .build()
                 }
                 .retrieve()

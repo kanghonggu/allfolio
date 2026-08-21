@@ -14,6 +14,7 @@ import java.net.ServerSocket
 import java.net.URLDecoder
 import java.time.Duration
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -103,6 +104,25 @@ class FscCommodityClientTest {
         }
 
     /**
+     * 쿼리에 실린 날짜를 **값으로** 되읽는다. 문자열로 비교하면 경계가 하루 밀린 것과
+     * 형식이 바뀐 것이 같은 모양으로 깨져 무엇이 틀렸는지 안 보인다 —
+     * 형식(`yyyyMMdd`)은 위 테스트가 따로 못박는다.
+     */
+    private fun dateOf(query: Map<String, String>, name: String): LocalDate =
+        LocalDate.parse(query.getValue(name), DateTimeFormatter.ofPattern("yyyyMMdd"))
+
+    /** 요청 쿼리를 잡아 돌려주는 스텁. 응답은 실측 본문 그대로 */
+    private fun capturedQuery(call: (FscCommodityClient) -> Unit): Map<String, String> {
+        val seen = AtomicReference<String>()
+        val port = serve { ex ->
+            seen.set(ex.requestURI.rawQuery)
+            respond(ex, 200, REAL_BODY)
+        }
+        call(client(port))
+        return queryOf(seen.get())
+    }
+
+    /**
      * 파라미터 이름·날짜 형식은 2026-08-17 실측으로 확정한 것이다.
      * **`yyyyMMdd`가 여기 고정돼 있다** — FRED의 ISO(`yyyy-MM-dd`)로 맞추려는 시도가
      * 조용히 0건이 되는 대신 여기서 깨져야 한다.
@@ -126,8 +146,54 @@ class FscCommodityClientTest {
             .containsEntry("resultType", "json")
             .containsEntry("pageNo", "1")
             .containsEntry("beginBasDt", "20260805")
-            .containsEntry("endBasDt", "20260813")
+            // 하루 뒤다. 이유는 아래 `endBasDt` 테스트에 있다 — 포털의 끝일은 배타적이다
+            .containsEntry("endBasDt", "20260814")
             .containsKey("numOfRows")
+    }
+
+    /**
+     * **포털의 `endBasDt`는 배타적이다 — `basDt < endBasDt`로 검색한다.**
+     * 그래서 `to`를 그대로 실으면 **`to` 당일 행이 조용히 빠진다.**
+     *
+     * 2026-08-21 실측(`getGoldPriceInfo`, 실키):
+     *
+     * | 요청 | 응답 |
+     * |---|---|
+     * | `beginBasDt=20260813&endBasDt=20260813` | `totalCount=0` (8/13 시세는 존재한다) |
+     * | `beginBasDt=20260813&endBasDt=20260814` | 8/13만 |
+     * | `beginBasDt=20260813&endBasDt=20260819` | 8/13·8/14·8/18 (8/19 없음) |
+     *
+     * 포털 명세도 같은 말을 한다: `endBasDt`는 "기준일자가 검색값보다 **작은** 데이터를 검색".
+     * `beginBasDt`는 반대로 포함이다(위 첫 행이 8/13을 준다).
+     *
+     * **증상이 안 보이던 이유**는 수집 창이 14일로 겹쳐 돌기 때문이다 — 빠진 하루를 다음 실행이
+     * 메워서 "하루 늦게 들어온다"로만 보였다. 하루짜리 구간(`from == to`)으로 부르면 0건이 된다.
+     *
+     * 호출부([FscCommoditySource]·`CommodityCollectService`)는 `from..to`를 **포함**으로 잡고
+     * 받은 행도 `in from..to`로 거른다. 그러니 배타성은 포털 사정으로 여기서 끝내고,
+     * 클라이언트의 계약은 KDoc대로 포함으로 남긴다.
+     */
+    @Test
+    fun `endBasDt가 배타적이라 to 다음 날을 싣는다 - 그래야 to 당일이 들어온다`() {
+        val query = capturedQuery { it.fetchGoldPrices(FROM, TO) }
+
+        assertThat(dateOf(query, "beginBasDt")).isEqualTo(FROM)
+        assertThat(dateOf(query, "endBasDt")).isEqualTo(TO.plusDays(1))
+    }
+
+    /**
+     * 하루짜리 구간이 이 버그가 가장 크게 드러나는 자리다 — 배타적 끝일을 그대로 보내면
+     * `begin == end`가 되어 **항상 0건**이다(위 실측 첫 행). 겹치는 창이 없는 호출,
+     * 예컨대 어드민이 특정 하루를 다시 채우는 백필이 여기 걸린다.
+     */
+    @Test
+    fun `하루짜리 구간도 그 하루를 포함한다`() {
+        val day = LocalDate.of(2026, 8, 13)
+
+        val query = capturedQuery { it.fetchGoldPrices(day, day) }
+
+        assertThat(dateOf(query, "beginBasDt")).isEqualTo(day)
+        assertThat(dateOf(query, "endBasDt")).isEqualTo(day.plusDays(1))
     }
 
     /**

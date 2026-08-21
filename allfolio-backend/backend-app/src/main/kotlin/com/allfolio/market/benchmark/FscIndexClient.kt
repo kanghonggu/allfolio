@@ -69,7 +69,9 @@ class FscIndexClient(
     fun isConfigured(): Boolean = apiKey.isNotBlank()
 
     /**
-     * `from..to`(포함) 구간에서 [item]이 가리키는 지수의 일별 종가를 가져온다.
+     * `from..to`(**양끝 포함**) 구간에서 [item]이 가리키는 지수의 일별 종가를 가져온다.
+     *
+     * **포함 구간은 여기서 만든다. 포털은 끝일이 배타적이다** — 아래 `endBasDt` 주석 참조.
      *
      * 반환이 `List<Pair<LocalDate, BigDecimal>>`인 것은 우연이 아니다 —
      * `BenchmarkDailyStore.upsert`가 받는 타입 그대로라 중간 변환이 없다.
@@ -102,7 +104,12 @@ class FscIndexClient(
                         // **`yyyyMMdd`다. ISO(`yyyy-MM-dd`)가 아니다** —
                         // LocalDate.toString()을 그대로 넘기면 조용히 0건이 된다
                         .queryParam("beginBasDt", DATE_FORMAT.format(from))
-                        .queryParam("endBasDt", DATE_FORMAT.format(to))
+                        // **🔴 하루를 더한다. 포털의 끝일은 배타적이다**(`basDt < endBasDt`) —
+                        // `to`를 그대로 실으면 `to` 당일이 빠져 종가가 하루씩 늦게 들어오고,
+                        // 하루짜리 구간(`from == to`)은 아예 0건이 된다. 시작일은 반대로 포함이다.
+                        // 실측표와 **지수 오퍼레이션은 아직 미실측이라는 단서**는
+                        // `FscIndexClientTest`의 `endBasDt가 배타적이라…` 테스트 KDoc에 있다.
+                        .queryParam("endBasDt", DATE_FORMAT.format(to.plusDays(1)))
                         .build()
                 }
                 .retrieve()
