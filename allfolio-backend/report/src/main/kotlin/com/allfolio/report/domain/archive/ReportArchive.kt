@@ -2,6 +2,7 @@ package com.allfolio.report.domain.archive
 
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneOffset
 import java.util.UUID
 
 enum class ReportStatus { FINAL, WARNING }
@@ -38,7 +39,12 @@ class ReportArchive private constructor(
                 status    = if (warnings.isEmpty()) ReportStatus.FINAL else ReportStatus.WARNING,
                 warnings  = warnings,
                 bodyJson  = bodyJson,
-                createdAt = LocalDateTime.now(),
+                // 컬럼이 존 없는 `TIMESTAMP`라 여기 적히는 벽시계가 곧 DB에 앉는 값이다. 읽는 쪽은
+                // 그 값을 UTC로 전제하고 오프셋을 다는데, 존을 안 쓰면 그 전제가 호스트 TZ에 기댄
+                // 우연이 된다 — 운영(Render) 컨테이너가 UTC라 맞았을 뿐, KST 호스트에서 돌리면
+                // 9시간 미래가 UTC인 척 저장된다. 존을 명시해 우연을 규칙으로 바꾼다.
+                // 운영이 이미 UTC라 저장값 자체는 안 변한다 — 마이그레이션 불필요.
+                createdAt = LocalDateTime.now(ZoneOffset.UTC),
             )
         }
 
