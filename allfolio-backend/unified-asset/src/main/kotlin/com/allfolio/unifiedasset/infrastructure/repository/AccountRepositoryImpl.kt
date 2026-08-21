@@ -7,6 +7,7 @@ import com.allfolio.unifiedasset.infrastructure.entity.AccountEntity
 import com.allfolio.unifiedasset.infrastructure.jpa.AccountJpaRepository
 import org.springframework.stereotype.Repository
 import java.time.LocalDateTime
+import java.time.ZoneOffset
 import java.util.UUID
 
 @Repository
@@ -27,7 +28,8 @@ class AccountRepositoryImpl(private val jpa: AccountJpaRepository) : AccountRepo
 
     override fun updateStatus(id: UUID, status: AccountStatus) {
         if (status == AccountStatus.ACTIVE) {
-            jpa.updateStatusAndSyncedAt(id, status, LocalDateTime.now())
+            // 저장 시각은 UTC — 이유는 Account.completeSync 참고 (같은 컬럼의 다른 writer다)
+            jpa.updateStatusAndSyncedAt(id, status, LocalDateTime.now(ZoneOffset.UTC))
         } else {
             jpa.updateStatus(id, status)
         }

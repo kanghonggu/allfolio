@@ -1,6 +1,7 @@
 package com.allfolio.unifiedasset.domain.sync
 
 import java.time.LocalDateTime
+import java.time.ZoneOffset
 import java.util.UUID
 
 /** AUTO: 거래 저장·삭제, 계좌 생성 등 쓰기 작업이 자동으로 건 동기화 (AF-90). */
@@ -28,7 +29,8 @@ class SyncLog private constructor(
             id = UUID.randomUUID(), accountId = accountId, userId = userId,
             trigger = trigger, status = status, syncedCount = syncedCount,
             errorMessage = errorMessage?.take(MAX_ERROR_LENGTH),
-            createdAt = LocalDateTime.now(),
+            // 저장 시각은 UTC — 이유는 Account.completeSync 참고
+            createdAt = LocalDateTime.now(ZoneOffset.UTC),
         )
 
         fun reconstruct(
