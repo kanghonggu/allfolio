@@ -284,6 +284,8 @@ export default function AccountDetailPage() {
       setSyncResult(result)
       qc.invalidateQueries({ queryKey: ['unified', 'account-assets', id] })
       qc.invalidateQueries({ queryKey: ['unified', 'portfolio'] })
+      // 헤더의 '최종 동기화'는 account.lastSyncedAt — 계좌 목록 쿼리에서 온다.
+      qc.invalidateQueries({ queryKey: ['unified', 'accounts'] })
     } finally {
       setSyncing(false)
     }
