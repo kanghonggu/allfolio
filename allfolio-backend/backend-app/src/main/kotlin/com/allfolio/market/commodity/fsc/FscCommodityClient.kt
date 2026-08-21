@@ -96,8 +96,12 @@ class FscCommodityClient(
     fun isConfigured(): Boolean = apiKey.isNotBlank()
 
     /**
-     * `from..to`(포함) 구간의 금시세를 가져온다. **종목을 가리지 않는다** — 응답에 실린 모든
-     * 종목을 그대로 돌려주고, 고르는 일은 [FscCommoditySource]가 설정을 보고 한다.
+     * `from..to`(**포함**) 구간의 금시세를 가져온다 — 포트([com.allfolio.market.commodity.CommoditySource])
+     * 계약이 포함이고 FRED 소스(`observation_start`/`observation_end`)도 포함이라 여기서 맞춘다.
+     * **포털 파라미터는 그 반대라 아래에서 하루를 더한다**(`endBasDt` 주석 참조).
+     *
+     * **종목을 가리지 않는다** — 응답에 실린 모든 종목을 그대로 돌려주고,
+     * 고르는 일은 [FscCommoditySource]가 설정을 보고 한다.
      */
     fun fetchGoldPrices(from: LocalDate, to: LocalDate): FscGoldFetch {
         // 설정 누락은 상류 장애가 아니라 우리 문제다 — 사유가 남아야 운영자가 Render 환경변수를 보러 간다
@@ -119,7 +123,17 @@ class FscCommodityClient(
                         // **`yyyyMMdd`다. FRED의 ISO(`yyyy-MM-dd`)가 아니다** —
                         // LocalDate.toString()을 그대로 넘기면 조용히 0건이 된다
                         .queryParam("beginBasDt", DATE_FORMAT.format(from))
-                        .queryParam("endBasDt", DATE_FORMAT.format(to))
+                        // **🔴 하루를 더하는 것은 `endBasDt`가 배타적이기 때문이다 — 지우지 말 것.**
+                        // 활용가이드가 `endBasDt`를 "기준일자가 검색값보다 **작은** 데이터를 검색"으로
+                        // 정의한다(`beginBasDt`만 "크거나 같은"). 운영 키 실측(2026-08-21)도 같다:
+                        // `beginBasDt=20260819&endBasDt=20260819` → `totalCount=0`,
+                        // `endBasDt=20260820` → `basDt=20260819` 행 2건.
+                        //
+                        // 안 더하면 **마지막 날이 조용히 빠진다.** 일 배치는 창이 [to-14, 오늘]이고
+                        // 금은 D+1이라 오늘치가 원래 없어서 증상이 가려지지만, 범위 백필은 끝날을
+                        // 잃고 `from == to` 단일일 조회는 언제나 0건("그날은 시세가 없다")이 된다.
+                        // 하루 더해도 그날 행이 딸려 오지는 않는다 — 배타적이라 to+1은 제외된다.
+                        .queryParam("endBasDt", DATE_FORMAT.format(to.plusDays(1)))
                         .build()
                 }
                 .retrieve()

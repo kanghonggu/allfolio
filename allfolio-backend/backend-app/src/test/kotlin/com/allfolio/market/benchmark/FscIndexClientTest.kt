@@ -15,6 +15,7 @@ import java.net.ServerSocket
 import java.net.URLDecoder
 import java.time.Duration
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -119,6 +120,14 @@ class FscIndexClientTest {
         }
 
     /**
+     * 날짜 파라미터를 **문자열이 아니라 값으로** 되읽는다. `"20260813"`으로 단언하면 형식과 구간
+     * 해석이 한 덩어리로 묶여, 깨졌을 때 어느 쪽이 틀렸는지 못 가른다. 형식은 이 파싱이 지킨다 —
+     * ISO(`2026-08-13`)를 실어 보내면 `yyyyMMdd` 파싱이 여기서 터진다.
+     */
+    private fun dateOf(query: Map<String, String>, name: String): LocalDate =
+        LocalDate.parse(query.getValue(name), DateTimeFormatter.ofPattern("yyyyMMdd"))
+
+    /**
      * 파라미터 이름·날짜 형식은 2026-08-17 실측으로 확정한 것이다.
      * **`yyyyMMdd`가 여기 고정돼 있다** — ISO(`yyyy-MM-dd`)로 맞추려는 시도가
      * 조용히 0건이 되는 대신 여기서 깨져야 한다.
@@ -139,15 +148,44 @@ class FscIndexClientTest {
 
         client(port).fetch(KOSPI, FROM, TO)
 
+        val query = queryOf(seenQuery.get())
         assertThat(seenPath.get()).isEqualTo(FscIndexClient.PATH)
-        assertThat(queryOf(seenQuery.get()))
+        assertThat(query)
             .containsEntry("serviceKey", API_KEY)
             .containsEntry("resultType", "json")
             .containsEntry("pageNo", "1")
             .containsEntry("idxNm", "코스피")
-            .containsEntry("beginBasDt", "20260805")
-            .containsEntry("endBasDt", "20260813")
             .containsKey("numOfRows")
+        assertThat(dateOf(query, "beginBasDt")).isEqualTo(FROM)
+        // **`endBasDt`는 하루 뒤가 실린다 — 배타적이기 때문이다.** 근거는 아래 단일일 테스트에 있다
+        assertThat(dateOf(query, "endBasDt")).isEqualTo(TO.plusDays(1))
+    }
+
+    /**
+     * **`endBasDt`는 배타적이다.** 활용가이드가 `endBasDt`를 "기준일자가 검색값보다 **작은**
+     * 데이터를 검색"으로 정의한다(`beginBasDt`만 "크거나 같은"). 금시세(`getGoldPriceInfo`)에서
+     * 운영 키로 실측한 것도 같다(2026-08-21): `beginBasDt=endBasDt=20260819`는 `totalCount=0`,
+     * `endBasDt=20260820`이라야 `basDt=20260819`가 온다. 같은 포털의 같은 파라미터라
+     * 지수시세도 같게 본다 — **이 오퍼레이션 자체로는 아직 실측하지 않았다.**
+     *
+     * 그 추정이 틀려(즉 포함이라) 하루가 더 와도 손해가 없다: `FscIndexCollectService`가
+     * 구간 밖 행을 어차피 걷어낸다(그쪽은 포털 필터를 믿지 않는다). 반대로 배타적인데 안 더하면
+     * **마지막 날이 조용히 빠진다** — 백필은 끝날을 잃고 `from == to` 조회는 언제나 0건이다.
+     */
+    @Test
+    fun `하루짜리 구간도 그날을 포함하도록 endBasDt에 하루를 더해 보낸다`() {
+        val day = LocalDate.of(2026, 8, 19)
+        val seenQuery = AtomicReference<String>()
+        val port = serve { ex ->
+            seenQuery.set(ex.requestURI.rawQuery)
+            respond(ex, 200, REAL_BODY)
+        }
+
+        client(port).fetch(KOSPI, day, day)
+
+        val query = queryOf(seenQuery.get())
+        assertThat(dateOf(query, "beginBasDt")).isEqualTo(day)
+        assertThat(dateOf(query, "endBasDt")).isEqualTo(day.plusDays(1))
     }
 
     /**

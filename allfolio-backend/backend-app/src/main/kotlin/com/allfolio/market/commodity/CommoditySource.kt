@@ -27,8 +27,14 @@ interface CommoditySource {
     val codes: List<String>
 
     /**
-     * `from..to`는 포함 범위이고 범위 밖 날짜가 섞여 와도 된다 — 서비스가 걸러낸다.
+     * `from..to`는 **포함** 범위이고 범위 밖 날짜가 섞여 와도 된다 — 서비스가 걸러낸다.
      * 실패는 예외로 알린다 — 서비스가 종목별로 잡아 요약의 failures로 옮긴다.
+     *
+     * **상류 파라미터가 배타적이면 구현체가 흡수한다.** 호출자는 어느 구현이 붙었는지 모르므로
+     * 구간 해석이 구현마다 다르면 마지막 날이 소스에 따라 있기도 없기도 하다. FRED는
+     * `observation_start`/`observation_end`가 그대로 포함이고, 공공데이터포털(FSC)은
+     * `endBasDt`가 배타적이라 [com.allfolio.market.commodity.fsc.FscCommodityClient]가
+     * 하루를 더해 이 계약에 맞춘다 — 근거는 그쪽 주석에 있다.
      */
     fun fetch(code: String, from: LocalDate, to: LocalDate): CommodityFetch
 }

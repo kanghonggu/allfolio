@@ -14,6 +14,7 @@ import java.net.ServerSocket
 import java.net.URLDecoder
 import java.time.Duration
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -103,6 +104,14 @@ class FscCommodityClientTest {
         }
 
     /**
+     * 날짜 파라미터를 **문자열이 아니라 값으로** 되읽는다. `"20260813"`으로 단언하면 형식과 구간
+     * 해석이 한 덩어리로 묶여, 깨졌을 때 어느 쪽이 틀렸는지 못 가른다. 형식은 이 파싱이 지킨다 —
+     * ISO(`2026-08-13`)를 실어 보내면 `yyyyMMdd` 파싱이 여기서 터진다.
+     */
+    private fun dateOf(query: Map<String, String>, name: String): LocalDate =
+        LocalDate.parse(query.getValue(name), DateTimeFormatter.ofPattern("yyyyMMdd"))
+
+    /**
      * 파라미터 이름·날짜 형식은 2026-08-17 실측으로 확정한 것이다.
      * **`yyyyMMdd`가 여기 고정돼 있다** — FRED의 ISO(`yyyy-MM-dd`)로 맞추려는 시도가
      * 조용히 0건이 되는 대신 여기서 깨져야 한다.
@@ -120,14 +129,42 @@ class FscCommodityClientTest {
 
         client(port).fetchGoldPrices(FROM, TO)
 
+        val query = queryOf(seenQuery.get())
         assertThat(seenPath.get()).isEqualTo(FscCommodityClient.PATH)
-        assertThat(queryOf(seenQuery.get()))
+        assertThat(query)
             .containsEntry("serviceKey", API_KEY)
             .containsEntry("resultType", "json")
             .containsEntry("pageNo", "1")
-            .containsEntry("beginBasDt", "20260805")
-            .containsEntry("endBasDt", "20260813")
             .containsKey("numOfRows")
+        assertThat(dateOf(query, "beginBasDt")).isEqualTo(FROM)
+        // **`endBasDt`는 하루 뒤가 실린다 — 배타적이기 때문이다.** 근거는 아래 단일일 테스트에 있다
+        assertThat(dateOf(query, "endBasDt")).isEqualTo(TO.plusDays(1))
+    }
+
+    /**
+     * **`endBasDt`는 배타적이다.** 활용가이드(금융위원회 상품시세정보)가 `endBasDt`를 "기준일자가
+     * 검색값보다 **작은** 데이터를 검색"으로 정의한다 — `beginBasDt`만 "크거나 같은"이다.
+     * 운영 키 실측(2026-08-21)도 같다: `beginBasDt=20260819&endBasDt=20260819`는 `totalCount=0`,
+     * `endBasDt=20260820`은 `basDt=20260819` 행이 2건.
+     *
+     * 그래서 클라이언트가 하루를 더해 보낸다. 안 더하면 **하루짜리 조회가 언제나 0건**이 되어
+     * "그날은 시세가 없다"로 보이고, 범위 백필은 **마지막 날이 조용히 빠진다.**
+     * 일 배치는 창이 `[to-14, 오늘]`이고 금은 D+1이라 오늘치가 원래 없어서 증상이 가려져 있었다.
+     */
+    @Test
+    fun `하루짜리 구간도 그날을 포함하도록 endBasDt에 하루를 더해 보낸다`() {
+        val day = LocalDate.of(2026, 8, 19)
+        val seenQuery = AtomicReference<String>()
+        val port = serve { ex ->
+            seenQuery.set(ex.requestURI.rawQuery)
+            respond(ex, 200, REAL_BODY)
+        }
+
+        client(port).fetchGoldPrices(day, day)
+
+        val query = queryOf(seenQuery.get())
+        assertThat(dateOf(query, "beginBasDt")).isEqualTo(day)
+        assertThat(dateOf(query, "endBasDt")).isEqualTo(day.plusDays(1))
     }
 
     /**
