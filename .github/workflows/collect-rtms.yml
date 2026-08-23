@@ -1,0 +1,88 @@
+name: Collect RTMS
+
+# **예약이 없다 — 아직 수동 실행만 한다.**
+# 대상(시군구)이 설정이 아니라 사용자가 보유한 부동산에서 나오는데 그게 0건이라,
+# 지금 예약을 걸면 매일 빈 잡이 돈다. 빈 잡이 매일 초록으로 지나가면 그 초록은
+# 아무것도 뜻하지 않게 되고, 진짜로 안 도는 날을 아무도 못 잡는다.
+# 자동 대상 선정(R3)이 붙는 날 아래 schedule 주석을 풀 것.
+#
+#   schedule:
+#     - cron: '0 8 * * *'   # KST 17:00 — 18:10 금리·환율부터 19:30 실물자산 평가까지 비켜 있다
+on:
+  workflow_dispatch:
+    inputs:
+      sgg:
+        description: '법정동 코드 앞 5자리, 쉼표 구분 (예: 11110,11680)'
+        required: true
+      months:
+        description: '이번 달부터 거슬러 받을 개월 수'
+        required: false
+        default: '3'
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    # 아래 curl 재시도 예산(최악 10.5분)보다 커야 한다. 잡이 먼저 잘리면 요약도 범례도 안 남는다.
+    timeout-minutes: 14
+
+    steps:
+      - name: Trigger RTMS collection
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          SCHEDULER_TOKEN: ${{ secrets.SCHEDULER_TOKEN }}
+          SGG: ${{ inputs.sgg }}
+          MONTHS: ${{ inputs.months }}
+        run: |
+          set -e
+          if [ -z "${BACKEND_URL}" ] || [ -z "${SCHEDULER_TOKEN}" ]; then
+            echo "::error::BACKEND_URL 또는 SCHEDULER_TOKEN 시크릿이 없습니다."
+            exit 1
+          fi
+
+          # **재시도 예산은 Render 콜드 스타트 실측(280초)에서 나온다.** --max-time 300에
+          # retry 1이면 최악 10.5분(300 + 30 대기 + 300)이고 위 timeout-minutes가 그걸 덮는다.
+          # 재시도를 늘리면 서버 쪽 수집이 겹쳐 돌아 이미 성공한 실행을 빨갛게 만든다.
+          #
+          # set -e 아래에서 명령 치환 대입은 종료 코드를 그대로 물려받는다. curl은 전송 실패
+          # (6 DNS / 35 TLS)에서 0이 아니므로, 그대로 두면 이 워크플로가 견디려고 만들어진
+          # 바로 그 상황에서 여기서 죽어 요약이 안 남는다. 그래서 실패를 삼키고 센티널을 세운다.
+          HTTP_CODE=$(curl -sS -X POST \
+            "${BACKEND_URL}/api/internal/scheduler/rtms?sgg=${SGG}&months=${MONTHS}" \
+            -H "X-Scheduler-Token: ${SCHEDULER_TOKEN}" \
+            --max-time 300 \
+            --retry 1 \
+            --retry-delay 30 \
+            --retry-all-errors \
+            -o response.json \
+            -w '%{http_code}') || HTTP_CODE="000"
+
+          echo "HTTP ${HTTP_CODE}"
+          cat response.json 2>/dev/null || true
+          echo
+
+          if [ "${HTTP_CODE}" != "200" ]; then
+            echo "::error::실거래가 수집 실패 (HTTP ${HTTP_CODE}). 400=파라미터 문제(법정동 코드가 숫자 5자리가 아니거나 조합 수가 상한 300 초과 — 위 응답 본문이 어느 쪽인지 말해 준다) / 502=공공데이터포털 응답 이상으로 전량 실패 / 500=대개 rtms_deals_cache·rtms_fetch_log 테이블 부재(docs/superpowers/migrations/2026-08-21-rtms-deals-cache.sql을 운영 Neon에 적용했는지 확인 — ddl-auto: none이라 아무도 대신 만들어 주지 않는다) / 503=SCHEDULER_TOKEN 미설정 / 401=토큰 불일치(양끝 공백·개행 확인) / 404=BACKEND_URL 경로 확인 / 000=백엔드 응답 없음(콜드 스타트·네트워크)"
+            exit 1
+          fi
+
+          # 요약을 잡 요약에 남긴다. **apiCalls가 예산 추적의 근거다** — 포털 일 한도가 1,000이다.
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          d = json.load(open("response.json"))
+          print("### 실거래가 수집\n")
+          print(f"- 요청 조합 **{d['requested']}** · 수집 **{d['fetched']}** · 이미 받아 둠 **{d['skipped']}**")
+          print(f"- 저장된 거래 **{d['dealsUpserted']:,}** · 버린 행 **{d['rowsDropped']}**")
+          print(f"- **API 호출 {d['apiCalls']}회** (포털 일 한도 1,000)")
+          if d["budgetExhausted"]:
+              print(f"- ⚠️ 예산 소진으로 건너뛴 조합 **{d['budgetExhausted']}** — 다음 실행에서 이어진다")
+          for f in d["failures"]:
+              print(f"- ❌ {f}")
+          PY
+
+          # 부분 실패는 200이지만 잡 요약에는 남는다. 전멸은 위에서 502로 걸린다.
+          python3 -c "
+          import json,sys
+          d=json.load(open('response.json'))
+          if d['failures']:
+              print(f\"::warning::실거래가 부분 실패 {len(d['failures'])}건 — 잡 요약 참조\")
+          "
