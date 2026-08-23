@@ -7,6 +7,8 @@ import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.api.admin.CommodityAdminController
 import com.allfolio.api.admin.MarketRateAdminController
 import com.allfolio.api.admin.RealAssetValuationAdminController
+import com.allfolio.api.admin.RtmsCollectAdminController
+import com.allfolio.market.realestate.RtmsCollectService
 import com.allfolio.api.market.MarketQueryController
 import com.allfolio.api.scheduler.SchedulerTriggerController
 import com.allfolio.dart.DartCollectOrchestrator
@@ -64,6 +66,7 @@ import java.math.BigDecimal
         BenchmarkIndexAdminController::class,
         DartAdminController::class,
         RealAssetValuationAdminController::class,
+        RtmsCollectAdminController::class,
         SchedulerTriggerController::class,
         // AF-104. 어드민이 아니지만 이 컨텍스트에 함께 둔다 — 이 파일이 보는 건 SecurityConfig의
         // 경로 규칙 전체이고(스케줄러 트리거도 여기 있다), 컨텍스트를 하나 더 띄우는 값이 안 된다.
@@ -134,6 +137,13 @@ class SecurityConfigAdminTest {
     // 그쪽이 이 서비스를 요구한다 (A1 · G5). 위와 같은 함정이다.
     @MockBean
     private lateinit var realAssetValuationService: RealAssetValuationService
+
+    // 실거래가도 같다 — SchedulerTriggerController가 RtmsCollectAdminController를,
+    // 그쪽이 이 서비스를 요구한다 (A1 · R1). **위와 같은 함정이다** — 이 파일이 경고하는
+    // 바로 그 방식으로 한 번 깨졌다: 빠뜨리자 이 파일의 테스트 19건이 컨텍스트 로딩 실패로
+    // 무너졌고, 메시지는 실거래가와 아무 상관 없어 보였다.
+    @MockBean
+    private lateinit var rtmsCollectService: RtmsCollectService
 
     // 마감 트리거는 어드민에 위임하지 않고 WfStepExecutor를 직접 요구한다.
     // 위 overseasIndexCollectService와 같은 함정이다 — 빠뜨리면 이 파일의 테스트가 실패하는 게
