@@ -28,7 +28,10 @@ class JpaValuableAssetStore(
         assets.saveAll(updates.map { it.asset.revalued(it.valuation, it.valuedAt) })
     }
 
-    private companion object {
+    // internal인 이유: `VALUABLE_TYPES`가 이 클래스의 내부 사정이 아니라 **계약**이기
+    // 때문이다 — 어댑터가 맡는 유형과 이 목록이 어긋나면 그 자산은 조용히 평가되지
+    // 않는다. `ValuationSourceWiringTest`가 둘을 대조하려면 볼 수 있어야 한다.
+    internal companion object {
         /**
          * 자동 평가할 수 있는 유형만 읽는다. **전 자산을 읽어 어댑터로 거르지 않는 이유**는
          * 수천 행짜리 주식·코인까지 매일 끌어오게 되기 때문이다 — 그쪽은 브로커 동기화가 이미
@@ -37,7 +40,7 @@ class JpaValuableAssetStore(
          * **유형이 늘면 여기 한 줄 더 적을 것.** 어댑터만 추가하면 그 자산은 조회에서 빠져
          * 조용히 평가되지 않는다 — `ValuationSourceWiringTest`가 그 어긋남을 문다.
          */
-        val VALUABLE_TYPES = listOf(AssetType.GOLD)
+        val VALUABLE_TYPES = listOf(AssetType.GOLD, AssetType.REAL_ESTATE)
     }
 }
 
