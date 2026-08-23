@@ -28,6 +28,8 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestHeader
+import com.allfolio.api.admin.RtmsCollectAdminController
+import com.allfolio.market.realestate.RtmsCollectSummary
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
@@ -58,6 +60,7 @@ class SchedulerTriggerController(
     private val indexAdmin: MarketIndexAdminController,
     private val rateAdmin: MarketRateAdminController,
     private val commodityAdmin: CommodityAdminController,
+    private val rtmsAdmin: RtmsCollectAdminController,
     private val benchmarkAdmin: BenchmarkIndexAdminController,
     private val dartAdmin: DartAdminController,
     private val realAssetAdmin: RealAssetValuationAdminController,
@@ -226,6 +229,32 @@ class SchedulerTriggerController(
     ): ResponseEntity<CommodityCollectSummary> {
         authorize(token)
         return commodityAdmin.collect(null, null)
+    }
+
+    /**
+     * POST /api/internal/scheduler/rtms — 국토부 실거래가 수집 트리거 (A1 v3)
+     *
+     * **시군구를 파라미터로 받는다.** 다른 트리거들과 달리 대상이 설정이 아니라 요청에 있다 —
+     * 보유 부동산이 아직 0건이라 자동 대상 선정을 할 것이 없고, R2 선택 UI에 보여 줄 단지
+     * 목록이 있으려면 백필을 먼저 돌릴 수 있어야 한다. 자동 선정은 R3에서 붙인다.
+     *
+     * **개월 수 기본값이 3인 이유**는 재수집 정책과 같다([RtmsCollectService.FRESH_MONTHS]):
+     * 신고 기한이 계약 후 30일이고 해제는 그보다 더 늦게 붙는다. 매일 도는 크론이 그 셋만
+     * 다시 받으면 되고, 더 거슬러 올라가는 것은 일회성 백필이라 어드민 엔드포인트에 있다.
+     *
+     * 어드민 컨트롤러에 위임하는 이유는 위 트리거들과 같다: **502(전량 실패 = 상류 장애)와
+     * 400(파라미터 문제 — 법정동 코드 형식·조합 수 초과)의 구분이 Actions 로그를 읽는
+     * 사람에게 그대로 필요하다.** 여기 400의 성격이 다른 트리거의 500과 다른데,
+     * 대상이 설정이 아니라 요청에 있기 때문이다. **이 위임을 "정리"하지 말 것.**
+     */
+    @PostMapping("/rtms")
+    fun collectRtms(
+        @RequestHeader(name = TOKEN_HEADER, required = false) token: String?,
+        @RequestParam sgg: String,
+        @RequestParam(defaultValue = "3") months: Int,
+    ): ResponseEntity<RtmsCollectSummary> {
+        authorize(token)
+        return rtmsAdmin.collect(sgg, months, null)
     }
 
     /**

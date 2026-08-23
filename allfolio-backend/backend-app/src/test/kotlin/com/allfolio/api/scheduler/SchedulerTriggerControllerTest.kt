@@ -2,6 +2,10 @@ package com.allfolio.api.scheduler
 
 import com.allfolio.api.admin.BenchmarkIndexAdminController
 import com.allfolio.api.admin.CommodityAdminController
+import com.allfolio.api.admin.RtmsCollectAdminController
+import org.mockito.ArgumentMatchers.isNull
+import org.mockito.ArgumentMatchers.anyInt
+import com.allfolio.market.realestate.RtmsCollectSummary
 import com.allfolio.api.admin.DartAdminController
 import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.api.admin.MarketIndexAdminController
@@ -62,6 +66,7 @@ class SchedulerTriggerControllerTest {
     private val indexAdmin: MarketIndexAdminController = mock(MarketIndexAdminController::class.java)
     private val rateAdmin: MarketRateAdminController = mock(MarketRateAdminController::class.java)
     private val commodityAdmin: CommodityAdminController = mock(CommodityAdminController::class.java)
+    private val rtmsAdmin: RtmsCollectAdminController = mock(RtmsCollectAdminController::class.java)
     private val benchmarkAdmin: BenchmarkIndexAdminController = mock(BenchmarkIndexAdminController::class.java)
     private val dartAdmin: DartAdminController = mock(DartAdminController::class.java)
     private val realAssetAdmin: RealAssetValuationAdminController = mock(RealAssetValuationAdminController::class.java)
@@ -82,7 +87,7 @@ class SchedulerTriggerControllerTest {
     // 응답으로 풀려, 운영과 다른 경로를 테스트하게 된다. 워크플로가 --fail을 일부러 안 쓰는 이유가
     // 이 본문을 잡 요약에 남기기 위해서라, 본문까지 운영과 같아야 의미가 있다.
     private fun mvc(token: String) = MockMvcBuilders
-        .standaloneSetup(SchedulerTriggerController(admin, indexAdmin, rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, realAssetAdmin, stepExecutor, token))
+        .standaloneSetup(SchedulerTriggerController(fxAdmin = admin, indexAdmin = indexAdmin, rateAdmin = rateAdmin, commodityAdmin = commodityAdmin, rtmsAdmin = rtmsAdmin, benchmarkAdmin = benchmarkAdmin, dartAdmin = dartAdmin, realAssetAdmin = realAssetAdmin, stepExecutor = stepExecutor, configuredToken = token))
         .setControllerAdvice(GlobalExceptionHandler())
         .build()
 
@@ -190,7 +195,7 @@ class SchedulerTriggerControllerTest {
             mock(CashFlowRecomputeService::class.java),
         )
 
-        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, realAssetAdmin, stepExecutor, "secret"))
+        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(fxAdmin = realAdmin, indexAdmin = indexAdmin, rateAdmin = rateAdmin, commodityAdmin = commodityAdmin, rtmsAdmin = rtmsAdmin, benchmarkAdmin = benchmarkAdmin, dartAdmin = dartAdmin, realAssetAdmin = realAssetAdmin, stepExecutor = stepExecutor, configuredToken = "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -316,7 +321,7 @@ class SchedulerTriggerControllerTest {
             mock(OverseasIndexCollectService::class.java),
         )
 
-        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin, rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, realAssetAdmin, stepExecutor, "secret"))
+        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(fxAdmin = admin, indexAdmin = realIndexAdmin, rateAdmin = rateAdmin, commodityAdmin = commodityAdmin, rtmsAdmin = rtmsAdmin, benchmarkAdmin = benchmarkAdmin, dartAdmin = dartAdmin, realAssetAdmin = realAssetAdmin, stepExecutor = stepExecutor, configuredToken = "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -362,6 +367,7 @@ class SchedulerTriggerControllerTest {
                     ),
                     rateAdmin,
                     commodityAdmin,
+                    rtmsAdmin,
                     benchmarkAdmin,
                     dartAdmin,
                     realAssetAdmin,
@@ -521,7 +527,7 @@ class SchedulerTriggerControllerTest {
         )
 
         MockMvcBuilders
-            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, realAssetAdmin, stepExecutor, "secret"))
+            .standaloneSetup(SchedulerTriggerController(fxAdmin = admin, indexAdmin = realIndexAdmin(overseasService), rateAdmin = rateAdmin, commodityAdmin = commodityAdmin, rtmsAdmin = rtmsAdmin, benchmarkAdmin = benchmarkAdmin, dartAdmin = dartAdmin, realAssetAdmin = realAssetAdmin, stepExecutor = stepExecutor, configuredToken = "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -549,7 +555,7 @@ class SchedulerTriggerControllerTest {
         )
 
         MockMvcBuilders
-            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, realAssetAdmin, stepExecutor, "secret"))
+            .standaloneSetup(SchedulerTriggerController(fxAdmin = admin, indexAdmin = realIndexAdmin(overseasService), rateAdmin = rateAdmin, commodityAdmin = commodityAdmin, rtmsAdmin = rtmsAdmin, benchmarkAdmin = benchmarkAdmin, dartAdmin = dartAdmin, realAssetAdmin = realAssetAdmin, stepExecutor = stepExecutor, configuredToken = "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -575,7 +581,7 @@ class SchedulerTriggerControllerTest {
         ).thenThrow(KisIndexException("KIS 해외 응답에 output2가 없습니다"))
 
         MockMvcBuilders
-            .standaloneSetup(SchedulerTriggerController(admin, realIndexAdmin(overseasService), rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, realAssetAdmin, stepExecutor, "secret"))
+            .standaloneSetup(SchedulerTriggerController(fxAdmin = admin, indexAdmin = realIndexAdmin(overseasService), rateAdmin = rateAdmin, commodityAdmin = commodityAdmin, rtmsAdmin = rtmsAdmin, benchmarkAdmin = benchmarkAdmin, dartAdmin = dartAdmin, realAssetAdmin = realAssetAdmin, stepExecutor = stepExecutor, configuredToken = "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -747,7 +753,7 @@ class SchedulerTriggerControllerTest {
             mock(CashFlowRecomputeService::class.java),
         )
 
-        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(realAdmin, indexAdmin, rateAdmin, commodityAdmin, benchmarkAdmin, dartAdmin, realAssetAdmin, stepExecutor, "secret"))
+        MockMvcBuilders.standaloneSetup(SchedulerTriggerController(fxAdmin = realAdmin, indexAdmin = indexAdmin, rateAdmin = rateAdmin, commodityAdmin = commodityAdmin, rtmsAdmin = rtmsAdmin, benchmarkAdmin = benchmarkAdmin, dartAdmin = dartAdmin, realAssetAdmin = realAssetAdmin, stepExecutor = stepExecutor, configuredToken = "secret"))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
             .perform(
@@ -888,6 +894,7 @@ class SchedulerTriggerControllerTest {
                 indexAdmin,
                 MarketRateAdminController(rateCollectServiceReturning(summary), mock(EcosStatListClient::class.java)),
                 commodityAdmin,
+                rtmsAdmin,
                 benchmarkAdmin,
                 dartAdmin,
                 realAssetAdmin,
@@ -1056,6 +1063,7 @@ class SchedulerTriggerControllerTest {
                 indexAdmin,
                 rateAdmin,
                 CommodityAdminController(commodityCollectServiceReturning(summary), CommodityProperties()),
+                rtmsAdmin,
                 benchmarkAdmin,
                 dartAdmin,
                 realAssetAdmin,
@@ -1200,6 +1208,7 @@ class SchedulerTriggerControllerTest {
                 indexAdmin,
                 rateAdmin,
                 commodityAdmin,
+                rtmsAdmin,
                 BenchmarkIndexAdminController(fscIndexCollectServiceReturning(summary), BenchmarkIndexProperties()),
                 dartAdmin,
                 realAssetAdmin,
@@ -1346,4 +1355,79 @@ class SchedulerTriggerControllerTest {
             anyString(),
         )
     }
+
+    // ── 실거래가 트리거 (A1 v3) ────────────────────────────────────────────
+
+    /**
+     * **개월 수 기본값이 3이다** — 재수집 정책(`RtmsCollectService.FRESH_MONTHS`)과 같은 수여야
+     * 한다. 크론이 매일 그 셋만 다시 받으면 신고 지연과 해제가 따라잡힌다. 여기서만 다른 수를
+     * 쓰면 크론이 도는데도 해제가 반영 안 되는 달이 생긴다.
+     */
+    @Test
+    fun `실거래가 트리거는 기본 3개월을 요청한다`() {
+        `when`(rtmsAdmin.collect(anyString(), anyInt(), any()))
+            .thenReturn(ResponseEntity.ok(rtmsSummary()))
+
+        mvc("secret").perform(
+            post("/api/internal/scheduler/rtms")
+                .param("sgg", "11110")
+                .header("X-Scheduler-Token", "secret"),
+        ).andExpect(status().isOk)
+
+        verify(rtmsAdmin).collect("11110", 3, null)
+    }
+
+    @Test
+    fun `실거래가 트리거는 개월 수를 그대로 넘긴다`() {
+        `when`(rtmsAdmin.collect(anyString(), anyInt(), any()))
+            .thenReturn(ResponseEntity.ok(rtmsSummary()))
+
+        mvc("secret").perform(
+            post("/api/internal/scheduler/rtms")
+                .param("sgg", "11110,11680").param("months", "6")
+                .header("X-Scheduler-Token", "secret"),
+        ).andExpect(status().isOk)
+
+        verify(rtmsAdmin).collect("11110,11680", 6, null)
+    }
+
+    /** 예산은 넘기지 않는다 — 서비스 기본값을 쓰게 둔다 */
+    @Test
+    fun `실거래가 트리거는 예산을 지정하지 않는다`() {
+        `when`(rtmsAdmin.collect(anyString(), anyInt(), any()))
+            .thenReturn(ResponseEntity.ok(rtmsSummary()))
+
+        mvc("secret").perform(
+            post("/api/internal/scheduler/rtms").param("sgg", "11110")
+                .header("X-Scheduler-Token", "secret"),
+        ).andExpect(status().isOk)
+
+        verify(rtmsAdmin).collect(anyString(), anyInt(), isNull())
+    }
+
+    @Test
+    fun `실거래가 트리거도 토큰이 틀리면 401이고 수집을 부르지 않는다`() {
+        mvc("secret").perform(
+            post("/api/internal/scheduler/rtms").param("sgg", "11110")
+                .header("X-Scheduler-Token", "wrong"),
+        ).andExpect(status().isUnauthorized)
+
+        verify(rtmsAdmin, never()).collect(anyString(), anyInt(), any())
+    }
+
+    /** 빈 설정이 "토큰 불필요"로 해석되면 환경변수를 빠뜨린 순간 완전 공개된다 */
+    @Test
+    fun `실거래가 트리거도 설정 토큰이 비면 503이다`() {
+        mvc("").perform(
+            post("/api/internal/scheduler/rtms").param("sgg", "11110")
+                .header("X-Scheduler-Token", "anything"),
+        ).andExpect(status().isServiceUnavailable)
+
+        verify(rtmsAdmin, never()).collect(anyString(), anyInt(), any())
+    }
+
+    private fun rtmsSummary() = RtmsCollectSummary(
+        requested = 3, fetched = 3, skipped = 0, dealsUpserted = 120,
+        rowsDropped = 0, apiCalls = 3, budgetExhausted = 0, failures = emptyList(),
+    )
 }
