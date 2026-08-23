@@ -12,11 +12,20 @@ import { createBenchmarkApi } from './benchmark-api'
 import { createExclusionPresetAdminApi } from './exclusion-preset-admin-api'
 import { createMarketApi } from './market-api'
 import { createDisclosureApi } from './disclosure-api'
+import { createRealEstateApi } from './real-estate-api'
 
 export function useUnifiedApi() {
   const { accessToken } = useAuth()
   return useMemo(
     () => (accessToken ? createUnifiedApi(accessToken) : null),
+    [accessToken],
+  )
+}
+
+export function useRealEstateApi() {
+  const { accessToken } = useAuth()
+  return useMemo(
+    () => (accessToken ? createRealEstateApi(accessToken) : null),
     [accessToken],
   )
 }
