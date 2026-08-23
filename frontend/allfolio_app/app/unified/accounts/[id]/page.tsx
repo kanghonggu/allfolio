@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
@@ -215,6 +215,20 @@ function DecimalInput({
   required?: boolean
 }) {
   const [raw, setRaw] = useState(value > 0 ? String(value) : '')
+
+  // **밖에서 값을 넣으면 표시도 따라와야 한다.** `useState` 초기값은 첫 렌더에만 쓰여서,
+  // 이게 없으면 단지·평형을 골라 전용면적을 채워 넣어도 칸이 빈 채로 남는다(실제로 그랬다).
+  //
+  // 다만 사용자가 타이핑하는 중에 덮으면 안 된다 — "84."를 치는 순간 84로 되돌아가면
+  // 소수를 못 적는다. 그래서 **우리가 올려보낸 값인지 밖에서 온 값인지**를 구분한다.
+  const emitted = useRef(value)
+  useEffect(() => {
+    if (value !== emitted.current) {
+      setRaw(value > 0 ? String(value) : '')
+      emitted.current = value
+    }
+  }, [value])
+
   return (
     <Input
       type="text"
@@ -226,7 +240,10 @@ function DecimalInput({
         const s = e.target.value.replace(/[^\d.]/g, '')
         setRaw(s)
         const n = parseFloat(s)
-        if (!isNaN(n)) onChange(n)
+        if (!isNaN(n)) {
+          emitted.current = n
+          onChange(n)
+        }
       }}
     />
   )
