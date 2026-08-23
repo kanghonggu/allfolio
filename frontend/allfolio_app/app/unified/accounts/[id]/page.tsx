@@ -14,6 +14,7 @@ import Label from '@/components/ui/Label'
 import Num from '@/components/ui/Num'
 import Field, { Input, Select, Textarea } from '@/components/ui/Field'
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/states'
+import ComplexPicker from '@/components/unified/ComplexPicker'
 import type { Asset, AssetType, SyncResult, CreateManualAssetPayload } from '@/types/unified'
 
 // ── 상수 ──────────────────────────────────────────────────────
@@ -440,6 +441,23 @@ export default function AccountDetailPage() {
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
 
+              {/* 단지·평형 선택 — 부동산 전용.
+                  고르면 symbol(단지일련번호)·전용면적·자산명이 함께 채워진다. 손으로 적는
+                  경로도 아래에 남겨 둔다 — 실거래가 없는 단지(빌라·단독·신축)는 검색에
+                  안 나오고, 그 경우에도 등록은 되어야 한다. */}
+              {isAreaType && (
+                <div className="sm:col-span-2">
+                  <ComplexPicker
+                    onSelect={v => {
+                      set('symbol', v.aptSeq)
+                      set('exclusiveAreaM2', v.exclusiveAreaM2)
+                      set('areaPyeong', v.approxPyeong)
+                      if (!assetForm.name) set('name', v.aptName)
+                    }}
+                  />
+                </div>
+              )}
+
               {/* 면적 — 부동산 전용.
                   평과 전용면적을 나눠 받는다. "34평"은 보통 공급면적이고 그 집의 전용은
                   84㎡(≈25.4평)라, 한 칸으로 받으면 어느 쪽인지 알 수 없다. 그 값으로
@@ -465,7 +483,8 @@ export default function AccountDetailPage() {
                     onChange={v => set('exclusiveAreaM2', v)}
                   />
                   <p className="mt-1 text-[10px] text-fg-muted">
-                    등기부·분양계약서의 전용면적입니다. 공급(분양)면적이 아닙니다.
+                    위에서 단지를 고르면 자동으로 채워집니다. 직접 적을 땐 등기부·분양계약서의
+                    전용면적이며, 공급(분양)면적이 아닙니다.
                   </p>
                 </div>
               )}
