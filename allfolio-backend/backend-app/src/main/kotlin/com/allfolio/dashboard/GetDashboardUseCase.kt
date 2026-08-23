@@ -231,6 +231,9 @@ class GetDashboardUseCase(
                     daysUntilMaturity = a.maturityDate?.let {
                         ChronoUnit.DAYS.between(today, it).takeIf { d -> d >= 0 }
                     },
+                    priceAsOf         = a.priceAsOf,
+                    valuationMethod   = a.valuationMethod.name,
+                    confidenceLevel   = a.confidenceLevel.name,
                 )
             }
 

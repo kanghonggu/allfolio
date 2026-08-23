@@ -13,6 +13,30 @@
 export const STALE_THRESHOLD_DAYS = 5
 
 /**
+ * 자산 유형별 지연 임계치(일).
+ *
+ * **금의 5일을 부동산에 그대로 쓰면 거의 모든 자산이 "지연"으로 뜬다.** 실측에서
+ * (단지, 전용면적) 조합당 거래가 12개월에 중앙 2건이라, 마지막 거래가 몇 달 전인 것이
+ * **정상**이다. 매번 경고가 뜨면 아무도 안 보고, 그러면 진짜 이상을 놓친다.
+ *
+ * 성격 자체가 다르다: 금의 지연은 **소스 중단**이고, 부동산의 공백은 **시장 사실**이다.
+ * 그래서 임계치도 문구도 갈라야 한다([priceAsOfLabel] 참조).
+ *
+ * 180일인 근거: 반년 넘게 그 평형에 거래가 없으면 중앙값이 현재 시세를 대표한다고 보기
+ * 어렵다. 12개월 창 안에서도 값이 절반 가까이 10% 넘게 움직였다(p50 +7.7%).
+ */
+const STALE_THRESHOLD_BY_TYPE: Record<string, number> = {
+  REAL_ESTATE: 180,
+}
+
+/** 이 유형의 지연 임계치. 모르는 유형은 [STALE_THRESHOLD_DAYS]를 쓴다 */
+export function staleThresholdOf(type?: string | null): number {
+  // `type && …`로 쓰면 빈 문자열일 때 `''`가 나와 `??`가 안 걸린다 — 명시적으로 본다
+  if (!type) return STALE_THRESHOLD_DAYS
+  return STALE_THRESHOLD_BY_TYPE[type] ?? STALE_THRESHOLD_DAYS
+}
+
+/**
  * `priceAsOf`가 오늘로부터 며칠 전인지. 못 읽으면 `null`.
  *
  * **`new Date('2026-08-14')`로 파싱하지 않는다** — ISO 날짜만 있는 문자열은 UTC 자정으로
@@ -32,13 +56,15 @@ export function stalenessDays(priceAsOf: string | null, today = new Date()): num
 }
 
 /** `2026-08-14` → `8/14 종가 기준`. 없으면 빈 문자열(화면이 아무것도 안 그린다) */
-export function priceAsOfLabel(priceAsOf: string | null): string {
+export function priceAsOfLabel(priceAsOf: string | null, type?: string | null): string {
   if (!priceAsOf) return ''
   const parts = priceAsOf.split('-')
   const month = parts[1]
   const day = parts[2]
   if (!month || !day) return ''
-  return `${Number(month)}/${Number(day)} 종가 기준`
+  // **부동산에 "종가"는 틀린 말이다.** 장이 열고 닫는 자산이 아니라 실제로 팔린 건이다.
+  const basis = type === 'REAL_ESTATE' ? '실거래' : '종가'
+  return `${Number(month)}/${Number(day)} ${basis} 기준`
 }
 
 /**

@@ -20,6 +20,7 @@ import Num from '@/components/ui/Num'
 import DataTable, { type Column } from '@/components/ui/DataTable'
 import { EmptyState, ErrorState } from '@/components/ui/states'
 import { won } from '@/lib/format'
+import { priceAsOfLabel, showsPriceAsOf, staleThresholdOf, stalenessDays } from '@/lib/price-as-of'
 import type { DashboardResponse, RealAsset } from '@/types/dashboard'
 
 /** 온보딩 모달을 이미 닫았는지 — 계정이 아니라 브라우저 단위로 기억한다 (AF-92) */
@@ -317,7 +318,15 @@ function RealAssetTable({ assets }: { assets: RealAsset[] }) {
       header: '평가액',
       width: '1.2fr',
       align: 'right',
-      cell: (a) => <Num className="text-[12.5px]">{won(a.value)}</Num>,
+      // **기준일을 값 옆에 붙인다.** 실물자산은 포지션 표가 아니라 이 표에 나오는데,
+      // N2가 만든 표시는 그쪽에만 있었다. 금은 D+1이라 하루 이틀이지만 **부동산은 몇 달씩
+      // 벌어진다** — 33억이 언제 거래 기준인지 화면이 말하지 않으면 알 방법이 없다.
+      cell: (a) => (
+        <span className="inline-flex flex-col items-end">
+          <Num className="text-[12.5px]">{won(a.value)}</Num>
+          <RealAssetPriceAsOf asset={a} />
+        </span>
+      ),
     },
     {
       key: 'due',
@@ -342,6 +351,36 @@ function RealAssetTable({ assets }: { assets: RealAsset[] }) {
   ]
   return <DataTable columns={columns} rows={assets} rowKey={(a) => a.id} minWidth={520} />
 }
+
+/**
+ * 실물자산의 시세 기준일.
+ *
+ * **임계치와 문구가 자산 유형별로 다르다.** 금의 지연은 소스 중단이지만 부동산의 공백은
+ * 시장 사실이다 — 그 평형에 반년째 거래가 없는 건 이상이 아니라 정보다. 5일 기준을 그대로
+ * 쓰면 부동산이 늘 경고로 뜨고, 그러면 아무도 경고를 안 본다.
+ */
+function RealAssetPriceAsOf({ asset }: { asset: RealAsset }) {
+  if (!showsPriceAsOf(asset)) return null
+
+  const days = stalenessDays(asset.priceAsOf)
+  const stale = days !== null && days >= staleThresholdOf(asset.type)
+
+  return (
+    <span
+      className={`font-mono text-[9.5px] tracking-[0.08em] ${stale ? 'text-warn' : 'text-fg-ghost'}`}
+      title={
+        stale
+          ? asset.type === 'REAL_ESTATE'
+            ? `이 평형의 마지막 실거래가 ${days}일 전입니다 — 최근 거래가 없어 시세가 실제와 다를 수 있습니다`
+            : `시세가 ${days}일 지연됐습니다 — 소스 확인이 필요합니다`
+          : undefined
+      }
+    >
+      {priceAsOfLabel(asset.priceAsOf, asset.type)}
+    </span>
+  )
+}
+
 
 function PageSkeleton() {
   return (
