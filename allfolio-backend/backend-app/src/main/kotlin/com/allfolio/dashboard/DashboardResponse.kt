@@ -99,6 +99,18 @@ data class RealAssetDto(
     val currency: String,
     val maturityDate: LocalDate?,
     val daysUntilMaturity: Long?,
+    /**
+     * 이 평가액이 어느 날짜 시세인지. 자동 평가된 자산만 채워진다.
+     *
+     * **포지션 표(`PositionDto`)에만 있으면 안 되는 이유**는 실물자산이 그 표가 아니라
+     * 별도 표에 나오기 때문이다. 금은 D+1이라 하루 이틀이지만 **부동산은 몇 달씩 벌어진다** —
+     * 33억이 언제 거래 기준인지 화면이 말하지 않으면 사용자가 알 방법이 없다.
+     */
+    val priceAsOf: LocalDate?,
+    /** MARKET_PRICE | BALANCE | USER_INPUT — 손으로 넣은 값에 기준일을 붙이지 않으려면 필요하다 */
+    val valuationMethod: String,
+    /** HIGH | MEDIUM | LOW */
+    val confidenceLevel: String,
 )
 
 /** @see com.allfolio.fx.FxSource */

@@ -6,7 +6,7 @@ import Num from '@/components/ui/Num'
 import { signPct, dirTone } from '@/lib/format'
 import { EmptyState } from '@/components/ui/states'
 import type { Position } from '@/types/dashboard'
-import { STALE_THRESHOLD_DAYS, priceAsOfLabel, showsPriceAsOf, stalenessDays } from '@/lib/price-as-of'
+import { priceAsOfLabel, showsPriceAsOf, staleThresholdOf, stalenessDays } from '@/lib/price-as-of'
 
 // QA 후속 #4: 먼지 포지션 판정은 원통화가 아니라 KRW 환산 기준 —
 // FDUSD 18원, TRX 13원 같은 잔여 단위가 실질 포지션처럼 노출되지 않게 접는다
@@ -112,14 +112,15 @@ function PriceAsOf({ position }: { position: Position }) {
   if (!showsPriceAsOf(position)) return null
 
   const days = stalenessDays(position.priceAsOf)
-  const stale = days !== null && days >= STALE_THRESHOLD_DAYS
+  // 임계치는 자산 유형이 정한다 — 금의 5일을 부동산에 쓰면 늘 경고가 뜬다
+  const stale = days !== null && days >= staleThresholdOf(position.type)
 
   return (
     <span
       className={`font-mono text-[9.5px] tracking-[0.08em] ${stale ? 'text-warn' : 'text-fg-ghost'}`}
       title={stale ? `시세가 ${days}일 지연됐습니다 — 소스 확인이 필요합니다` : undefined}
     >
-      {priceAsOfLabel(position.priceAsOf)}
+      {priceAsOfLabel(position.priceAsOf, position.type)}
       {stale && ` · ${days}일 지연`}
     </span>
   )

@@ -48,6 +48,12 @@ export interface RealAsset {
   currency: string
   maturityDate: string | null
   daysUntilMaturity: number | null
+  /** 이 평가액이 어느 날짜 시세인지. 자동 평가된 자산만 채워진다 */
+  priceAsOf: string | null
+  /** MARKET_PRICE | BALANCE | USER_INPUT */
+  valuationMethod: string
+  /** HIGH | MEDIUM | LOW */
+  confidenceLevel: string
 }
 
 export interface DashboardMetrics {
