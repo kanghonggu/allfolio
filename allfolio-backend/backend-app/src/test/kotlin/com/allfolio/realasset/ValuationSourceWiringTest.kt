@@ -4,6 +4,7 @@ import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.domain.asset.AssetType
 import com.allfolio.unifiedasset.infrastructure.jpa.AssetJpaRepository
 import com.allfolio.unifiedasset.infrastructure.jpa.MarketCommodityQuoteJpaRepository
+import com.allfolio.unifiedasset.infrastructure.jpa.RtmsDealCacheJpaRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -39,6 +40,10 @@ class ValuationSourceWiringTest {
     // 안 그러면 배선 테스트가 "어댑터가 빠졌다"가 아니라 "레포 빈이 없다"로 빨개져 신호가 흐려진다.
     @MockBean private lateinit var quoteRepository: MarketCommodityQuoteJpaRepository
 
+    // 부동산(R3)이 붙으면서 이 패키지에 RtmsSource가 늘었다 — 그 의존도 세워 준다.
+    // 위 주석이 예고한 그대로다.
+    @MockBean private lateinit var rtmsDeals: RtmsDealCacheJpaRepository
+
     @MockBean private lateinit var assetJpa: AssetJpaRepository
 
     @MockBean private lateinit var assetRepository: AssetRepository
@@ -48,6 +53,24 @@ class ValuationSourceWiringTest {
     @Test
     fun `금 평가 어댑터가 빈으로 등록된다`() {
         assertThat(sources).hasAtLeastOneElementOfType(KrxGoldSource::class.java)
+    }
+
+    @Test
+    fun `부동산 평가 어댑터가 빈으로 등록된다`() {
+        assertThat(sources).hasAtLeastOneElementOfType(RtmsSource::class.java)
+    }
+
+    /**
+     * **어댑터만 추가하고 조회 목록을 빠뜨리면 그 자산은 조용히 평가되지 않는다.**
+     * `JpaValuableAssetStore.VALUABLE_TYPES`가 그 목록이고, 이 테스트가 둘의 어긋남을 문다.
+     */
+    @Test
+    fun `담당 어댑터가 있는 유형은 조회 목록에도 있다`() {
+        val supported = AssetType.entries.filter { t -> sources.any { it.supports(t) } }
+
+        assertThat(JpaValuableAssetStore.VALUABLE_TYPES)
+            .describedAs("어댑터가 맡는 유형은 배치가 읽어 와야 한다")
+            .containsAll(supported)
     }
 
     /** 어댑터가 늘어도 금은 계속 금만 맡아야 한다 — 유형이 겹치면 배치가 어느 쪽을 쓸지 모른다 */
