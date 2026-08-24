@@ -9,6 +9,7 @@ import com.allfolio.unifiedasset.application.usecase.AuthorizationService
 import com.allfolio.unifiedasset.application.usecase.AutoSyncTrigger
 import com.allfolio.unifiedasset.application.usecase.CreateAccountUseCase
 import com.allfolio.unifiedasset.application.usecase.DeleteAccountUseCase
+import com.allfolio.unifiedasset.application.usecase.DeleteAssetUseCase
 import com.allfolio.unifiedasset.application.usecase.GetSyncStatusUseCase
 import com.allfolio.unifiedasset.application.usecase.ImportCsvUseCase
 import com.allfolio.unifiedasset.application.usecase.PerformanceSnapshotService
@@ -23,6 +24,7 @@ import com.allfolio.unifiedasset.domain.asset.AssetSourceType
 import com.allfolio.unifiedasset.domain.asset.AssetType
 import com.allfolio.unifiedasset.domain.asset.ValuationMethod
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
@@ -37,6 +39,7 @@ class AccountControllerSecurityTest {
 
     private val createAccountUseCase = mock(CreateAccountUseCase::class.java)
     private val deleteAccountUseCase = mock(DeleteAccountUseCase::class.java)
+    private val deleteAssetUseCase = mock(DeleteAssetUseCase::class.java)
     private val syncAccountUseCase = mock(SyncAccountUseCase::class.java)
     private val importCsvUseCase = mock(ImportCsvUseCase::class.java)
     private val testConnectionUseCase = mock(TestConnectionUseCase::class.java)
@@ -52,6 +55,7 @@ class AccountControllerSecurityTest {
     private val controller = AccountController(
         createAccountUseCase,
         deleteAccountUseCase,
+        deleteAssetUseCase,
         syncAccountUseCase,
         importCsvUseCase,
         testConnectionUseCase,
@@ -165,6 +169,71 @@ class AccountControllerSecurityTest {
             }
 
         verifyNoInteractions(accountRepository, assetRepository)
+    }
+
+    // ── 개별 자산 삭제 (AF-153) ──────────────────────────────────
+
+    @Test
+    fun `내 계좌의 자산 삭제는 자산 삭제 use case에 위임한다`() {
+        val userId = UUID.randomUUID()
+        val accountId = UUID.randomUUID()
+        val assetId = UUID.randomUUID()
+        `when`(accountRepository.findById(accountId)).thenReturn(account(userId))
+
+        mockMvc.delete("/api/unified/accounts/$accountId/assets/$assetId") {
+            header("X-User-Id", userId.toString())
+        }.andExpect {
+            status { isNoContent() }
+        }
+
+        verify(deleteAssetUseCase).execute(userId, accountId, assetId)
+    }
+
+    @Test
+    fun `남의 계좌 경로로 자산을 지우면 404로 숨긴다`() {
+        val userId = UUID.randomUUID()
+        val accountId = UUID.randomUUID()
+        val assetId = UUID.randomUUID()
+        `when`(accountRepository.findById(accountId)).thenReturn(account(UUID.randomUUID()))
+
+        mockMvc.delete("/api/unified/accounts/$accountId/assets/$assetId") {
+            header("X-User-Id", userId.toString())
+        }.andExpect {
+            status { isNotFound() }
+        }
+
+        verifyNoInteractions(deleteAssetUseCase)
+    }
+
+    /** 계좌 삭제 경로(`DELETE /accounts/{id}`)와 헷갈리지 않게 위임 대상을 못 박는다. */
+    @Test
+    fun `자산 삭제는 계좌 삭제 use case를 부르지 않는다`() {
+        val userId = UUID.randomUUID()
+        val accountId = UUID.randomUUID()
+        `when`(accountRepository.findById(accountId)).thenReturn(account(userId))
+
+        mockMvc.delete("/api/unified/accounts/$accountId/assets/${UUID.randomUUID()}") {
+            header("X-User-Id", userId.toString())
+        }
+
+        verifyNoInteractions(deleteAccountUseCase)
+    }
+
+    @Test
+    fun `자산 삭제 거절은 400과 사유로 나간다`() {
+        val userId = UUID.randomUUID()
+        val accountId = UUID.randomUUID()
+        val assetId = UUID.randomUUID()
+        `when`(accountRepository.findById(accountId)).thenReturn(account(userId))
+        doThrow(IllegalArgumentException("동기화로 받아 온 자산은 삭제할 수 없습니다"))
+            .`when`(deleteAssetUseCase).execute(userId, accountId, assetId)
+
+        mockMvc.delete("/api/unified/accounts/$accountId/assets/$assetId") {
+            header("X-User-Id", userId.toString())
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("동기화로 받아 온 자산은 삭제할 수 없습니다") }
+        }
     }
 
     private fun account(userId: UUID): Account = Account.create(

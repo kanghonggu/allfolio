@@ -15,7 +15,7 @@ import Num from '@/components/ui/Num'
 import Field, { Input, Select, Textarea } from '@/components/ui/Field'
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/states'
 import ComplexPicker from '@/components/unified/ComplexPicker'
-import type { Asset, AssetType, SyncResult, CreateManualAssetPayload } from '@/types/unified'
+import type { Asset, AssetType, AssetSourceType, SyncResult, CreateManualAssetPayload } from '@/types/unified'
 
 // ── 상수 ──────────────────────────────────────────────────────
 
@@ -249,7 +249,13 @@ function DecimalInput({
   )
 }
 
-const ASSET_GRID = 'grid grid-cols-[1.6fr_0.9fr_0.7fr_1fr_1fr_0.9fr_1fr_1fr] gap-3'
+const ASSET_GRID = 'grid grid-cols-[1.6fr_0.9fr_0.7fr_1fr_1fr_0.9fr_1fr_1fr_auto] gap-3'
+
+/**
+ * 지울 수 있는 자산 — 사람이 넣은 것만. 동기화 계좌는 자산을 통째로 교체하므로
+ * 지워도 다음 동기화가 되살린다(서버도 같은 규칙으로 거절한다, AF-153).
+ */
+const DELETABLE_SOURCES: AssetSourceType[] = ['MANUAL', 'CSV']
 
 // ── 메인 페이지 ───────────────────────────────────────────────
 
@@ -285,6 +291,25 @@ export default function AccountDetailPage() {
       setAssetForm(defaultForm())
     },
   })
+
+  const deleteAssetMutation = useMutation({
+    mutationFn: (assetId: string) => api!.accounts.deleteAsset(id, assetId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['unified', 'account-assets', id] })
+      qc.invalidateQueries({ queryKey: ['unified', 'portfolio'] })
+      qc.invalidateQueries({ queryKey: ['unified', 'dashboard'] })
+    },
+  })
+
+  const handleDeleteAsset = (a: Asset) => {
+    // 계좌 삭제 확인 문구와 **다른 말을 해야 한다** — 그쪽은 "거래내역도 함께"라고 하고,
+    // 그 문구 때문에 자산 하나를 지우려다 계좌를 날린 적이 있다.
+    const ok = window.confirm(
+      `'${a.name}' 자산을 삭제합니다.\n\n이 자산만 지워지고 계좌와 다른 자산은 그대로 있습니다.` +
+      `\n지난 순자산 기록은 정정하지 않습니다.`
+    )
+    if (ok) deleteAssetMutation.mutate(a.id)
+  }
 
   // 유형 탭 전환 — 모든 필드 초기화
   const switchType = (type: AssetType) => {
@@ -621,6 +646,13 @@ export default function AccountDetailPage() {
         {/* 보유 자산 목록 */}
         <SectionHeader label="보유 자산" note={`${assets.length}개`} />
 
+        {deleteAssetMutation.error && (
+          <p role="alert" className="mb-3 text-xs text-danger">
+            {(deleteAssetMutation.error as any)?.response?.data?.error
+              ?? (deleteAssetMutation.error as Error).message}
+          </p>
+        )}
+
         {assetsLoading ? (
           <LoadingState label="자산 불러오는 중" />
         ) : assets.length === 0 ? (
@@ -639,6 +671,7 @@ export default function AccountDetailPage() {
                 <Label size="sm" tone="faint" className="text-right">대출</Label>
                 <Label size="sm" tone="faint" className="text-right">순자산</Label>
                 <Label size="sm" tone="faint" className="text-right">손익 / 수익률</Label>
+                <span aria-hidden />
               </div>
               {assets.map((a: Asset) => {
                 const pnl        = Number(a.unrealizedPnl)
@@ -697,6 +730,19 @@ export default function AccountDetailPage() {
                         </Num>
                       )}
                     </span>
+                    {DELETABLE_SOURCES.includes(a.sourceType) ? (
+                      <button
+                        type="button"
+                        aria-label={`${a.name} 삭제`}
+                        onClick={() => handleDeleteAsset(a)}
+                        disabled={deleteAssetMutation.isPending}
+                        className="text-right text-xs text-fg-ghost transition-colors hover:text-danger disabled:opacity-40"
+                      >
+                        삭제
+                      </button>
+                    ) : (
+                      <span aria-hidden />
+                    )}
                   </div>
                 )
               })}
