@@ -10,6 +10,7 @@ import com.allfolio.unifiedasset.application.usecase.AutoSyncTrigger
 import com.allfolio.unifiedasset.application.usecase.CreateAccountCommand
 import com.allfolio.unifiedasset.application.usecase.CreateAccountUseCase
 import com.allfolio.unifiedasset.application.usecase.DeleteAccountUseCase
+import com.allfolio.unifiedasset.application.usecase.DeleteAssetUseCase
 import com.allfolio.unifiedasset.application.usecase.GetSyncStatusUseCase
 import com.allfolio.unifiedasset.application.usecase.ImportCsvUseCase
 import com.allfolio.unifiedasset.application.usecase.PerformanceSnapshotService
@@ -56,6 +57,7 @@ class AccountControllerAutoSyncTest {
     private val controller = AccountController(
         createAccountUseCase,
         deleteAccountUseCase,
+        mock(DeleteAssetUseCase::class.java),
         syncAccountUseCase,
         importCsvUseCase,
         testConnectionUseCase,

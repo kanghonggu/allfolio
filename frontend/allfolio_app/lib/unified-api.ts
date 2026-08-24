@@ -54,6 +54,11 @@ export function createUnifiedApi(accessToken: string) {
       addManualAsset: async (accountId: string, payload: CreateManualAssetPayload): Promise<Asset> =>
         (await api.post<Asset>(`/accounts/${accountId}/assets`, payload)).data,
 
+      // 계좌 삭제(`delete`)와 다른 일이다 — 이건 자산 한 건만 지운다 (AF-153)
+      deleteAsset: async (accountId: string, assetId: string): Promise<void> => {
+        await api.delete(`/accounts/${accountId}/assets/${assetId}`)
+      },
+
       previewCsv: async (accountId: string, file: File): Promise<CsvPreviewRow[]> => {
         const form = new FormData()
         form.append('file', file)

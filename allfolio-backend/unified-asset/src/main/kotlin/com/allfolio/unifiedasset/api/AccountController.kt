@@ -122,6 +122,7 @@ data class StockTradeResponse(
 class AccountController(
     private val createAccountUseCase: CreateAccountUseCase,
     private val deleteAccountUseCase: DeleteAccountUseCase,
+    private val deleteAssetUseCase: DeleteAssetUseCase,
     private val syncAccountUseCase: SyncAccountUseCase,
     private val importCsvUseCase: ImportCsvUseCase,
     private val testConnectionUseCase: TestConnectionUseCase,
@@ -282,6 +283,26 @@ class AccountController(
             LocalDate.now(java.time.ZoneId.of("Asia/Seoul")),
         )
         return saved.toResponse()
+    }
+
+    /**
+     * 자산 1건 삭제 (AF-153).
+     *
+     * 계좌 삭제(`DELETE /accounts/{id}`)와 **다른 일이다.** 그쪽은 계좌의 자산·거래내역을
+     * 통째로 지운다 — 오타 하나를 고치려고 그걸 쓰는 상황이 이 엔드포인트가 생긴 이유다.
+     *
+     * 소유권은 두 번 본다. 여기서 계좌를, use case에서 자산이 그 계좌·그 사용자의 것인지를
+     * 본다. 계좌만 보면 남의 자산 id를 내 계좌 경로에 실을 수 있다.
+     */
+    @DeleteMapping("/{id}/assets/{assetId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun deleteAsset(
+        @RequestHeader("X-User-Id") userId: UUID,
+        @PathVariable id: UUID,
+        @PathVariable assetId: UUID,
+    ) {
+        authorizationService.requireOwnedAccount(userId, id)
+        deleteAssetUseCase.execute(userId, id, assetId)
     }
 
     @PostMapping("/{id}/csv")
