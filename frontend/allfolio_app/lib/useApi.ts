@@ -13,6 +13,7 @@ import { createExclusionPresetAdminApi } from './exclusion-preset-admin-api'
 import { createMarketApi } from './market-api'
 import { createDisclosureApi } from './disclosure-api'
 import { createRealEstateApi } from './real-estate-api'
+import { createWatchApi } from '@/lib/watch-api'
 
 export function useUnifiedApi() {
   const { accessToken } = useAuth()
@@ -26,6 +27,14 @@ export function useRealEstateApi() {
   const { accessToken } = useAuth()
   return useMemo(
     () => (accessToken ? createRealEstateApi(accessToken) : null),
+    [accessToken],
+  )
+}
+
+export function useWatchApi() {
+  const { accessToken } = useAuth()
+  return useMemo(
+    () => (accessToken ? createWatchApi(accessToken) : null),
     [accessToken],
   )
 }
