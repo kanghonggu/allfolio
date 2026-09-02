@@ -38,7 +38,7 @@ export interface ConnectionTestResult {
 
 // ── Asset ─────────────────────────────────────────────────────
 
-export type AssetType     = 'STOCK' | 'CRYPTO' | 'REAL_ESTATE' | 'VEHICLE' | 'GOLD' | 'CASH' | 'ETC'
+export type AssetType     = 'STOCK' | 'CRYPTO' | 'REAL_ESTATE' | 'VEHICLE' | 'GOLD' | 'WATCH' | 'CASH' | 'ETC'
 export type AssetCategory = 'FINANCIAL' | 'MANUAL'
 export type AssetSourceType = 'EXCHANGE_API' | 'WALLET' | 'STOCK_API' | 'CSV' | 'MANUAL'
 

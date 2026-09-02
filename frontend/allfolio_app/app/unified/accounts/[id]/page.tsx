@@ -16,15 +16,16 @@ import { money } from '@/lib/format'
 import Field, { Input, Select, Textarea } from '@/components/ui/Field'
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/states'
 import ComplexPicker from '@/components/unified/ComplexPicker'
+import WatchRefLookup from '@/components/unified/WatchRefLookup'
 import type { Asset, AssetType, AssetSourceType, SyncResult, CreateManualAssetPayload } from '@/types/unified'
 
 // ── 상수 ──────────────────────────────────────────────────────
 
-const ASSET_TYPES: AssetType[] = ['REAL_ESTATE', 'VEHICLE', 'GOLD', 'STOCK', 'CASH', 'ETC']
+const ASSET_TYPES: AssetType[] = ['REAL_ESTATE', 'VEHICLE', 'GOLD', 'WATCH', 'STOCK', 'CASH', 'ETC']
 
 const TYPE_KO: Record<string, string> = {
   STOCK: '주식', CRYPTO: '암호화폐', REAL_ESTATE: '부동산',
-  VEHICLE: '자동차', GOLD: '금', CASH: '현금', ETC: '기타',
+  VEHICLE: '자동차', GOLD: '금', WATCH: '시계', CASH: '현금', ETC: '기타',
 }
 
 const SUB_TYPES: Record<string, { value: string; label: string; loanLabel: string }[]> = {
@@ -102,6 +103,20 @@ const TYPE_CONFIG: Record<string, FieldConfig> = {
     memoPlaceholder: '예: KEB하나은행 구매, 골드바 보관함 보관',
     hint: '중량 × 현재 금 시세로 현재 총 가치를 계산하세요.',
   },
+  WATCH: {
+    namePlaceholder: '예: 롤렉스 데이트저스트 41',
+    // **레퍼런스가 곧 매칭 키다.** 위 확인 절차를 거치면 서버 정규화 값이 여기 채워진다 —
+    // 손으로 고쳐 쓰면 평가 배치가 못 찾는다(R2의 단지일련번호와 같은 자리).
+    symbolLabel: '레퍼런스',
+    symbolPlaceholder: '위에서 확인한 값이 채워집니다',
+    showSymbol: true,
+    showQuantity: false,
+    purchasePriceLabel: '취득가',
+    currentValueLabel: '현재 가치',
+    memoLabel: '상세 설명',
+    memoPlaceholder: '예: 2023년 구매, 풀세트(박스·보증서), 미착용',
+    hint: '레퍼런스를 확인하면 매일 시세로 자동 평가됩니다. 확인하지 않아도 등록은 됩니다.',
+  },
   STOCK: {
     namePlaceholder: '예: (주)스타트업코리아',
     symbolLabel: '회사명 / 종류',
@@ -161,6 +176,12 @@ function defaultForm(type: AssetType = 'REAL_ESTATE'): CreateManualAssetPayload 
 }
 
 const AREA_TYPES: AssetType[] = ['REAL_ESTATE']
+
+/**
+ * 레퍼런스 확인을 보여 줄 유형. **수량은 항상 1이다** — 시계는 개체마다 상태·풀세트가
+ * 달라 값이 갈리므로, 두 개 가진 사용자는 자산을 두 건 등록한다(어댑터도 수량을 안 곱한다).
+ */
+const REF_TYPES: AssetType[] = ['WATCH']
 
 // ── 유틸 ──────────────────────────────────────────────────────
 
@@ -335,6 +356,7 @@ export default function AccountDetailPage() {
   }
 
   const isAreaType = AREA_TYPES.includes(assetForm.type)
+  const isRefType = REF_TYPES.includes(assetForm.type)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -494,6 +516,20 @@ export default function AccountDetailPage() {
                       set('exclusiveAreaM2', v.exclusiveAreaM2)
                       set('areaPyeong', v.approxPyeong)
                       if (!assetForm.name) set('name', v.aptName)
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* 레퍼런스 확인 — 시계 전용.
+                  고르면 symbol에 **서버 정규화 값**이 들어간다. 손으로 적는 경로도 아래
+                  symbol 칸에 남겨 둔다 — 시세가 없는 시계도 등록은 되어야 한다. */}
+              {isRefType && (
+                <div className="sm:col-span-2">
+                  <WatchRefLookup
+                    onConfirm={r => {
+                      set('symbol', r)
+                      if (!assetForm.name) set('name', `레퍼런스 ${r}`)
                     }}
                   />
                 </div>
