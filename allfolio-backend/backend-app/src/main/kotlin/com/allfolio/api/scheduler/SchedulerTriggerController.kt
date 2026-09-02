@@ -7,6 +7,7 @@ import com.allfolio.api.admin.FxRateAdminController
 import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.api.admin.MarketRateAdminController
 import com.allfolio.api.admin.RealAssetValuationAdminController
+import com.allfolio.api.admin.WatchValuationAdminController
 import com.allfolio.dart.DartRunResult
 import com.allfolio.dart.corp.CorpMapSummary
 import com.allfolio.fx.BackfillSummary
@@ -19,6 +20,7 @@ import com.allfolio.market.index.OverseasIndexCollectSummary
 import com.allfolio.market.index.OverseasSchedule
 import com.allfolio.market.rate.RateCollectSummary
 import com.allfolio.realasset.RealAssetValuationSummary
+import com.allfolio.realasset.watch.WatchValuationCollectSummary
 import com.allfolio.workflow.application.WfRunSummary
 import com.allfolio.workflow.application.WfStepExecutor
 import org.slf4j.LoggerFactory
@@ -64,6 +66,7 @@ class SchedulerTriggerController(
     private val benchmarkAdmin: BenchmarkIndexAdminController,
     private val dartAdmin: DartAdminController,
     private val realAssetAdmin: RealAssetValuationAdminController,
+    private val watchAdmin: WatchValuationAdminController,
     private val stepExecutor: WfStepExecutor,
     @Value("\${scheduler.trigger-token:}") private val configuredToken: String,
 ) {
@@ -327,6 +330,24 @@ class SchedulerTriggerController(
     ): ResponseEntity<RealAssetValuationSummary> {
         authorize(token)
         return realAssetAdmin.valuate(null)
+    }
+
+    /**
+     * POST /api/internal/scheduler/watch/collect — 시계 평가 복제 트리거 (W5)
+     *
+     * **평가(19:30)보다 먼저 돌아야 한다.** 이 배치가 채우는 `watch_valuation_cache`를
+     * `WatchPriceSource`가 읽는다 — 순서가 뒤집히면 평가가 하루 묵은 캐시를 쓴다.
+     * 워크플로가 19:20 KST인 이유가 그것이다.
+     *
+     * **상류를 부르는데도 502를 안 낸다** — 폴백이 직전 값을 쓰므로 하루 못 받은 것은
+     * 장애가 아니다. 자세한 근거는 [WatchValuationAdminController.collect].
+     */
+    @PostMapping("/watch/collect")
+    fun collectWatchValuations(
+        @RequestHeader(name = TOKEN_HEADER, required = false) token: String?,
+    ): ResponseEntity<WatchValuationCollectSummary> {
+        authorize(token)
+        return watchAdmin.collect()
     }
 
     /**

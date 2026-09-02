@@ -5,6 +5,7 @@ import com.allfolio.unifiedasset.domain.asset.AssetType
 import com.allfolio.unifiedasset.infrastructure.jpa.AssetJpaRepository
 import com.allfolio.unifiedasset.infrastructure.jpa.MarketCommodityQuoteJpaRepository
 import com.allfolio.unifiedasset.infrastructure.jpa.RtmsDealCacheJpaRepository
+import com.allfolio.unifiedasset.infrastructure.jpa.WatchValuationCacheJpaRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -44,6 +45,10 @@ class ValuationSourceWiringTest {
     // 위 주석이 예고한 그대로다.
     @MockBean private lateinit var rtmsDeals: RtmsDealCacheJpaRepository
 
+    // 시계(W5)가 붙으면서 이 패키지에 WatchPriceSource와 watch/ 하위 빈들이 늘었다 —
+    // 위 주석이 예고한 그대로다.
+    @MockBean private lateinit var watchCache: WatchValuationCacheJpaRepository
+
     @MockBean private lateinit var assetJpa: AssetJpaRepository
 
     @MockBean private lateinit var assetRepository: AssetRepository
@@ -53,6 +58,11 @@ class ValuationSourceWiringTest {
     @Test
     fun `금 평가 어댑터가 빈으로 등록된다`() {
         assertThat(sources).hasAtLeastOneElementOfType(KrxGoldSource::class.java)
+    }
+
+    @Test
+    fun `시계 평가 어댑터가 빈으로 등록된다`() {
+        assertThat(sources).hasAtLeastOneElementOfType(WatchPriceSource::class.java)
     }
 
     @Test

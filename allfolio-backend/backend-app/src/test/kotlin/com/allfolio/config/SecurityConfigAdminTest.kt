@@ -7,6 +7,7 @@ import com.allfolio.api.admin.MarketIndexAdminController
 import com.allfolio.api.admin.CommodityAdminController
 import com.allfolio.api.admin.MarketRateAdminController
 import com.allfolio.api.admin.RealAssetValuationAdminController
+import com.allfolio.api.admin.WatchValuationAdminController
 import com.allfolio.api.admin.RtmsCollectAdminController
 import com.allfolio.market.realestate.RtmsCollectService
 import com.allfolio.api.market.MarketQueryController
@@ -26,6 +27,7 @@ import com.allfolio.market.commodity.CommodityCollectService
 import com.allfolio.market.commodity.CommodityProperties
 import com.allfolio.market.rate.RateCollectService
 import com.allfolio.realasset.RealAssetValuationService
+import com.allfolio.realasset.watch.WatchValuationCollectService
 import com.allfolio.auth.JwtTokenService
 import com.allfolio.auth.UserEntity
 import com.allfolio.auth.UserRole
@@ -67,6 +69,7 @@ import java.math.BigDecimal
         BenchmarkIndexAdminController::class,
         DartAdminController::class,
         RealAssetValuationAdminController::class,
+        WatchValuationAdminController::class,
         RtmsCollectAdminController::class,
         SchedulerTriggerController::class,
         // AF-104. 어드민이 아니지만 이 컨텍스트에 함께 둔다 — 이 파일이 보는 건 SecurityConfig의
@@ -138,6 +141,11 @@ class SecurityConfigAdminTest {
     // 그쪽이 이 서비스를 요구한다 (A1 · G5). 위와 같은 함정이다.
     @MockBean
     private lateinit var realAssetValuationService: RealAssetValuationService
+
+    // 시계도 같다 — SchedulerTriggerController가 WatchValuationAdminController를,
+    // 그쪽이 이 서비스를 요구한다 (A1 · W5). 위와 같은 함정이다.
+    @MockBean
+    private lateinit var watchValuationCollectService: WatchValuationCollectService
 
     // 실거래가도 같다 — SchedulerTriggerController가 RtmsCollectAdminController를,
     // 그쪽이 이 서비스를 요구한다 (A1 · R1). **위와 같은 함정이다** — 이 파일이 경고하는
@@ -278,6 +286,13 @@ class SecurityConfigAdminTest {
     @Test
     fun `admin 금리 수집은 토큰 없이 403으로 차단된다`() {
         mockMvc.post("/api/admin/rate/collect")
+            .andExpect { status { isForbidden() } }
+    }
+
+    @Test
+    fun `admin 시계 평가 복제는 토큰 없이 403으로 차단된다`() {
+        // W5. 외부 서비스를 부르는 배치라 공개되면 안 된다.
+        mockMvc.post("/api/admin/watch/collect")
             .andExpect { status { isForbidden() } }
     }
 
