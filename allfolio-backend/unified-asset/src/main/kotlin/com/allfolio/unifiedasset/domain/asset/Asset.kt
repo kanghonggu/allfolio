@@ -70,8 +70,15 @@ class Asset private constructor(
     fun netEquity(): BigDecimal = currentValue.subtract(loanAmount ?: BigDecimal.ZERO)
 
     companion object {
+        /**
+         * 유동성이 없는 자산 — **이 집합이 곧 TWR 제외 규칙이다**(`include_in_twr`을 따로
+         * 두지 않는 이유는 그것이 `liquidity_type`과 중복이기 때문, A1 · N1).
+         *
+         * **시계가 여기 있는 이유**는 설계 9절이 시계를 "불연속 · TWR 제외"로 못 박았기
+         * 때문이다. 금은 영업일 연속이라 일부러 빠져 있다 — 같은 실물자산이라고 묶지 말 것.
+         */
         private val ILLIQUID_TYPES = setOf(
-            AssetType.REAL_ESTATE, AssetType.JEONSE, AssetType.VEHICLE,
+            AssetType.REAL_ESTATE, AssetType.JEONSE, AssetType.VEHICLE, AssetType.WATCH,
         )
 
         fun create(

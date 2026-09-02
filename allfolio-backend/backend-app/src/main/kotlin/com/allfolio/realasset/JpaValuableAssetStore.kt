@@ -40,7 +40,7 @@ class JpaValuableAssetStore(
          * **유형이 늘면 여기 한 줄 더 적을 것.** 어댑터만 추가하면 그 자산은 조회에서 빠져
          * 조용히 평가되지 않는다 — `ValuationSourceWiringTest`가 그 어긋남을 문다.
          */
-        val VALUABLE_TYPES = listOf(AssetType.GOLD, AssetType.REAL_ESTATE)
+        val VALUABLE_TYPES = listOf(AssetType.GOLD, AssetType.REAL_ESTATE, AssetType.WATCH)
     }
 }
 

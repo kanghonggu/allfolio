@@ -7,6 +7,7 @@ enum class AssetType {
     JEONSE,       // 전세보증금 (반환 청구권)
     VEHICLE,      // 자동차
     GOLD,         // 금
+    WATCH,        // 시계 (W5) — 평가는 watchpricedata 호가 중앙값
     CASH,         // 현금
     ETC,          // 기타
 }
