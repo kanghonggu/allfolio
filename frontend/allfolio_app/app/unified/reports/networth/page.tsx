@@ -88,6 +88,21 @@ export default function NetWorthPage() {
   const outliers = cap > 0 ? chartData.filter((d) => d.nav > cap * CLIP_TRIGGER) : []
   const clipping = outliers.length > 0 && !fullRange
 
+  /**
+   * 🔴 **축 밖 값을 상한에 붙여서 그린다. `allowDataOverflow`로는 안 된다** — 그건 축
+   * 눈금만 좁힐 뿐 **데이터를 자르지 않는다.** 운영 실측(2026-09-02): 33.5억을 상한
+   * 4,670만 스케일로 그리자 경로의 bounding box가 `y=-16566 · height=17202`가 됐고,
+   * 화면 위로 16,000px 넘게 뻗은 경로를 브라우저가 아예 페인트하지 않아 **눈금과 좌표는
+   * 다 맞는데 선만 안 보이는** 상태가 됐다. 처음 버그보다 나빴다 — 그때는 안 보이기라도
+   * 했지 이건 전환 중에 잘못된 위치의 스파이크가 보였다.
+   *
+   * 실제 값은 [Tooltip]이 `nav`로 그대로 보여 주고, 잘린 점은 위 안내가 날짜·금액까지 적는다.
+   */
+  const series = chartData.map((d) => ({
+    ...d,
+    plotted: clipping ? Math.min(d.nav, cap) : d.nav,
+  }))
+
   const toneByType = new Map(data.byType.map((b: NetWorthBreakdown, i: number) => [b.type, TONES[i % TONES.length]]))
 
   return (
@@ -165,14 +180,14 @@ export default function NetWorthPage() {
 
           {chartData.length >= 2 ? (
             <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+              <AreaChart data={series} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--c-line)" />
                 <XAxis dataKey="date" tick={TICK} tickLine={false} axisLine={{ stroke: 'var(--c-line)' }} />
                 <YAxis
-                  // 축 종류(선형)는 그대로 두고 범위만 좁힌다. `allowDataOverflow`가
-                  // 없으면 recharts가 domain을 무시하고 데이터에 맞춰 늘려 버린다.
+                  // 눈금을 상한에 고정한다. 데이터는 위 `series`에서 이미 상한으로
+                  // 잘라 넘기므로 `allowDataOverflow`는 필요 없다 — 오히려 그걸 쓰면
+                  // 데이터가 안 잘려 경로가 화면 밖 수천 px까지 뻗는다(`series` 주석 참고).
                   domain={clipping ? [0, cap] : undefined}
-                  allowDataOverflow={clipping}
                   tickFormatter={(v) => `₩${fmtShort(v)}`}
                   tick={TICK}
                   tickLine={false}
@@ -180,13 +195,15 @@ export default function NetWorthPage() {
                   width={70}
                 />
                 <Tooltip
-                  formatter={(v: number) => [fmt(v), '총 자산']}
+                  // 잘린 점은 상한 값으로 그려지므로, 툴팁은 원래 값(nav)을 보여 준다
+                  formatter={(v: number, _n, item: { payload?: { nav?: number } }) =>
+                    [fmt(item?.payload?.nav ?? v), '총 자산']}
                   contentStyle={TOOLTIP_STYLE}
                   labelStyle={{ color: 'var(--c-fg-3)' }}
                 />
                 <Area
                   type="monotone"
-                  dataKey="nav"
+                  dataKey="plotted"
                   name="총 자산"
                   stroke="var(--c-ink)"
                   strokeWidth={1.5}
