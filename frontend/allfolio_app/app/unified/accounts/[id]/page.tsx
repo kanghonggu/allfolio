@@ -12,6 +12,7 @@ import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import Label from '@/components/ui/Label'
 import Num from '@/components/ui/Num'
+import { money } from '@/lib/format'
 import Field, { Input, Select, Textarea } from '@/components/ui/Field'
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/states'
 import ComplexPicker from '@/components/unified/ComplexPicker'
@@ -163,11 +164,9 @@ const AREA_TYPES: AssetType[] = ['REAL_ESTATE']
 
 // ── 유틸 ──────────────────────────────────────────────────────
 
-function fmt(n: number, currency = 'KRW') {
-  return new Intl.NumberFormat('ko-KR', {
-    style: 'currency', currency, maximumFractionDigits: 0,
-  }).format(n)
-}
+// 통화 포맷은 `lib/format`의 money를 쓴다 — 여기 있던 사본이 자산 통화를 Intl에 그대로
+// 넘겨 USDT에서 RangeError를 던졌고, 자산 행 map 안이라 페이지 전체가 죽었다 (AF-158).
+const fmt = money
 
 // 숫자만 추출
 function digitsOnly(s: string) {

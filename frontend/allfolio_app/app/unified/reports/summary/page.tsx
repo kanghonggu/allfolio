@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { money } from '@/lib/format'
 import Link from 'next/link'
 import { useReportApi } from '@/lib/useApi'
 import type { TypeBreakdown, TopHolding } from '@/types/report'
@@ -30,9 +31,9 @@ const TOOLTIP_STYLE = {
   color: 'var(--c-ink)',
 } as const
 
-function fmt(n: number, currency = 'KRW') {
-  return new Intl.NumberFormat('ko-KR', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n)
-}
+// 통화 포맷은 `lib/format`의 money를 쓴다. 이 화면들은 오늘 KRW로만 부르지만 `currency`
+// 파라미터가 열려 있어, 넘기는 순간 계좌 상세와 같은 방식으로 죽는다 (AF-158).
+const fmt = money
 function fmtPct(n: number) { return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%` }
 
 export default function SummaryReportPage() {

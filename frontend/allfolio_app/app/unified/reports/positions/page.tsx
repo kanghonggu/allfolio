@@ -9,20 +9,17 @@ import PageHeader from '@/components/ui/PageHeader'
 import Label from '@/components/ui/Label'
 import Num from '@/components/ui/Num'
 import { LoadingState, ErrorState } from '@/components/ui/states'
-import { dirTone, toneText } from '@/lib/format'
+import { dirTone, money, toneText } from '@/lib/format'
 
 const TYPE_KO: Record<string, string> = {
   CRYPTO: '암호화폐', STOCK: '주식', REAL_ESTATE: '부동산',
   VEHICLE: '자동차', GOLD: '금', CASH: '현금', ETC: '기타',
 }
 
-function fmt(n: number, currency = 'KRW') {
-  // KRW는 정수, 그 외 통화는 소수 2자리 — US$0 같은 과반올림 방지 (QA P2)
-  return new Intl.NumberFormat('ko-KR', {
-    style: 'currency', currency,
-    maximumFractionDigits: currency === 'KRW' ? 0 : 2,
-  }).format(n)
-}
+// 통화 포맷은 `lib/format`의 money를 쓴다. 여기도 `p.currency`를 그대로 넘기고 있어
+// USDT 포지션이 있으면 계좌 상세와 같은 방식으로 죽는다 (AF-158).
+// KRW 정수 / 그 외 소수 2자리 규칙(QA P2)은 money가 그대로 이어받았다.
+const fmt = money
 
 type SortKey = 'currentValue' | 'unrealizedPnl' | 'unrealizedPnlPct' | 'purchaseCost'
 
