@@ -2,7 +2,9 @@ package com.allfolio.api.admin
 
 import com.allfolio.dart.DartApiException
 import com.allfolio.dart.DartCollectOrchestrator
+import com.allfolio.dart.DartReclassifyService
 import com.allfolio.dart.DartRunResult
+import com.allfolio.dart.ReclassifyResult
 import com.allfolio.dart.corp.CorpMapSummary
 import com.allfolio.dart.corp.DartCorpMapService
 import org.springframework.format.annotation.DateTimeFormat
@@ -29,6 +31,7 @@ private val KST: ZoneId = ZoneId.of("Asia/Seoul")
 class DartAdminController(
     private val orchestrator: DartCollectOrchestrator,
     private val corpMapService: DartCorpMapService,
+    private val reclassifyService: DartReclassifyService,
 ) {
     @PostMapping("/collect")
     fun collect(
@@ -47,6 +50,22 @@ class DartAdminController(
             throw ResponseStatusException(HttpStatus.BAD_GATEWAY, e.message)
         }
     }
+
+    /**
+     * POST /api/admin/dart/reclassify — 저장된 행을 현재 화이트리스트로 다시 판정 (S13)
+     *
+     * **스케줄러에 노출하지 않는다.** 화이트리스트를 고친 뒤 사람이 한 번 부르는 일회성
+     * 작업이고, 스케줄러가 할 수 있어야 하는 일이 아니다 — `fx/backfill`을 어드민에만 둔
+     * 것과 같은 이유다.
+     *
+     * `apply`의 기본값이 false인 것은 의도다. 파라미터 이름을 틀리거나 빠뜨리면 **아무것도
+     * 쓰지 않고** 전이 표만 돌려준다. 반대로 기본이 true면 오타 한 번이 전 구간을 조용히
+     * 덮어쓴다.
+     */
+    @PostMapping("/reclassify")
+    fun reclassify(
+        @RequestParam(required = false, defaultValue = "false") apply: Boolean,
+    ): ResponseEntity<ReclassifyResult> = ResponseEntity.ok(reclassifyService.run(apply))
 
     @PostMapping("/corp-map/refresh")
     fun refreshCorpMap(): ResponseEntity<CorpMapSummary> =

@@ -12,6 +12,7 @@ import com.allfolio.market.realestate.RtmsCollectService
 import com.allfolio.api.market.MarketQueryController
 import com.allfolio.api.scheduler.SchedulerTriggerController
 import com.allfolio.dart.DartCollectOrchestrator
+import com.allfolio.dart.DartReclassifyService
 import com.allfolio.dart.corp.DartCorpMapService
 import com.allfolio.market.benchmark.BenchmarkIndexProperties
 import com.allfolio.market.benchmark.FscIndexCollectService
@@ -160,6 +161,10 @@ class SecurityConfigAdminTest {
     @MockBean
     private lateinit var dartCorpMapService: DartCorpMapService
 
+    // S13. DartAdminController가 요구한다 — 위 두 개와 같은 함정이다.
+    @MockBean
+    private lateinit var dartReclassifyService: DartReclassifyService
+
     // AF-104. MarketQueryController가 요구한다. 조회 내용은 이 파일의 관심사가 아니라
     // 아래 200 테스트에서 빈 스냅샷 하나만 돌려주게 한다.
     @MockBean
@@ -273,6 +278,13 @@ class SecurityConfigAdminTest {
     @Test
     fun `admin 금리 수집은 토큰 없이 403으로 차단된다`() {
         mockMvc.post("/api/admin/rate/collect")
+            .andExpect { status { isForbidden() } }
+    }
+
+    @Test
+    fun `admin 공시 재분류는 토큰 없이 403으로 차단된다`() {
+        // S13. 저장된 판정을 통째로 덮어쓰는 엔드포인트라 공개되면 안 된다.
+        mockMvc.post("/api/admin/dart/reclassify")
             .andExpect { status { isForbidden() } }
     }
 

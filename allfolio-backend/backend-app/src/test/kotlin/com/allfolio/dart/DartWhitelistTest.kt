@@ -74,4 +74,116 @@ class DartWhitelistTest {
         assertThat(DartWhitelist.isMaterial(5)).isTrue()
         assertThat(DartWhitelist.isMaterial(null)).isFalse()
     }
+
+    // ── S13 튜닝 (2026-09-02) ─────────────────────────────────────
+    // 아래 값은 전부 운영 실측이다. 2026-08-18~09-01 상장사 5,060건.
+
+    @Test
+    fun `행정적 사유로 인한 거래정지는 위험이 아니다`() {
+        // T3 153건 중 87건이 거래정지·상장폐지 키워드였고 그중 47건이 이 부류다.
+        // 액면병합·액면분할·주식병합·전자등록은 결제 사무를 위한 정지지 위험 신호가 아니다.
+        assertThat(tierOf("주권매매거래정지해제              (액면병합 주권 변경상장)")).isNull()
+        assertThat(tierOf("주권매매거래정지              (주식의 병합, 분할 등 전자등록 변경, 말소)")).isNull()
+        assertThat(tierOf("주권매매거래정지해제              (액면분할 주권 변경상장)")).isNull()
+        assertThat(tierOf("주권매매거래정지해제              (주식병합(무액면주식) 주권 변경상장)")).isNull()
+        assertThat(tierOf("주권매매거래정지기간변경              (액면병합 주권 변경상장)")).isNull()
+        assertThat(tierOf("주권매매거래정지해제              (우회상장 미해당)")).isNull()
+    }
+
+    @Test
+    fun `해제라고 안전한 것이 아니다 — 정리매매 개시가 반례다`() {
+        // 🔴 이 테스트가 이 변경의 핵심이다. 원래 코드 주석은 "정지해제는 정지가 풀린 것"이라
+        // 적고 부정형(`해제`)을 걸러내는 방향을 제안했는데, 그렇게 고치면 아래가 사라진다 —
+        // 이 표에서 가장 위험한 사건이다. 가르는 축은 정지/해제가 아니라 괄호 안의 사유다.
+        assertThat(tierOf("주권매매거래정지해제              (상장폐지에 따른 정리매매 개시)")).isEqualTo(3)
+
+        // 정지 쪽도 사유가 위험이면 남는다
+        assertThat(tierOf("주권매매거래정지              (상장폐지 사유발생)")).isEqualTo(3)
+        assertThat(tierOf("주권매매거래정지              (상장적격성 실질심사 대상(사유발생))")).isEqualTo(3)
+        assertThat(tierOf("주권매매거래정지              (투자자 보호)")).isEqualTo(3)
+        assertThat(tierOf("주권매매거래정지기간변경              (개선기간 부여)")).isEqualTo(3)
+        assertThat(tierOf("매매거래정지및정지해제(중요내용공시)")).isEqualTo(3)
+        assertThat(tierOf("기타시장안내              (시가총액 미달에 따른 상장폐지 우려 관련 안내)")).isEqualTo(3)
+    }
+
+    @Test
+    fun `행정적 사유가 있어도 다른 위험 키워드가 있으면 남는다`() {
+        // 🔴 실측에는 없는 조합이라 **일부러 지어낸 이름이다.** 그래도 고정하는 이유는
+        // `isAdministrativeHalt`의 "T3가 된 근거가 거래정지뿐인가" 가드가 이 케이스에만
+        // 걸리기 때문이다 — 이 테스트가 없으면 가드를 통째로 지워도 아무 테스트가 안 죽는다.
+        assertThat(tierOf("주권매매거래정지              (액면병합 주권 변경상장, 횡령ㆍ배임 발생)"))
+            .isEqualTo(3)
+    }
+
+    @Test
+    fun `같은 사건인데 이름만 다른 것을 놓치지 않는다`() {
+        // 화이트리스트에 이미 있는 개념인데 DART가 다른 표현을 써서 빠져 있던 것들.
+        // 취득/처분만 알고 양수/양도를 몰랐다.
+        assertThat(tierOf("주요사항보고서(타법인주식및출자증권양수결정)")).isEqualTo(1)
+        assertThat(tierOf("주요사항보고서(타법인주식및출자증권양도결정)")).isEqualTo(1)
+        assertThat(tierOf("타법인주식및출자증권처분결정")).isEqualTo(1)
+        assertThat(tierOf("주요사항보고서(유형자산양수결정)")).isEqualTo(1)
+        assertThat(tierOf("주요사항보고서(유형자산양도결정)")).isEqualTo(1)
+
+        // 신청만 알고 결정을 몰랐다 — 결정이 더 중대한데 빠져 있었다
+        assertThat(tierOf("회생절차개시결정")).isEqualTo(3)
+        assertThat(tierOf("회생절차개시신청")).isEqualTo(3)
+
+        // 제기·신청만 알고 판결·결정을 몰랐다
+        assertThat(tierOf("소송등의판결ㆍ결정")).isEqualTo(3)
+        assertThat(tierOf("소송등의판결ㆍ결정(일정금액이상의청구)")).isEqualTo(3)
+    }
+
+    @Test
+    fun `빠져 있던 카테고리를 넣는다`() {
+        assertThat(tierOf("공개매수신고서")).isEqualTo(1)
+        assertThat(tierOf("공개매수설명서")).isEqualTo(1)
+        // T2가 `매출액또는손익구조`만 봐서 잠정실적이 통째로 빠져 있었다
+        assertThat(tierOf("영업(잠정)실적(공정공시)")).isEqualTo(2)
+        // 우발채무 — 실측 83건으로 걸러진 것 중 손에 꼽는 규모다
+        assertThat(tierOf("타인에대한채무보증결정")).isEqualTo(3)
+        assertThat(tierOf("타인에대한채무보증결정(자회사의 주요경영사항)")).isEqualTo(3)
+        assertThat(tierOf("타인에대한담보제공결정")).isEqualTo(3)
+        assertThat(tierOf("파생상품거래손실발생")).isEqualTo(3)
+        assertThat(tierOf("투자유의안내")).isEqualTo(3)
+        // T3에 `조회공시요구`는 있는데 그 답이 아닌 자발적 해명은 빠져 있었다
+        assertThat(tierOf("풍문또는보도에대한해명(미확정)")).isEqualTo(3)
+    }
+
+    @Test
+    fun `Tier 6은 지분공시다 — 정보 가치는 있고 주가 직결은 아니다`() {
+        assertThat(tierOf("주식등의대량보유상황보고서(일반)")).isEqualTo(6)
+        assertThat(tierOf("주식등의대량보유상황보고서(약식)")).isEqualTo(6)
+        assertThat(tierOf("최대주주등소유주식변동신고서")).isEqualTo(6)
+        // 사전공시제도 — 임원이 팔 계획을 미리 알린다. 사후 보고서(T4)와 다른 서류다
+        assertThat(tierOf("임원ㆍ주요주주특정증권등거래계획보고서")).isEqualTo(6)
+        assertThat(tierOf("임원ㆍ주요주주특정증권등거래계획철회보고서")).isEqualTo(6)
+    }
+
+    @Test
+    fun `거래계획보고서가 elestock 트리거를 훔치면 안 된다`() {
+        // 🔴 T4는 단순 분류가 아니라 elestock 호출 대상을 가리는 게이트다(TIER_INSIDER).
+        // 거래계획보고서를 T4에 넣었으면 elestock에 없는 건으로 호출이 나갔을 것이다.
+        assertThat(tierOf("임원ㆍ주요주주특정증권등소유상황보고서")).isEqualTo(DartWhitelist.TIER_INSIDER)
+        assertThat(tierOf("임원ㆍ주요주주특정증권등거래계획보고서"))
+            .isNotEqualTo(DartWhitelist.TIER_INSIDER)
+    }
+
+    @Test
+    fun `최대주주변경과 최대주주등소유주식변동신고서는 다른 사건이다`() {
+        // 앞은 지배주주가 바뀐 것(T1), 뒤는 지분만 움직인 것(T6). 키워드가 서로를 삼키면 안 된다.
+        assertThat(tierOf("최대주주변경")).isEqualTo(1)
+        assertThat(tierOf("최대주주등소유주식변동신고서")).isEqualTo(6)
+    }
+
+    @Test
+    fun `튜닝 뒤에도 걸러낼 것은 걸러낸다`() {
+        // 실측 미적중 상위. 넣은 키워드가 이웃까지 빨아들이지 않았는지 본다.
+        assertThat(tierOf("대규모기업집단현황공시[분기별공시(개별회사용)]")).isNull()
+        assertThat(tierOf("투자설명서(일괄신고)")).isNull()
+        assertThat(tierOf("일괄신고추가서류(파생결합사채-주가연계파생결합사채)")).isNull()
+        assertThat(tierOf("주주명부폐쇄기간또는기준일설정")).isNull()
+        assertThat(tierOf("의결권대리행사권유참고서류")).isNull()
+        assertThat(tierOf("증권신고서(지분증권)")).isNull()
+    }
 }
