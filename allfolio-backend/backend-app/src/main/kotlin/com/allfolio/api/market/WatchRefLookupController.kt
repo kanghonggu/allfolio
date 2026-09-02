@@ -61,8 +61,10 @@ class WatchRefLookupController(
         return ResponseEntity.ok(
             WatchRefLookupView(
                 found = true,
-                // 🔴 **서버가 정규화한 값이다.** 화면은 이 값을 자산의 symbol에 넣어야 한다 —
-                // 사용자가 친 문자열을 넣으면 평가 배치가 못 찾는다.
+                // 🔴 **서버가 매칭에 쓴 키다. 정규화된 값이라는 뜻이 아니다** — 실측
+                // (2026-09-02) 상류는 입력을 그대로 되울린다(`116238 CHSJ` → `116238 CHSJ`).
+                // 그래도 이 값을 저장하는 이유는 그것이 조회에 실제로 쓰인 키이고, 상류가
+                // 나중에 정규화를 하게 되면 자동으로 따라가기 때문이다.
                 ref = v.refKey ?: v.ref ?: trimmed,
                 sampleSize = v.sampleSize,
                 medianKrw = v.median,

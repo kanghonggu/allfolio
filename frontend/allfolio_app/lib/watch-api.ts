@@ -11,10 +11,11 @@ const BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:80
 export interface WatchRefLookup {
   found: boolean
   /**
-   * 🔴 **서버가 정규화한 ref다. 사용자가 친 문자열이 아니다.**
+   * 🔴 **서버가 매칭에 쓴 키다 — "정규화된 값"이 아니다.**
    *
-   * 이 값을 `asset.symbol`에 넣어야 한다 — 친 값을 그대로 넣으면 평가 배치가 못 찾는다.
-   * R2가 단지일련번호로 막았던 불일치를 여기서는 이 필드가 막는다.
+   * 실측(2026-09-02) 상류는 입력을 그대로 되울린다(`116238 CHSJ` → `116238 CHSJ`).
+   * 그래도 이 값을 `asset.symbol`에 넣는 이유는 그것이 조회에 실제로 쓰인 키이고,
+   * 상류가 나중에 정규화를 하게 되면 자동으로 따라가기 때문이다.
    */
   ref?: string
   sampleSize?: number
