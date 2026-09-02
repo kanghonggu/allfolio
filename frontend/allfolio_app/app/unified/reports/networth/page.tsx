@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { money } from '@/lib/format'
 import Link from 'next/link'
@@ -39,8 +40,30 @@ function fmtShort(n: number) {
   return n.toLocaleString('ko-KR')
 }
 
+/**
+ * 축 상한 후보 — 상위 10%를 뺀 최대값. **한 점짜리 튐은 잘리고, 지속되는 계단은 안 잘린다.**
+ *
+ * 이 구분이 이 함수의 존재 이유다. 3,800만 포트폴리오에 33억 아파트를 등록하면 100배
+ * 계단이 생기는데, 그건 이 제품에서 **정상적으로 나오는 모양**이라 숨기면 안 된다. 등록
+ * 이후로 계속 높은 값이면 그 점들이 상위 10%를 넘어 상한 안으로 들어온다. 반대로 하루만
+ * 튄 값(검증용 자산을 넣었다 지운 2026-08-23 같은)은 잘린다.
+ */
+function robustMax(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b)
+  return sorted[Math.min(Math.floor(sorted.length * 0.9), sorted.length - 1)]
+}
+
+/**
+ * 이 배수를 넘어야 축을 제한한다. 어지간한 등락에는 손대지 않는다 —
+ * 축을 건드리는 건 값을 감추는 일이라 값어치가 분명할 때만 한다.
+ */
+const CLIP_TRIGGER = 10
+
 export default function NetWorthPage() {
   const reportApi = useReportApi()
+  // **조기 반환보다 위에 있어야 한다** — 아래 isLoading/isError 분기 뒤에 두면 렌더마다
+  // 훅 개수가 달라져 React가 순서를 잃는다.
+  const [fullRange, setFullRange] = useState(false)
   const { data, isLoading, isError } = useQuery({
     queryKey: ['report', 'networth'],
     queryFn: () => reportApi!.networth(),
@@ -58,6 +81,12 @@ export default function NetWorthPage() {
     date: p.date,
     nav: Number(p.nav),
   }))
+
+  const navs = chartData.map((d) => d.nav)
+  const cap = navs.length >= 2 ? Math.ceil(robustMax(navs) * 1.1) : 0
+  // 상한을 넘는 점들. 비어 있으면 축을 건드릴 이유가 없다.
+  const outliers = cap > 0 ? chartData.filter((d) => d.nav > cap * CLIP_TRIGGER) : []
+  const clipping = outliers.length > 0 && !fullRange
 
   const toneByType = new Map(data.byType.map((b: NetWorthBreakdown, i: number) => [b.type, TONES[i % TONES.length]]))
 
@@ -104,12 +133,46 @@ export default function NetWorthPage() {
         {/* 순자산 추이 차트 */}
         <section className="mt-8">
           <SectionHeader label="총 자산(NAV) 추이" />
+
+          {/* 극단값이 있을 때만 나온다 — 평소에는 축 선택지를 보일 이유가 없다 */}
+          {outliers.length > 0 && (
+            <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+              <div className="flex gap-2">
+                {([['축 제한', false], ['전체 범위', true]] as const).map(([label, on]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setFullRange(on)}
+                    className={`border px-3 py-1 font-mono text-[10px] tracking-label transition-colors ${
+                      fullRange === on
+                        ? 'border-ink bg-ink text-white'
+                        : 'border-line bg-surface text-fg-3 hover:border-ink hover:text-ink'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {/* 잘린 값을 숨기지 않는다 — 날짜와 금액을 그대로 적는다 */}
+              <p className="text-[11px] text-fg-faint">
+                {clipping
+                  ? `축 상한 ₩${fmtShort(cap)} 밖 ${outliers.length}건: `
+                    + outliers.map((o) => `${o.date} ₩${fmtShort(o.nav)}`).join(' · ')
+                  : `극단값 ${outliers.length}건이 눈금을 차지해 나머지가 바닥선에 눌립니다.`}
+              </p>
+            </div>
+          )}
+
           {chartData.length >= 2 ? (
             <ResponsiveContainer width="100%" height={280}>
               <AreaChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--c-line)" />
                 <XAxis dataKey="date" tick={TICK} tickLine={false} axisLine={{ stroke: 'var(--c-line)' }} />
                 <YAxis
+                  // 축 종류(선형)는 그대로 두고 범위만 좁힌다. `allowDataOverflow`가
+                  // 없으면 recharts가 domain을 무시하고 데이터에 맞춰 늘려 버린다.
+                  domain={clipping ? [0, cap] : undefined}
+                  allowDataOverflow={clipping}
                   tickFormatter={(v) => `₩${fmtShort(v)}`}
                   tick={TICK}
                   tickLine={false}
