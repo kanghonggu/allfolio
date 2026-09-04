@@ -45,7 +45,7 @@ import { money } from '@/lib/format'
 export default function WatchRefLookup({
   onConfirm,
 }: {
-  /** 확인된 ref. **서버 정규화 값이다** */
+  /** 확인된 ref. **서버가 매칭에 쓴 키다 — 정규화 값이 아니다**(위 KDoc 표 참고) */
   onConfirm: (ref: string) => void
 }) {
   const api = useWatchApi()
