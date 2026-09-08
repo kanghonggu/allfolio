@@ -58,15 +58,23 @@ class SyncAccountUseCase(
 
     @Transactional
     override fun execute(accountId: UUID, trigger: SyncTrigger): SyncResult {
+        // 계좌를 찾는 단계의 실패도 `ua_sync_logs`에 남긴다 (AF-193). 여기서 끝나는 경로는
+        // `record()`를 못 부른다 — 그건 Account 객체를 요구하는데 아직(또는 영영) 없다.
+        // 그래서 accountId만으로 기록하는 [recordLookupFailure]를 쓴다.
         val account = try {
             accountRepository.findById(accountId)
         } catch (e: RuntimeException) {
             if (e.requiresSensitiveDataReconnection()) {
                 runCatching { accountRepository.updateStatus(accountId, AccountStatus.ERROR) }
+                recordLookupFailure(accountId, trigger, SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE)
                 return SyncResult(accountId, 0, AccountStatus.ERROR, SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE)
             }
+            // 뒤로 던지기 전에 남긴다. 이 경로는 DailyAccountSyncer.onFailure가 받아
+            // **서버 로그에만** 찍고 끝나서, 화면에서는 "한 번도 동기화되지 않음"과 구별이 안 됐다.
+            recordLookupFailure(accountId, trigger, e.message ?: e.javaClass.simpleName)
             throw e
         } ?: return SyncResult(accountId, 0, AccountStatus.ERROR, "Account not found")
+            .also { recordLookupFailure(accountId, trigger, it.error) }
 
         val adapter = adapterMap[account.provider]
             ?: return SyncResult(accountId, 0, AccountStatus.ERROR, "No adapter for ${account.provider}")
@@ -137,6 +145,34 @@ class SyncAccountUseCase(
         } finally {
             reconMutex.release(account.userId, lockToken)
         }
+    }
+
+    /**
+     * 계좌 조회 단계의 실패를 남긴다 (AF-193).
+     *
+     * [record]와 달리 `Account`가 없다. `ua_sync_logs.user_id`가 NOT NULL이라 소유자만은
+     * 있어야 하는데, 이 경로의 실패는 대개 **복호화 실패**라 `findById`로는 못 얻는다.
+     * 그래서 컬럼 하나만 읽는 [AccountRepository.findUserId]를 쓴다.
+     *
+     * ## 🔴 소유자를 모르면 남기지 않는다
+     *
+     * 계좌 행 자체가 없는 경우(`Account not found`)가 그렇다. `user_id`를 지어낼 수 없고,
+     * 스키마를 바꾸지 않기로 한 범위라 여기서는 경고 로그로 끝낸다. **없는 계좌의 동기화
+     * 이력을 남기려면 컬럼을 nullable로 바꾸는 결정이 먼저다.**
+     *
+     * 기록 실패가 동기화를 막지 않게 [runCatching]으로 격리한다 — `record`와 같은 판단이다.
+     */
+    private fun recordLookupFailure(accountId: UUID, trigger: SyncTrigger, error: String?) {
+        val userId = runCatching { accountRepository.findUserId(accountId) }.getOrNull()
+        if (userId == null) {
+            log.warn("동기화 실패를 기록하지 못했다 — 소유자를 알 수 없다 accountId={} error={}", accountId, error)
+            return
+        }
+        runCatching {
+            syncLogRepository.save(
+                SyncLog.create(accountId, userId, trigger, SyncLogStatus.ERROR, 0, error),
+            )
+        }.onFailure { log.warn("동기화 로그 저장 실패 accountId={}", accountId, it) }
     }
 
     /**
