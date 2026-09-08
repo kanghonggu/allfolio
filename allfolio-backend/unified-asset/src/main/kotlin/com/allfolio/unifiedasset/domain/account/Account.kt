@@ -30,7 +30,14 @@ class Account private constructor(
      * 없앤다 — 읽는 쪽 `atOffset(ZoneOffset.UTC)`가 이 전제 위에 서 있다.
      */
     fun completeSync(): Account = copy(status = AccountStatus.ACTIVE, lastSyncedAt = LocalDateTime.now(ZoneOffset.UTC))
-    fun failSync(reason: String): Account = copy(status = AccountStatus.ERROR)
+
+    // `failSync(reason: String)`이 여기 있었다. 인자를 **받기만 하고 버렸고** 호출자도 없었다
+    // (AF-192, 2026-09-08 전수 확인). 사유를 받는 시그니처는 "여기에 저장할 작정이었다"는
+    // 흔적이라 읽는 사람을 속인다 — 어딘가 남는다고 믿게 된다.
+    //
+    // **실패 사유는 `ua_sync_logs.error_message`에 남는다**(AF-193). 계좌 상태만 바꿀 때는
+    // `AccountRepository.updateStatus(id, ERROR)`를 쓴다. 실패를 기록하고 싶으면
+    // `SyncAccountUseCase.record`/`recordLookupFailure`가 그 자리다.
 
     private fun copy(
         status: AccountStatus = this.status,
