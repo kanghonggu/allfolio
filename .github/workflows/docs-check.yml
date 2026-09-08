@@ -1,0 +1,29 @@
+name: Docs Check
+
+# README의 화면 목록이 실제 라우트와 어긋나는 걸 막는다.
+#
+# 2026-09-08 실측에서 README는 15개, 실제는 53개였다(마지막 수정 2026-07-13). 목록을 한 번
+# 맞추는 것만으로는 또 어긋난다 — 페이지를 더하는 사람이 README를 기억해야 하기 때문이다.
+# **기억 대신 검사를 둔다.**
+#
+# 백엔드 검증(deploy.yml)과 분리해 둔다. 이 검사는 JDK도 gradle도 필요 없고, 프론트만
+# 건드린 PR에서 백엔드 빌드를 기다릴 이유가 없다.
+
+on:
+  pull_request:
+    paths:
+      - 'README.md'
+      - 'frontend/allfolio_app/app/**'
+  push:
+    branches: [main]
+    paths:
+      - 'README.md'
+      - 'frontend/allfolio_app/app/**'
+
+jobs:
+  routes:
+    name: README 화면 목록
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: python3 .github/scripts/check_readme_routes.py
