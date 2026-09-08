@@ -214,22 +214,95 @@ GET    /api/portfolios/{id}/positions
 
 ## 프론트엔드 페이지
 
+실제 라우트는 **53개**다(`app/**/page.tsx` 기준). 아래는 전수 목록이다 — 예전에는 15개만
+적혀 있어서 문서만 보면 절반 이상의 화면이 없는 것처럼 보였다.
+
+### 진입
+
 ```
 /                                      # 랜딩 (로그인 시 /unified 리다이렉트)
 /login                                 # 로그인 / 회원가입
+```
+
+### 통합 자산
+
+```
 /unified                               # 통합 자산 대시보드 (KPI 카드, 자산 요약)
-/unified/accounts                      # 계좌 목록
+/unified/accounts                      # 연결 계좌 목록
 /unified/accounts/new                  # 계좌 추가
+/unified/accounts/sync                 # 동기화 상태
 /unified/accounts/{id}                 # 계좌 상세 (자산별 매입가·현재가·수익률)
-/unified/accounts/{id}/trades          # 국내주식 거래내역 (종목 자동완성)
+/unified/accounts/{id}/trades          # 거래내역 (종목 자동완성)
 /unified/accounts/{id}/csv             # CSV 일괄 임포트
+```
+
+### 보고서 — 화면형
+
+```
 /unified/reports                       # 보고서 허브
 /unified/reports/summary               # 포트폴리오 요약
 /unified/reports/allocation            # 자산 배분 (파이차트, HHI)
 /unified/reports/performance           # 수익률 분석 (기간별, 시계열)
-/unified/reports/risk                  # 리스크 지표 (VaR, MDD, Sharpe)
+/unified/reports/returns               # 수익률 보고서 (TWR·MWR)
+/unified/reports/risk                  # 리스크 분석 (VaR, MDD, Sharpe)
 /unified/reports/positions             # 포지션 & 손익
+/unified/reports/networth              # 순자산 추이
 /unified/reports/benchmark             # 벤치마크 비교 (S&P 500, BTC, KOSPI)
+/unified/reports/monthly               # 월별 손익 정산
+/unified/reports/dividend              # 배당금 보고서
+/unified/reports/tax                   # 세금 계산기
+/unified/reports/esg                   # ESG 점수
+/unified/reports/esg-screening         # ESG 스크리닝
+/unified/reports/esg-screening/lists   # 스크리닝 목록
+/unified/reports/esg-screening/{id}    # 스크리닝 상세
+```
+
+### 보고서 — 문서형 (생성 → 목록 → 상세)
+
+기관 리포트 형식으로 **발행**되는 보고서다. 목록에서 만들고 `{id}`로 열어 본다.
+
+```
+/unified/reports/monthly-report        /unified/reports/monthly-report/{id}     # 월간 운용보고서
+/unified/reports/holdings-report       /unified/reports/holdings-report/{id}    # 월말 보유 명세서
+/unified/reports/dividend-report       /unified/reports/dividend-report/{id}    # 배당·이자 보고서
+/unified/reports/cashflow-report       /unified/reports/cashflow-report/{id}    # 현금흐름 보고서
+/unified/reports/cost-report           /unified/reports/cost-report/{id}        # 비용 보고서
+```
+
+### 도구·시장
+
+```
+/unified/market                        # 시장 (지수 · 환율 · 금리 · 원자재)
+/unified/disclosures                   # 공시 (최근 30일)
+/unified/cashflow                      # 현금흐름 기록
+/unified/goals                         # 목표 달성 트래커
+/unified/simulator                     # 투자 시뮬레이터
+/unified/advisor                       # AI 금융 상담사
+/unified/settings/ai                   # AI 상담사 설정
+/unified/recon                         # 대사 실행 이력
+```
+
+### 관리자
+
+```
+/unified/admin                         # 관리자 콘솔
+/unified/admin/ops                     # 운영 모니터링
+/unified/admin/closing                 # 마감 워크플로우
+/unified/admin/closing/define          # 워크플로우 정의 관리
+/unified/admin/tax-rates               # 원천징수 세율 마스터
+/unified/admin/exclusion-presets       # 배제 프리셋
+```
+
+### 통합 이전 화면
+
+`/unified` 도입 전부터 있던 라우트다. **`/auth/signin`과 `/portfolio/{id}`는 코드 어디에서도
+링크되지 않는다**(전수 grep) — 지우기 전에 북마크·외부 링크가 있는지만 확인할 것.
+
+```
+/register                              # 회원가입
+/trades                                # 거래 내역
+/auth/signin                           # (링크 없음)
+/portfolio/{id}                        # (링크 없음)
 ```
 
 ---
