@@ -18,6 +18,9 @@ class AccountRepositoryImpl(private val jpa: AccountJpaRepository) : AccountRepo
     override fun findById(id: UUID): Account? =
         jpa.findById(id).orElse(null)?.toDomain()
 
+    /** 🔴 기본 구현(findById 경유)을 쓰면 안 된다 — 복호화 실패 시 null이 된다. AF-193 */
+    override fun findUserId(id: UUID): UUID? = jpa.findUserIdById(id)
+
     override fun findByUserId(userId: UUID): List<Account> =
         jpa.findByUserId(userId).map { it.toDomain() }
 
