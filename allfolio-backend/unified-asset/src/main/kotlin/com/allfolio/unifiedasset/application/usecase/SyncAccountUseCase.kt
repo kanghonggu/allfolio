@@ -71,7 +71,11 @@ class SyncAccountUseCase(
             }
             // 뒤로 던지기 전에 남긴다. 이 경로는 DailyAccountSyncer.onFailure가 받아
             // **서버 로그에만** 찍고 끝나서, 화면에서는 "한 번도 동기화되지 않음"과 구별이 안 됐다.
-            recordLookupFailure(accountId, trigger, e.message ?: e.javaClass.simpleName)
+            //
+            // 여기만 `isolated = true`다. 이 메서드는 `@Transactional`이고 아래에서 예외를
+            // 그대로 되던지므로, 같은 트랜잭션에 쓴 이력은 프록시가 롤백할 때 함께 사라진다
+            // (AF-196). 다른 두 경로는 정상 return이라 커밋되므로 그대로 둔다.
+            recordLookupFailure(accountId, trigger, e.message ?: e.javaClass.simpleName, isolated = true)
             throw e
         } ?: return SyncResult(accountId, 0, AccountStatus.ERROR, "Account not found")
             .also { recordLookupFailure(accountId, trigger, it.error) }
@@ -161,17 +165,28 @@ class SyncAccountUseCase(
      * 이력을 남기려면 컬럼을 nullable로 바꾸는 결정이 먼저다.**
      *
      * 기록 실패가 동기화를 막지 않게 [runCatching]으로 격리한다 — `record`와 같은 판단이다.
+     *
+     * ## [isolated]는 되던지는 경로 전용이다
+     *
+     * `execute`는 `@Transactional`이라, 예외가 그대로 밖으로 나가면 프록시가 롤백하고
+     * **방금 쓴 이력도 같이 사라진다.** 그 경로만 [SyncLogRepository.saveIsolated]로 새
+     * 트랜잭션에 쓴다. 정상 return하는 경로는 바깥이 커밋되므로 [SyncLogRepository.save]
+     * 그대로 — 굳이 나누면 계좌 상태 갱신과 이력이 다른 트랜잭션으로 갈라진다 (AF-196).
      */
-    private fun recordLookupFailure(accountId: UUID, trigger: SyncTrigger, error: String?) {
+    private fun recordLookupFailure(
+        accountId: UUID,
+        trigger: SyncTrigger,
+        error: String?,
+        isolated: Boolean = false,
+    ) {
         val userId = runCatching { accountRepository.findUserId(accountId) }.getOrNull()
         if (userId == null) {
             log.warn("동기화 실패를 기록하지 못했다 — 소유자를 알 수 없다 accountId={} error={}", accountId, error)
             return
         }
+        val entry = SyncLog.create(accountId, userId, trigger, SyncLogStatus.ERROR, 0, error)
         runCatching {
-            syncLogRepository.save(
-                SyncLog.create(accountId, userId, trigger, SyncLogStatus.ERROR, 0, error),
-            )
+            if (isolated) syncLogRepository.saveIsolated(entry) else syncLogRepository.save(entry)
         }.onFailure { log.warn("동기화 로그 저장 실패 accountId={}", accountId, it) }
     }
 
