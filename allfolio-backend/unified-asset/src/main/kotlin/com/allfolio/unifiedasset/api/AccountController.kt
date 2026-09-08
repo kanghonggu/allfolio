@@ -8,6 +8,8 @@ import com.allfolio.unifiedasset.application.port.StockTradeRepository
 import com.allfolio.unifiedasset.application.port.SyncLogRepository
 import com.allfolio.unifiedasset.application.usecase.*
 import com.allfolio.unifiedasset.domain.account.*
+import com.allfolio.unifiedasset.domain.sync.SyncLog
+import com.allfolio.unifiedasset.domain.sync.SyncLogStatus
 import com.allfolio.unifiedasset.domain.sync.SyncTrigger
 import com.allfolio.unifiedasset.domain.asset.Asset
 import jakarta.validation.Valid
@@ -63,6 +65,19 @@ data class AccountResponse(
     val brokerage: String?,
     /** 마스킹된 계좌번호 (예: 4485****_01). 원문은 응답에 싣지 않는다 (QA P2) */
     val accountNumber: String?,
+    /**
+     * 마지막 동기화가 **실패였을 때만** 그 사유 (AF-194).
+     *
+     * `status`는 계좌가 ERROR라는 것까지만 말한다. 왜 실패했는지는 `ua_sync_logs`에만 있었고
+     * `/sync-status`를 따로 불러야 보였다 — 목록 화면은 그걸 안 부른다.
+     *
+     * **가장 최근 로그가 SUCCESS면 null이다.** 지난 실패 사유를 계속 달고 있으면 복구된
+     * 계좌가 영원히 고장 난 것처럼 보인다.
+     *
+     * 새 컬럼(`ua_accounts.last_sync_error`)을 만들지 않았다 — 비정규화 사본을 늘리고
+     * 스키마 변경을 부른다. 읽기 경로로 해결된다.
+     */
+    val lastSyncError: String?,
 )
 
 data class CreateManualAssetRequest(
@@ -175,8 +190,18 @@ class AccountController(
     }
 
     @GetMapping
-    fun list(@RequestHeader("X-User-Id") userId: UUID): List<AccountResponse> =
-        accountRepository.findByUserId(userId).map { it.toResponse() }
+    fun list(@RequestHeader("X-User-Id") userId: UUID): List<AccountResponse> {
+        // 🔴 계좌마다 로그를 읽으면 N+1이다. 계좌별 최신 로그를 **한 번에** 받아 매핑한다
+        // (`findLatestPerAccountByUserId`가 질의 하나다). AF-194.
+        val latest = syncLogRepository.findLatestByUserId(userId)
+        return accountRepository.findByUserId(userId).map { account ->
+            account.toResponse(lastSyncError = latest[account.id]?.lastError())
+        }
+    }
+
+    /** 성공으로 끝난 로그는 사유가 없다 — 복구된 계좌가 옛 실패를 계속 달고 있으면 안 된다. */
+    private fun SyncLog.lastError(): String? =
+        errorMessage?.takeIf { status == SyncLogStatus.ERROR }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -402,7 +427,11 @@ class AccountController(
 
     // ── Helpers ──
 
-    private fun Account.toResponse() = AccountResponse(
+    /**
+     * @param lastSyncError 마지막 동기화가 실패였을 때의 사유 (AF-194). 목록 경로만 채운다 —
+     *   단건 응답은 방금 만든/동기화한 계좌라 최신 로그를 다시 읽을 이유가 없다.
+     */
+    private fun Account.toResponse(lastSyncError: String? = null) = AccountResponse(
         id           = id,
         userId       = userId,
         provider     = provider.name,
@@ -416,6 +445,7 @@ class AccountController(
         accountNumber = externalId
             ?.takeIf { com.allfolio.unifiedasset.domain.common.isAccountNumberLike(it) }
             ?.let { com.allfolio.unifiedasset.domain.common.maskAccountNumber(it) },
+        lastSyncError = lastSyncError,
     )
 
     private fun StockTrade.toResponse() = StockTradeResponse(
