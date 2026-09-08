@@ -215,21 +215,74 @@ GET    /api/portfolios/{id}/positions
 ## 프론트엔드 페이지
 
 ```
-/                                      # 랜딩 (로그인 시 /unified 리다이렉트)
-/login                                 # 로그인 / 회원가입
-/unified                               # 통합 자산 대시보드 (KPI 카드, 자산 요약)
-/unified/accounts                      # 계좌 목록
-/unified/accounts/new                  # 계좌 추가
-/unified/accounts/{id}                 # 계좌 상세 (자산별 매입가·현재가·수익률)
-/unified/accounts/{id}/trades          # 국내주식 거래내역 (종목 자동완성)
-/unified/accounts/{id}/csv             # CSV 일괄 임포트
-/unified/reports                       # 보고서 허브
-/unified/reports/summary               # 포트폴리오 요약
-/unified/reports/allocation            # 자산 배분 (파이차트, HHI)
-/unified/reports/performance           # 수익률 분석 (기간별, 시계열)
-/unified/reports/risk                  # 리스크 지표 (VaR, MDD, Sharpe)
-/unified/reports/positions             # 포지션 & 손익
-/unified/reports/benchmark             # 벤치마크 비교 (S&P 500, BTC, KOSPI)
+# 공개 · 인증
+/                                          # 랜딩 (서비스 소개 · 로그인 시 /unified 리다이렉트)
+/login                                     # 로그인
+/register                                  # 회원가입
+/auth/signin                               # 레거시 로그인 경로 — /login 으로 리다이렉트만 한다
+
+# 통합 자산 (메인 동선)
+/unified                                   # 통합 자산 · 원장 요약 대시보드 (NAV, 자산군·계좌별 집계)
+/unified/accounts                          # 연결 계좌 목록
+/unified/accounts/new                      # 계좌 추가 (증권사·거래소 연동 또는 수기 계좌)
+/unified/accounts/sync                     # 계좌별 동기화 상태 · 수동 동기화 실행
+/unified/accounts/{id}                     # 계좌 상세 (보유 자산, 수기 자산 등록·수정)
+/unified/accounts/{id}/trades              # 계좌 거래내역 조회·입력 (종목 자동완성)
+/unified/accounts/{id}/csv                 # CSV 거래 일괄 임포트
+/unified/market                            # 시장 (국내·해외 지수, 환율, 금리, 원자재 탭)
+/unified/cashflow                          # 현금흐름 기록 (계좌 간 이체·환전 입력)
+/unified/disclosures                       # 보유 종목 공시 (최근 30일)
+/unified/goals                             # 목표 달성 트래커 (은퇴·주택·교육 등 목표별 진척)
+/unified/recon                             # 대사 · 검증 (기관 원장 대비 정합성 검사, 알려진 차이 관리)
+/unified/simulator                         # 투자 시뮬레이터 (적립·수익률 가정 기반 미래 자산)
+/unified/advisor                           # AI 금융 상담사 (포트폴리오 기반 대화)
+/unified/settings/ai                       # AI 상담사 설정 (모델·투자성향·응답 톤)
+
+# 보고서 — 허브
+/unified/reports                           # 보고서 허브 (기본·기관급·도구 보고서 목록)
+
+# 보고서 — 기본 (B: 스냅샷 기반 자동 산출)
+/unified/reports/summary                   # B-01 포트폴리오 요약 (NAV·취득원가·평가손익)
+/unified/reports/performance               # B-02 수익률 분석 (기간별·시계열)
+/unified/reports/allocation                # B-03 자산 배분 (자산군·통화 비중, HHI)
+/unified/reports/risk                      # B-04 리스크 분석 (변동성, VaR95, MDD, 샤프)
+/unified/reports/positions                 # B-05 포지션 & 손익
+/unified/reports/benchmark                 # B-06 벤치마크 비교 (KOSPI, S&P 500, BTC)
+/unified/reports/networth                  # B-07 순자산 추이 (일별 스냅샷 시계열)
+/unified/reports/monthly                   # B-08 월별 손익 정산
+/unified/reports/dividend                  # B-09 배당금 보고서 (수취 내역 집계)
+/unified/reports/esg                       # B-10 ESG 점수 (보유 종목 가중 평균)
+
+# 보고서 — 기관급 (R: 월말 확정 후 재산출 · PDF 출력)
+/unified/reports/monthly-report            # R-01 월간 운용보고서 아카이브 목록
+/unified/reports/monthly-report/{id}       # R-01 월간 운용보고서 상세
+/unified/reports/returns                   # R-02 수익률 보고서 (TWR·MWR, 입출금 효과 분해)
+/unified/reports/dividend-report           # R-03 배당·이자 보고서 아카이브 목록
+/unified/reports/dividend-report/{id}      # R-03 배당·이자 보고서 상세
+/unified/reports/cost-report               # R-04 비용 보고서 아카이브 목록
+/unified/reports/cost-report/{id}          # R-04 비용 보고서 상세 (유형·브로커별 비용)
+/unified/reports/holdings-report           # R-05 월말 보유 명세서 아카이브 목록
+/unified/reports/holdings-report/{id}      # R-05 월말 보유 명세서 상세
+/unified/reports/cashflow-report           # R-06 현금흐름 보고서 아카이브 목록
+/unified/reports/cashflow-report/{id}      # R-06 현금흐름 보고서 상세 (잔액 대사 포함)
+/unified/reports/esg-screening             # R-07 ESG 스크리닝 아카이브 목록
+/unified/reports/esg-screening/{id}        # R-07 ESG 스크리닝 상세 (위반 내역·이력)
+/unified/reports/esg-screening/lists       # R-07 배제리스트 관리
+
+# 보고서 — 도구
+/unified/reports/tax                       # T-01 세금 계산기 (2026 현행 세법 기준)
+
+# 관리자 콘솔
+/unified/admin                             # 관리자 콘솔 홈
+/unified/admin/closing                     # 월말 마감 워크플로우 실행·재작업 이력
+/unified/admin/closing/define              # 마감 워크플로우 정의 관리
+/unified/admin/exclusion-presets           # 배제 프리셋 (ESG 스크리닝 기준 집합)
+/unified/admin/ops                         # 운영 모니터링 (대기·데드 항목, 수집 잡)
+/unified/admin/tax-rates                   # 원천징수 세율 마스터
+
+# 레거시 (단일 포트폴리오 시절 화면 — 통합 동선에서는 링크되지 않음)
+/portfolio/{id}                            # 포트폴리오 상세 (요약·포지션·자산배분)
+/trades                                    # 거래 내역 (기본 포트폴리오 고정)
 ```
 
 ---
