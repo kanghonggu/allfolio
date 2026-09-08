@@ -58,9 +58,13 @@ class SyncAccountUseCaseSensitiveDataTest {
 
     private class ThrowingAccountRepository(
         private val exception: RuntimeException,
+        private val ownerId: UUID = UUID.randomUUID(),
     ) : AccountRepository {
         override fun save(account: Account): Account = account
         override fun findById(id: UUID): Account? = throw exception
+
+        /** 프로젝션은 복호화를 타지 않아 살아남는다 — 운영 구현과 같은 모양 (AF-193). */
+        override fun findUserIdById(id: UUID): UUID? = ownerId
         override fun findByUserId(userId: UUID): List<Account> = emptyList()
         override fun findByProviders(providers: Collection<AccountProvider>): List<Account> = emptyList()
         override fun delete(id: UUID) = Unit

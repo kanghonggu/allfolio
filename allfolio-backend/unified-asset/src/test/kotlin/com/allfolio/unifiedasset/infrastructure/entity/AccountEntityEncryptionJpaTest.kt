@@ -11,6 +11,7 @@ import jakarta.persistence.EntityManager
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -91,6 +92,49 @@ class AccountEntityEncryptionJpaTest {
         }
 
         assertTrue(ex.hasCause<SensitiveDataReconnectionRequiredException>())
+    }
+
+    /**
+     * 복호화가 깨진 계좌에서도 소유자는 읽혀야 한다 (AF-193).
+     *
+     * `SyncAccountUseCase`가 계좌 조회 실패를 `ua_sync_logs`에 남기려면 NOT NULL인
+     * `user_id`가 필요한데, 위 테스트가 보이듯 `findById`는 같은 예외에 또 막힌다.
+     * 스칼라 프로젝션은 엔티티를 만들지 않아 컨버터를 타지 않는다 — **이 전제가 깨지면
+     * 세 실패 경로의 이력이 조용히 다시 사라진다.** fake 저장소로는 검증할 수 없다.
+     */
+    @Test
+    fun `owner projection survives undecryptable credentials`() {
+        val accountId = UUID.randomUUID()
+        val userId = UUID.randomUUID()
+        jdbc.update(
+            """
+            INSERT INTO ua_accounts (
+                id, user_id, provider, account_type, account_name, currency,
+                status, created_at, api_key, api_secret
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent(),
+            accountId,
+            userId,
+            AccountProvider.BINANCE.name,
+            AccountType.EXCHANGE.name,
+            "Legacy Binance",
+            "USD",
+            AccountStatus.ACTIVE.name,
+            LocalDateTime.now(),
+            "legacy-api-key",
+            "legacy-api-secret",
+        )
+        entityManager.clear()
+
+        assertThrows<RuntimeException> { repository.findById(accountId).orElseThrow() }
+        entityManager.clear()
+
+        assertEquals(userId, repository.findUserIdById(accountId))
+    }
+
+    @Test
+    fun `owner projection returns null for a missing account`() {
+        assertNull(repository.findUserIdById(UUID.randomUUID()))
     }
 
     private fun accountEntity(

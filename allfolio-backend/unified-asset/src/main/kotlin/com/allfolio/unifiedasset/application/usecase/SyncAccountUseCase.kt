@@ -64,9 +64,17 @@ class SyncAccountUseCase(
             if (e.requiresSensitiveDataReconnection()) {
                 runCatching { accountRepository.updateStatus(accountId, AccountStatus.ERROR) }
                 return SyncResult(accountId, 0, AccountStatus.ERROR, SENSITIVE_DATA_RECONNECTION_REQUIRED_MESSAGE)
+                    .also { recordLookupFailure(accountId, trigger, it) }
             }
+            // 되던지면 호출자(DailyAccountSyncer·AsyncAccountSyncExecutor)는 서버 로그만 남긴다 —
+            // 던지기 전에 이력을 남겨야 화면이 "한 번도 동기화 안 됨"과 구별할 수 있다 (AF-193).
+            recordLookupFailure(
+                accountId, trigger,
+                SyncResult(accountId, 0, AccountStatus.ERROR, e.message ?: e.javaClass.simpleName),
+            )
             throw e
         } ?: return SyncResult(accountId, 0, AccountStatus.ERROR, "Account not found")
+            .also { recordLookupFailure(accountId, trigger, it) }
 
         val adapter = adapterMap[account.provider]
             ?: return SyncResult(accountId, 0, AccountStatus.ERROR, "No adapter for ${account.provider}")
@@ -249,17 +257,47 @@ class SyncAccountUseCase(
 
     /** 동기화 결과를 이력으로 남긴다. 이력 저장 실패가 동기화 결과에 영향을 주지 않게 격리. */
     private fun record(account: Account, trigger: SyncTrigger, result: SyncResult) {
-        runCatching {
-            syncLogRepository.save(
-                SyncLog.create(
-                    accountId = account.id,
-                    userId = account.userId,
-                    trigger = trigger,
-                    status = if (result.status == AccountStatus.ACTIVE) SyncLogStatus.SUCCESS else SyncLogStatus.ERROR,
-                    syncedCount = result.synced,
-                    errorMessage = result.error,
-                )
-            )
-        }.onFailure { e -> log.warn("sync log save failed accountId={}", account.id, e) }
+        runCatching { syncLogRepository.save(entry(account.id, account.userId, trigger, result)) }
+            .onFailure { e -> log.warn("sync log save failed accountId={}", account.id, e) }
     }
+
+    /**
+     * 계좌를 손에 넣기 전에 끝난 실패를 이력에 남긴다 (AF-193).
+     *
+     * [record]는 `Account`를 요구해서 이 세 경로 — 민감정보 복호화 실패, 그 밖의 조회 예외,
+     * 계좌 없음 — 에서는 구조적으로 부를 수 없었다. 그래서 배치가 조용히 실패하면 동기화
+     * 현황 화면이 "한 번도 동기화되지 않음"과 구별하지 못했다.
+     *
+     * `ua_sync_logs.user_id`가 NOT NULL이라 accountId만으로는 행을 만들 수 없다. 소유자는
+     * 복호화를 타지 않는 [AccountRepository.findUserIdById]로 따로 읽는다 — 복호화 실패가
+     * 원인인 경로에서 `findById`를 다시 부르면 같은 예외에 또 막힌다.
+     *
+     * **계좌 행 자체가 없으면 남기지 못한다.** 소유자를 알 방법이 없고, 없는 user_id를
+     * 지어내느니 WARN만 남긴다. 스키마에서 `user_id`를 nullable로 바꾸지 않는 한 그렇다.
+     *
+     * 저장은 [SyncLogRepository.saveIsolated]로 — 예외를 되던지는 경로는 바깥 트랜잭션이
+     * 롤백돼 같은 트랜잭션에 쓴 이력이 함께 사라진다. 여기까지 온 시점엔 아직 아무것도
+     * 쓰지 않았으므로 새 트랜잭션으로 나눠도 반쪽짜리 커밋이 생기지 않는다.
+     */
+    private fun recordLookupFailure(accountId: UUID, trigger: SyncTrigger, result: SyncResult) {
+        val userId = runCatching { accountRepository.findUserIdById(accountId) }
+            .onFailure { e -> log.warn("소유자 조회 실패 — 동기화 이력을 남기지 못한다 accountId={}", accountId, e) }
+            .getOrNull()
+        if (userId == null) {
+            log.warn("소유자를 알 수 없어 동기화 이력을 남기지 못한다 accountId={}", accountId)
+            return
+        }
+        runCatching { syncLogRepository.saveIsolated(entry(accountId, userId, trigger, result)) }
+            .onFailure { e -> log.warn("sync log save failed accountId={}", accountId, e) }
+    }
+
+    private fun entry(accountId: UUID, userId: UUID, trigger: SyncTrigger, result: SyncResult) =
+        SyncLog.create(
+            accountId = accountId,
+            userId = userId,
+            trigger = trigger,
+            status = if (result.status == AccountStatus.ACTIVE) SyncLogStatus.SUCCESS else SyncLogStatus.ERROR,
+            syncedCount = result.synced,
+            errorMessage = result.error,
+        )
 }

@@ -18,6 +18,8 @@ class AccountRepositoryImpl(private val jpa: AccountJpaRepository) : AccountRepo
     override fun findById(id: UUID): Account? =
         jpa.findById(id).orElse(null)?.toDomain()
 
+    override fun findUserIdById(id: UUID): UUID? = jpa.findUserIdById(id)
+
     override fun findByUserId(userId: UUID): List<Account> =
         jpa.findByUserId(userId).map { it.toDomain() }
 
