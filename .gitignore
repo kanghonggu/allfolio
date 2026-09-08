@@ -29,7 +29,9 @@
 *.iml
 
 # Claude Code / Superpowers 내부 파일
-.claude/
+# .claude/ 전체를 무시하되, 에이전트 정의는 레포가 SSOT 복사본을 들고 있어야 하므로 예외
+.claude/*
+!.claude/agents/
 .superpowers/
 
 # Gradle 빌드 결과물
