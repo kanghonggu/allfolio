@@ -168,8 +168,11 @@ class SyncAccountUseCase(
             log.warn("동기화 실패를 기록하지 못했다 — 소유자를 알 수 없다 accountId={} error={}", accountId, error)
             return
         }
+        // 🔴 `save`가 아니라 `saveIsolated`다. 이 메서드를 부르는 경로 중 하나는 예외를
+        // 그대로 되던지는데, execute가 @Transactional이라 **같은 트랜잭션에 쓴 이력이
+        // 롤백과 함께 사라진다.** 인메모리 대역으로는 안 보이는 차이다.
         runCatching {
-            syncLogRepository.save(
+            syncLogRepository.saveIsolated(
                 SyncLog.create(accountId, userId, trigger, SyncLogStatus.ERROR, 0, error),
             )
         }.onFailure { log.warn("동기화 로그 저장 실패 accountId={}", accountId, it) }

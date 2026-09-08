@@ -45,9 +45,19 @@ class SyncAccountUseCaseLookupFailureLoggingTest {
         override fun rateOf(currency: String): BigDecimal = BigDecimal.ONE
     }
 
+    /**
+     * 🔴 [SyncLogRepository.save]와 [SyncLogRepository.saveIsolated]를 **구별해서** 센다.
+     *
+     * 대역에는 트랜잭션이 없어서 둘이 똑같이 동작한다 — 그래서 처음 구현에서 `save`를
+     * 불렀는데도 테스트가 통과했다. 운영에서는 예외를 되던지는 경로의 이력이 롤백과 함께
+     * 사라지고 있었다. 어느 쪽을 불렀는지를 세는 것이 대역으로 잡을 수 있는 최선이다.
+     */
     private class InMemorySyncLogRepository : SyncLogRepository {
         val saved = mutableListOf<SyncLog>()
-        override fun save(log: SyncLog): SyncLog { saved += log; return log }
+        var plainSaves = 0
+        var isolatedSaves = 0
+        override fun save(log: SyncLog): SyncLog { plainSaves++; saved += log; return log }
+        override fun saveIsolated(log: SyncLog): SyncLog { isolatedSaves++; saved += log; return log }
         override fun findByAccountId(accountId: UUID, limit: Int) = saved.take(limit)
         override fun findLatestByUserId(userId: UUID): Map<UUID, SyncLog> = emptyMap()
         override fun deleteByAccountId(accountId: UUID) = Unit
@@ -176,6 +186,31 @@ class SyncAccountUseCaseLookupFailureLoggingTest {
     }
 
     /**
+     * 🔴 **바깥 트랜잭션이 롤백돼도 남아야 한다.**
+     *
+     * `execute`는 `@Transactional`이다. 계좌 조회가 그 밖의 예외로 터지는 경로는 예외를
+     * 그대로 되던지므로 바깥 트랜잭션이 롤백되고, 같은 트랜잭션에 쓴 이력도 함께 사라진다 —
+     * **실패를 남기려고 쓴 줄이 실패했다는 이유로 지워진다.**
+     *
+     * 대역에는 트랜잭션이 없어 그 소멸을 재현할 수 없다. 대신 **어느 저장 경로를 불렀는지**를
+     * 문다. 진짜 증명은 DB가 붙은 통합 테스트라야 되고, 그건 이 모듈 범위 밖이다.
+     */
+    @Test
+    fun `조회 실패 이력은 분리된 트랜잭션으로 쓴다`() {
+        val logs = InMemorySyncLogRepository()
+
+        assertThrows<IllegalStateException> {
+            useCase(
+                LookupFailingRepository({ throw IllegalStateException("db pool exhausted") }, UUID.randomUUID()),
+                logs,
+            ).execute(UUID.randomUUID(), SyncTrigger.SCHEDULED)
+        }
+
+        assertThat(logs.isolatedSaves).describedAs("saveIsolated로 써야 롤백에 안 쓸린다").isEqualTo(1)
+        assertThat(logs.plainSaves).describedAs("평범한 save를 쓰면 롤백과 함께 사라진다").isZero()
+    }
+
+    /**
      * 로그 저장이 실패해도 동기화 결과는 바뀌지 않는다 — `record()`와 같은 판단이다.
      * 이력 남기기가 본 기능을 인질로 잡으면 안 된다.
      */
@@ -184,6 +219,7 @@ class SyncAccountUseCaseLookupFailureLoggingTest {
         val accountId = UUID.randomUUID()
         val failing = object : SyncLogRepository {
             override fun save(log: SyncLog): SyncLog = throw RuntimeException("log db down")
+            override fun saveIsolated(log: SyncLog): SyncLog = throw RuntimeException("log db down")
             override fun findByAccountId(accountId: UUID, limit: Int): List<SyncLog> = emptyList()
             override fun findLatestByUserId(userId: UUID): Map<UUID, SyncLog> = emptyMap()
             override fun deleteByAccountId(accountId: UUID) = Unit
