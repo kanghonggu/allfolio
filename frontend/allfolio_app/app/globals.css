@@ -64,6 +64,15 @@
   }
 }
 
+/* === 차트 값 라벨 (AF-206) — 항상 렌더하되 화면에서만 가린다 ===
+   recharts는 SVG라 미디어 쿼리로 prop을 바꿀 수 없다. 렌더 경로를 하나로 두고
+   CSS로 가리는 쪽을 택했다. 인쇄물엔 호버가 없으니 인쇄에서만 드러난다. */
+@media screen {
+  .print-only-label {
+    display: none;
+  }
+}
+
 /* === 월간 운용보고서 인쇄 (#37) — 라이트 리디자인 이후: 반전 불필요, 대비 보정만 === */
 @media print {
   .no-print { display: none !important; }
