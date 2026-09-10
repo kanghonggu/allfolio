@@ -49,6 +49,16 @@ enum class PortalConsumer(val tag: String) {
  *
  * 계측이 시세 수집을 죽이면 안 된다. 카운터 증가는 in-memory O(1)이라 실패할 일이
  * 없지만(`BrokerMetrics` 주석 참조), 구현하는 쪽은 그 계약을 지킬 것.
+ *
+ * ## 🔴 `result` 태그를 소비자끼리 견주지 마라
+ *
+ * "쓸 수 있는 값"의 기준이 소비자마다 다르다. 포털이 HTTP 200으로 **0건**을 준 같은 상황에서
+ * [PortalConsumer.STOCK_PRICE]는 실패로 세고(`?: return null`), [PortalConsumer.INDEX]는
+ * 성공으로 센다(휴장일이 여기 걸린다 — 빈 목록이 정상 결과다). 각자 제자리에선 맞는 판정이다.
+ *
+ * 그래서 `sum by (consumer)`(소비자별 호출량 배분 — 이 계측을 만든 이유)는 정확하지만,
+ * `sum by (consumer, result)`로 **"헛돈 호출 비율"을 소비자끼리 견주면 틀린 결론이 나온다.**
+ * 대시보드를 만들 때 이 비대칭을 알고 만들 것.
  */
 interface PortalCallMetrics {
     /** 포털이 쓸 수 있는 결과를 돌려줬다 */
