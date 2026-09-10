@@ -17,7 +17,8 @@ import java.math.BigDecimal
 class JpaComplexSearchServiceTest {
 
     private val repo = mock(com.allfolio.unifiedasset.infrastructure.jpa.RtmsDealCacheJpaRepository::class.java)
-    private val service = JpaComplexSearchService(repo)
+    private val fetchLog = mock(com.allfolio.unifiedasset.infrastructure.jpa.RtmsFetchLogJpaRepository::class.java)
+    private val service = JpaComplexSearchService(repo, fetchLog)
 
     private fun row(
         seq: String, name: String, area: String, count: Int,
@@ -45,7 +46,7 @@ class JpaComplexSearchServiceTest {
         stub(row("11680-1", "개포래미안포레스트", "84.83", 3),
              row("11680-1", "개포래미안포레스트", "84.86", 2))
 
-        val areas = service.search("11680", null).single().areas
+        val areas = service.search("11680", null).complexes.single().areas
 
         assertThat(areas.map { it.exclusiveAreaM2.toPlainString() })
             .containsExactly("84.83", "84.86")
@@ -56,7 +57,7 @@ class JpaComplexSearchServiceTest {
     fun `평은 참고로 소수 한 자리까지만 준다`() {
         stub(row("11680-1", "단지", "84.93", 5))
 
-        val a = service.search("11680", null).single().areas.single()
+        val a = service.search("11680", null).complexes.single().areas.single()
 
         assertThat(a.approxPyeong.toPlainString()).isEqualTo("25.7")
     }
@@ -69,7 +70,7 @@ class JpaComplexSearchServiceTest {
     fun `평형별 거래 수를 함께 준다`() {
         stub(row("11680-1", "단지", "59.92", 7), row("11680-1", "단지", "84.83", 2))
 
-        val areas = service.search("11680", null).single().areas
+        val areas = service.search("11680", null).complexes.single().areas
 
         assertThat(areas.map { it.dealCount }).containsExactly(7, 2)
     }
@@ -81,7 +82,7 @@ class JpaComplexSearchServiceTest {
              row("11680-1", "단지", "59.92", 4),
              row("11680-1", "단지", "84.83", 2))
 
-        val areas = service.search("11680", null).single().areas
+        val areas = service.search("11680", null).complexes.single().areas
 
         assertThat(areas.map { it.exclusiveAreaM2.toPlainString() })
             .containsExactly("59.92", "84.83", "114.81")
@@ -94,7 +95,7 @@ class JpaComplexSearchServiceTest {
              row("11680-2", "큰단지", "84.0", 10),
              row("11680-2", "큰단지", "59.0", 5))
 
-        val names = service.search("11680", null).map { it.aptName }
+        val names = service.search("11680", null).complexes.map { it.aptName }
 
         assertThat(names).containsExactly("큰단지", "작은단지")
     }
@@ -104,7 +105,7 @@ class JpaComplexSearchServiceTest {
         stub(row("11680-1", "A", "84.0", 1), row("11680-1", "A", "59.0", 2),
              row("11680-2", "B", "84.0", 3))
 
-        val result = service.search("11680", null)
+        val result = service.search("11680", null).complexes
 
         assertThat(result).hasSize(2)
         assertThat(result.first { it.aptSeq == "11680-1" }.areas).hasSize(2)
@@ -114,14 +115,14 @@ class JpaComplexSearchServiceTest {
     fun `상한을 넘으면 자른다`() {
         stub(*(1..30).map { row("11680-$it", "단지$it", "84.0", it) }.toTypedArray())
 
-        assertThat(service.search("11680", null, limit = 5)).hasSize(5)
+        assertThat(service.search("11680", null, limit = 5).complexes).hasSize(5)
     }
 
     @Test
     fun `단지 식별자와 이름을 함께 준다`() {
         stub(row("11680-4929", "개포래미안포레스트", "84.83", 3, umd = "개포동", year = 2020))
 
-        val c = service.search("11680", null).single()
+        val c = service.search("11680", null).complexes.single()
 
         assertThat(c.aptSeq).isEqualTo("11680-4929")
         assertThat(c.aptName).isEqualTo("개포래미안포레스트")
@@ -133,6 +134,58 @@ class JpaComplexSearchServiceTest {
     fun `결과가 없으면 빈 목록이다`() {
         stub()
 
-        assertThat(service.search("11680", "없는단지")).isEmpty()
+        assertThat(service.search("11680", "없는단지").complexes).isEmpty()
     }
+    // ── 빈 결과의 사유를 가른다 (AF-202) ───────────────────────
+
+    /**
+     * 🔴 **이 파일이 새로 막는 것.**
+     *
+     * 2026-09-09 데모에서 부동산 주소 검색이 빈 결과를 냈고, 화면은 *"최근 실거래가 없는
+     * 단지입니다"*라고 말했다. **거짓이었다** — 그 시군구를 한 번도 수집하지 않았을 뿐이다.
+     * 당시 전국 250여 곳 중 캐시에 있던 건 3곳(종로·강남·분당)뿐이었다.
+     *
+     * 사용자는 그 문장을 읽고 "우리 아파트는 실거래가 없구나"로 배운다. 없는 것은 거래가
+     * 아니라 우리 데이터다.
+     */
+    @Test
+    fun `수집한 적 없는 시군구는 collected가 false다`() {
+        `when`(repo.findComplexRows(anyString(), org.mockito.ArgumentMatchers.isNull())).thenReturn(emptyList())
+        `when`(fetchLog.existsBySggCode("26110")).thenReturn(false)
+
+        val result = service.search("26110", null)
+
+        assertThat(result.complexes).isEmpty()
+        assertThat(result.collected)
+            .describedAs("안 받은 지역을 '거래 없음'이라고 말하면 사용자가 잘못 배운다")
+            .isFalse()
+    }
+
+    /** 받았는데 검색어에 안 걸린 경우 — 이때는 정말 "그 단지가 없다" */
+    @Test
+    fun `수집한 시군구에서 못 찾으면 collected가 true다`() {
+        `when`(repo.findComplexRows(anyString(), anyString())).thenReturn(emptyList())
+        `when`(fetchLog.existsBySggCode("11680")).thenReturn(true)
+
+        val result = service.search("11680", "없는단지")
+
+        assertThat(result.complexes).isEmpty()
+        assertThat(result.collected).isTrue()
+    }
+
+    /**
+     * 결과가 있으면 수집한 게 자명하다. **그때는 로그를 읽지 않는다** —
+     * 흔한 경로에 질의를 하나 더 얹지 않으려는 것이다.
+     */
+    @Test
+    fun `결과가 있으면 수집 로그를 조회하지 않는다`() {
+        `when`(repo.findComplexRows(anyString(), org.mockito.ArgumentMatchers.isNull()))
+            .thenReturn(listOf(row("11680-1", "래미안", "84.97", 3)))
+
+        val result = service.search("11680", null)
+
+        assertThat(result.collected).isTrue()
+        org.mockito.Mockito.verify(fetchLog, org.mockito.Mockito.never()).existsBySggCode(anyString())
+    }
+
 }

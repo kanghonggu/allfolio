@@ -1,6 +1,7 @@
 package com.allfolio.market.realestate
 
 import com.allfolio.unifiedasset.infrastructure.jpa.RtmsDealCacheJpaRepository
+import com.allfolio.unifiedasset.infrastructure.jpa.RtmsFetchLogJpaRepository
 import org.springframework.stereotype.Service
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -17,12 +18,17 @@ import java.math.RoundingMode
 @Service
 class JpaComplexSearchService(
     private val deals: RtmsDealCacheJpaRepository,
+    private val fetchLog: RtmsFetchLogJpaRepository,
 ) : ComplexSearchService {
 
-    override fun search(sggCode: String, query: String?, limit: Int): List<ComplexView> {
+    override fun search(sggCode: String, query: String?, limit: Int): ComplexSearchResult {
         val rows = deals.findComplexRows(sggCode, query?.trim()?.takeIf { it.isNotEmpty() })
 
-        return rows
+        // 🔴 결과가 있으면 수집한 게 자명하다 — 그때는 로그를 안 읽는다.
+        // 빈 결과일 때만 "안 받은 것인지"를 묻는다. 흔한 경로에 질의를 하나 더 얹지 않는다.
+        val collected = rows.isNotEmpty() || fetchLog.existsBySggCode(sggCode)
+
+        val complexes = rows
             .groupBy { it.aptSeq }
             .entries
             // 거래가 많은 단지를 먼저 — 사용자가 찾는 것은 대개 거래가 있는 큰 단지다
@@ -45,6 +51,8 @@ class JpaComplexSearchService(
                     },
                 )
             }
+
+        return ComplexSearchResult(collected = collected, complexes = complexes)
     }
 
     /**

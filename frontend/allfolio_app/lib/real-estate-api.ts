@@ -26,6 +26,23 @@ export interface Complex {
   areas: ComplexArea[]
 }
 
+/**
+ * 검색 결과. **빈 목록의 사유를 함께 준다** (AF-202).
+ *
+ * 빈 결과가 뜻할 수 있는 것은 셋인데 화면은 하나로만 말하고 있었다:
+ *
+ * 1. 그 시군구를 **한 번도 수집하지 않았다** ← 2026-09-09 데모에서 실제로 이것
+ * 2. 수집했는데 검색어에 맞는 단지가 없다
+ * 3. 그 단지에 최근 거래가 없다
+ *
+ * 1번을 3번이라고 말하면 사용자가 **"우리 아파트는 실거래가 없구나"로 잘못 배운다.**
+ */
+export interface ComplexSearchResult {
+  /** 이 시군구를 한 번이라도 수집했는가. `false`면 빈 목록은 **우리 데이터가 없는 것**이다 */
+  collected: boolean
+  complexes: Complex[]
+}
+
 export function createRealEstateApi(accessToken: string) {
   const api = axios.create({
     baseURL: BASE_URL,
@@ -43,7 +60,7 @@ export function createRealEstateApi(accessToken: string) {
      *
      * @param sgg 법정동 코드 앞 5자리. **필수다** — 전국을 훑으면 "래미안"에 수백 개가 걸린다
      */
-    searchComplexes: async (sgg: string, q?: string): Promise<Complex[]> =>
-      (await api.get<Complex[]>('/complexes', { params: { sgg, q: q || undefined } })).data,
+    searchComplexes: async (sgg: string, q?: string): Promise<ComplexSearchResult> =>
+      (await api.get<ComplexSearchResult>('/complexes', { params: { sgg, q: q || undefined } })).data,
   }
 }

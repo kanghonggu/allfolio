@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRealEstateApi } from '@/lib/useApi'
-import type { Complex, ComplexArea } from '@/lib/real-estate-api'
+import type { Complex, ComplexArea, ComplexSearchResult } from '@/lib/real-estate-api'
 import Button from '@/components/ui/Button'
 import { Input } from '@/components/ui/Field'
 
@@ -32,7 +32,7 @@ export default function ComplexPicker({
   const api = useRealEstateApi()
   const [sgg, setSgg] = useState('')
   const [q, setQ] = useState('')
-  const [results, setResults] = useState<Complex[] | null>(null)
+  const [results, setResults] = useState<ComplexSearchResult | null>(null)
   const [picked, setPicked] = useState<Complex | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -94,16 +94,26 @@ export default function ComplexPicker({
 
       {error && <p className="mt-2 text-[11px] text-danger">{error}</p>}
 
-      {results?.length === 0 && (
+      {results?.complexes.length === 0 && !results.collected && (
+        // 🔴 **이 지역을 아직 안 받았다.** 없는 것은 거래가 아니라 우리 데이터다 —
+        // 이걸 "실거래가 없다"로 말하면 사용자가 자기 아파트에 대해 잘못 배운다(AF-202).
+        <p className="mt-3 text-[11px] text-fg-muted">
+          이 지역은 아직 실거래가 자료를 받지 못했습니다.{' '}
+          <strong>단지에 거래가 없다는 뜻은 아닙니다.</strong>{' '}
+          지금은 현재 시세를 직접 입력해 주세요.
+        </p>
+      )}
+
+      {results?.complexes.length === 0 && results.collected && (
         // **"없는 단지"라고 말하지 않는다.** 실거래가 없으면 자동 평가를 못 할 뿐이다
         <p className="mt-3 text-[11px] text-fg-muted">
           최근 실거래가 없는 단지입니다. 자동 평가가 되지 않으므로 현재 시세를 직접 입력해 주세요.
         </p>
       )}
 
-      {results && results.length > 0 && !picked && (
+      {results && results.complexes.length > 0 && !picked && (
         <ul className="mt-3 max-h-56 overflow-y-auto">
-          {results.map(c => (
+          {results.complexes.map(c => (
             <li key={c.aptSeq}>
               <button
                 type="button"
