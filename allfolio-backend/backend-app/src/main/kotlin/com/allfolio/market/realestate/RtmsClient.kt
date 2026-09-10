@@ -1,5 +1,8 @@
 package com.allfolio.market.realestate
 
+import com.allfolio.common.metrics.PortalCallMetrics
+import com.allfolio.common.metrics.PortalConsumer
+import com.allfolio.common.metrics.measurePortalCall
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -44,6 +47,11 @@ class RtmsClient(
     // 애너테이션 인자는 컴파일 상수여야 해서 상수 참조로 묶지 못한다 — 주소를 고칠 땐 함께 볼 것
     @Value("\${rtms.base-url:https://apis.data.go.kr/1613000}") private val baseUrl: String,
     private val objectMapper: ObjectMapper,
+    /**
+     * 포털 호출 계측(AF-210). **기본값을 두지 않는다** — 빈이 없으면 조용히 0을 세는 대신
+     * 부팅이 실패해야 한다. 근거는 `PortalCallMetrics` KDoc.
+     */
+    private val portalMetrics: PortalCallMetrics,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -83,37 +91,41 @@ class RtmsClient(
         // 구간만 남긴다. 전체 URL을 찍으면 serviceKey가 그대로 로그에 박힌다
         log.info("[실거래가] {} {} p{} 조회", sggCode, month, page)
 
-        val raw = try {
-            webClient.get()
-                .uri { b ->
-                    b.path(PATH)
-                        .queryParam("serviceKey", apiKey)
-                        // **`_type`이다. `resultType`이 아니다** — 금시세(FSC)와 파라미터
-                        // 이름이 다르다. 틀리면 XML이 와서 파서가 통째로 깨진다
-                        .queryParam("_type", "json")
-                        .queryParam("LAWD_CD", sggCode)
-                        // **`yyyyMM` 6자리다.** YearMonth.toString()은 `2026-07`이라 그대로
-                        // 넘기면 조용히 0건이 된다
-                        .queryParam("DEAL_YMD", "%04d%02d".format(month.year, month.monthValue))
-                        .queryParam("numOfRows", PAGE_SIZE)
-                        .queryParam("pageNo", page)
-                        .build()
-                }
-                .retrieve()
-                .bodyToMono(String::class.java)
-                .block(timeout)
-        } catch (e: Exception) {
-            // cause를 붙이지 않는다 — Reactor checkpoint에 요청 URI(=키)가 들어 있다
-            throw RtmsApiException("실거래가 조회 실패 $sggCode $month p$page (${e.javaClass.simpleName})")
-        } ?: throw RtmsApiException("실거래가 응답이 비었다 $sggCode $month p$page")
+        // **여기서부터가 포털 호출 1회다**(AF-210). 위 `isConfigured()` 가드는 호출이
+        // 나가기 전이라 세지 않는다 — 안 나간 호출을 세면 한도 배분이 그만큼 틀어진다
+        return portalMetrics.measurePortalCall(PortalConsumer.RTMS) {
+            val raw = try {
+                webClient.get()
+                    .uri { b ->
+                        b.path(PATH)
+                            .queryParam("serviceKey", apiKey)
+                            // **`_type`이다. `resultType`이 아니다** — 금시세(FSC)와 파라미터
+                            // 이름이 다르다. 틀리면 XML이 와서 파서가 통째로 깨진다
+                            .queryParam("_type", "json")
+                            .queryParam("LAWD_CD", sggCode)
+                            // **`yyyyMM` 6자리다.** YearMonth.toString()은 `2026-07`이라 그대로
+                            // 넘기면 조용히 0건이 된다
+                            .queryParam("DEAL_YMD", "%04d%02d".format(month.year, month.monthValue))
+                            .queryParam("numOfRows", PAGE_SIZE)
+                            .queryParam("pageNo", page)
+                            .build()
+                    }
+                    .retrieve()
+                    .bodyToMono(String::class.java)
+                    .block(timeout)
+            } catch (e: Exception) {
+                // cause를 붙이지 않는다 — Reactor checkpoint에 요청 URI(=키)가 들어 있다
+                throw RtmsApiException("실거래가 조회 실패 $sggCode $month p$page (${e.javaClass.simpleName})")
+            } ?: throw RtmsApiException("실거래가 응답이 비었다 $sggCode $month p$page")
 
-        // 본문 미리보기를 남기지 않는다 — 오류 페이지가 요청 URI를 되울린다
-        val root = try {
-            objectMapper.readTree(raw)
-        } catch (e: Exception) {
-            throw RtmsApiException("실거래가 응답이 JSON이 아니다 $sggCode $month p$page")
+            // 본문 미리보기를 남기지 않는다 — 오류 페이지가 요청 URI를 되울린다
+            val root = try {
+                objectMapper.readTree(raw)
+            } catch (e: Exception) {
+                throw RtmsApiException("실거래가 응답이 JSON이 아니다 $sggCode $month p$page")
+            }
+            RtmsDealParser.parse(root)
         }
-        return RtmsDealParser.parse(root)
     }
 
     /** 이 페이지 뒤에 더 있는지. 호출부의 페이징 판단을 한 곳에 모은다 */

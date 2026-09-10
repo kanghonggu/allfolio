@@ -1,10 +1,13 @@
 package com.allfolio.market.commodity.fsc
 
+import com.allfolio.common.metrics.PortalConsumer
 import com.allfolio.market.fsc.FscApiException
+import com.allfolio.metrics.MicrometerPortalCallMetrics
 import com.allfolio.test.dedicatedConnector
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.catchThrowable
 import org.junit.jupiter.api.AfterEach
@@ -78,11 +81,23 @@ class FscCommodityClientTest {
     /** 본문 하나를 200으로 돌려주는 스텁 */
     private fun serving(body: String): Int = serve { respond(it, 200, body) }
 
+    /**
+     * 계측을 **진짜 레지스트리로** 검증한다(AF-210). 가짜 대역을 쓰면 "클라이언트가 포트를
+     * 불렀다"까지만 알 수 있고, 정작 궁금한 "카운터가 오르는가"는 못 본다.
+     */
+    private val registry = SimpleMeterRegistry()
+
+    private fun portalCalls(consumer: PortalConsumer, result: String): Double =
+        registry.find(MicrometerPortalCallMetrics.CALL_COUNT)
+            .tag("consumer", consumer.tag).tag("result", result)
+            .counter()?.count() ?: 0.0
+
     // 커넥터를 dedicatedConnector로 두는 이유는 그쪽 주석에 있다 — 빼면 간헐적으로 깨진다.
     private fun client(port: Int, key: String = API_KEY) = FscCommodityClient(
         apiKey = key,
         baseUrl = "http://localhost:$port",
         objectMapper = ObjectMapper(),
+        portalMetrics = MicrometerPortalCallMetrics(registry),
     ).apply { connector = dedicatedConnector() }
 
     private fun fetch(port: Int) = client(port).fetchGoldPrices(FROM, TO)
@@ -368,5 +383,53 @@ class FscCommodityClientTest {
         assertThat(raw).isInstanceOf(FscApiException::class.java)
         assertThat((raw as FscApiException).code).isEqualTo("IO")
         assertNoSecretAnywhere(raw)
+    }
+
+    // ── 포털 호출 계측 (AF-210) ───────────────────────────────────────────
+    //
+    // **성공한 호출이 `log.debug`뿐이라 운영에서 아무 흔적도 안 남았다.** 그래서 "일일 한도
+    // 2만 건을 누가 먹는가"(AF-203)에 답할 수단이 없었다. 아래 셋이 그 수단이 실제로
+    // 도는지를 문다 — 카운터를 붙이고 테스트를 안 물면 계측을 만들었는지 자체를 모른다.
+
+    @Test
+    fun `성공한 호출 하나가 성공 카운터를 1 올린다`() {
+        fetch(serving(REAL_BODY))
+
+        assertThat(portalCalls(PortalConsumer.COMMODITY, "success")).isEqualTo(1.0)
+        assertThat(portalCalls(PortalConsumer.COMMODITY, "failure")).isEqualTo(0.0)
+    }
+
+    /**
+     * **쿼터 초과는 HTTP 200에 실려 온다**(`resultCode != "00"`). 전송 성공을 성공으로 세면
+     * 정작 한도 초과가 성공으로 집계돼, 이 계측이 만들어진 이유가 통째로 사라진다.
+     */
+    @Test
+    fun `HTTP 200에 실려 온 포털 오류도 실패로 센다`() {
+        val quotaExceeded = REAL_BODY.replace("\"resultCode\":\"00\"", "\"resultCode\":\"22\"")
+
+        catchThrowable { fetch(serving(quotaExceeded)) }
+
+        assertThat(portalCalls(PortalConsumer.COMMODITY, "failure")).isEqualTo(1.0)
+        assertThat(portalCalls(PortalConsumer.COMMODITY, "success")).isEqualTo(0.0)
+    }
+
+    @Test
+    fun `연결 실패도 실패 태그로 1 센다`() {
+        catchThrowable { fetch(deadPort()) }
+
+        assertThat(portalCalls(PortalConsumer.COMMODITY, "failure")).isEqualTo(1.0)
+        assertThat(portalCalls(PortalConsumer.COMMODITY, "success")).isEqualTo(0.0)
+    }
+
+    /**
+     * **키가 없으면 호출이 아예 안 나간다** — 세면 안 된다. 안 나간 호출을 세면 한도 배분이
+     * 그만큼 틀어지고, "누가 먹었나"의 답이 조용히 부풀려진다.
+     */
+    @Test
+    fun `키 미설정으로 못 나간 호출은 세지 않는다`() {
+        catchThrowable { client(deadPort(), key = "").fetchGoldPrices(FROM, TO) }
+
+        assertThat(portalCalls(PortalConsumer.COMMODITY, "success")).isEqualTo(0.0)
+        assertThat(portalCalls(PortalConsumer.COMMODITY, "failure")).isEqualTo(0.0)
     }
 }

@@ -1,10 +1,13 @@
 package com.allfolio.market.benchmark
 
+import com.allfolio.common.metrics.PortalConsumer
 import com.allfolio.market.fsc.FscApiException
+import com.allfolio.metrics.MicrometerPortalCallMetrics
 import com.allfolio.test.dedicatedConnector
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.catchThrowable
 import org.junit.jupiter.api.AfterEach
@@ -93,11 +96,20 @@ class FscIndexClientTest {
     /** 본문 하나를 200으로 돌려주는 스텁 */
     private fun serving(body: String): Int = serve { respond(it, 200, body) }
 
+    /** 계측은 진짜 레지스트리로 본다(AF-210) — 근거는 `FscCommodityClientTest`의 같은 자리 */
+    private val registry = SimpleMeterRegistry()
+
+    private fun portalCalls(result: String): Double =
+        registry.find(MicrometerPortalCallMetrics.CALL_COUNT)
+            .tag("consumer", PortalConsumer.INDEX.tag).tag("result", result)
+            .counter()?.count() ?: 0.0
+
     // 커넥터를 dedicatedConnector로 두는 이유는 그쪽 주석에 있다 — 빼면 간헐적으로 깨진다.
     private fun client(port: Int, key: String = API_KEY) = FscIndexClient(
         apiKey = key,
         baseUrl = "http://localhost:$port",
         objectMapper = ObjectMapper(),
+        portalMetrics = MicrometerPortalCallMetrics(registry),
     ).apply { connector = dedicatedConnector() }
 
     private fun fetch(port: Int, target: BenchmarkIndexProperties.BenchmarkIndexItem = KOSPI) =
@@ -407,5 +419,50 @@ class FscIndexClientTest {
         assertThat(raw).isInstanceOf(FscApiException::class.java)
         assertThat((raw as FscApiException).code).isEqualTo("IO")
         assertNoSecretAnywhere(raw)
+    }
+
+    // ── 포털 호출 계측 (AF-210) ───────────────────────────────────────────
+
+    /**
+     * **지수는 종목마다 한 콜이다** — 평일 3회 × 지수 수가 그대로 한도를 먹는다.
+     * 그 배분을 세는 것이 AF-203이 묻는 질문이다.
+     */
+    @Test
+    fun `성공한 호출 하나가 성공 카운터를 1 올린다`() {
+        fetch(serving(REAL_BODY))
+
+        assertThat(portalCalls("success")).isEqualTo(1.0)
+        assertThat(portalCalls("failure")).isEqualTo(0.0)
+    }
+
+    /** 쿼터 초과·미승인은 HTTP 200에 실려 온다 — 그걸 성공으로 세면 계측이 무의미해진다 */
+    @Test
+    fun `HTTP 200에 실려 온 포털 오류도 실패로 센다`() {
+        val notRegistered = """
+            {"response":{"header":{"resultCode":"30","resultMsg":"SERVICE KEY IS NOT REGISTERED ERROR."},
+            "body":{"numOfRows":10,"pageNo":1,"totalCount":0,"items":""}}}
+        """.trimIndent()
+
+        catchThrowable { fetch(serving(notRegistered)) }
+
+        assertThat(portalCalls("failure")).isEqualTo(1.0)
+        assertThat(portalCalls("success")).isEqualTo(0.0)
+    }
+
+    @Test
+    fun `연결 실패도 실패 태그로 1 센다`() {
+        catchThrowable { fetch(deadPort()) }
+
+        assertThat(portalCalls("failure")).isEqualTo(1.0)
+        assertThat(portalCalls("success")).isEqualTo(0.0)
+    }
+
+    /** 키가 없으면 호출이 아예 안 나간다 — 세면 한도 배분이 그만큼 부풀려진다 */
+    @Test
+    fun `키 미설정으로 못 나간 호출은 세지 않는다`() {
+        catchThrowable { client(deadPort(), key = "").fetch(KOSPI, FROM, TO) }
+
+        assertThat(portalCalls("success")).isEqualTo(0.0)
+        assertThat(portalCalls("failure")).isEqualTo(0.0)
     }
 }

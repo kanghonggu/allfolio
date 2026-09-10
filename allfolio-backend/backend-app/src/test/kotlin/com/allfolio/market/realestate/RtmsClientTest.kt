@@ -1,9 +1,12 @@
 package com.allfolio.market.realestate
 
+import com.allfolio.common.metrics.PortalConsumer
+import com.allfolio.metrics.MicrometerPortalCallMetrics
 import com.allfolio.test.dedicatedConnector
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.catchThrowable
 import org.junit.jupiter.api.AfterEach
@@ -64,10 +67,19 @@ class RtmsClientTest {
 
     private fun serving(body: String): Int = serve { respond(it, 200, body) }
 
+    /** 계측은 진짜 레지스트리로 본다(AF-210) — 근거는 `FscCommodityClientTest`의 같은 자리 */
+    private val registry = SimpleMeterRegistry()
+
+    private fun portalCalls(result: String): Double =
+        registry.find(MicrometerPortalCallMetrics.CALL_COUNT)
+            .tag("consumer", PortalConsumer.RTMS.tag).tag("result", result)
+            .counter()?.count() ?: 0.0
+
     private fun client(port: Int, key: String = API_KEY) = RtmsClient(
         apiKey = key,
         baseUrl = "http://localhost:$port",
         objectMapper = ObjectMapper(),
+        portalMetrics = MicrometerPortalCallMetrics(registry),
     ).apply { connector = dedicatedConnector() }
 
     private fun deadPort(): Int = ServerSocket(0).use { it.localPort }
@@ -236,5 +248,46 @@ class RtmsClientTest {
         assertThat(t).isInstanceOf(RtmsApiException::class.java)
         assertThat(t).hasMessageContaining("JSON이 아니다")
         assertNoSecretAnywhere(t!!)
+    }
+
+    // ── 포털 호출 계측 (AF-210) ───────────────────────────────────────────
+
+    @Test
+    fun `성공한 호출 하나가 성공 카운터를 1 올린다`() {
+        client(serving(REAL_BODY)).fetchDeals(SGG, MONTH)
+
+        assertThat(portalCalls("success")).isEqualTo(1.0)
+        assertThat(portalCalls("failure")).isEqualTo(0.0)
+    }
+
+    /**
+     * **페이징은 호출부가 돈다** — 그래서 한 조합이 몇 콜을 썼는지가 그대로 카운터에 쌓여야
+     * 한다. 실측에서 분당 2026-07이 3콜이었다(450건 / 200행).
+     */
+    @Test
+    fun `페이지마다 따로 센다`() {
+        val port = serving(REAL_BODY)
+
+        client(port).fetchDeals(SGG, MONTH, page = 1)
+        client(port).fetchDeals(SGG, MONTH, page = 2)
+
+        assertThat(portalCalls("success")).isEqualTo(2.0)
+    }
+
+    @Test
+    fun `연결 실패도 실패 태그로 1 센다`() {
+        catchThrowable { client(deadPort()).fetchDeals(SGG, MONTH) }
+
+        assertThat(portalCalls("failure")).isEqualTo(1.0)
+        assertThat(portalCalls("success")).isEqualTo(0.0)
+    }
+
+    /** 키가 없으면 호출이 아예 안 나간다 — 세면 한도 배분이 그만큼 부풀려진다 */
+    @Test
+    fun `키 미설정으로 못 나간 호출은 세지 않는다`() {
+        catchThrowable { client(deadPort(), key = "").fetchDeals(SGG, MONTH) }
+
+        assertThat(portalCalls("success")).isEqualTo(0.0)
+        assertThat(portalCalls("failure")).isEqualTo(0.0)
     }
 }
