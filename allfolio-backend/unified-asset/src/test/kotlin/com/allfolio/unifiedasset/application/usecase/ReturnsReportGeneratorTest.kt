@@ -74,6 +74,37 @@ class ReturnsReportGeneratorTest {
         assertEquals(1000.0, body["flowDecomposition"]["netFlow"].asDouble(), 0.001)
     }
 
+    /**
+     * 🔴 출금은 **부호를 갖고** 들어가야 한다 (AF-199 · 변이 RRG-M1).
+     *
+     * 생성기가 `signedKrw()` 대신 `amountKrw`를 쓰면 출금이 입금으로 잡힌다. 기존 테스트는
+     * DEPOSIT만 써서 — 입금은 두 값이 같다 — 그 차이를 볼 수 없었다.
+     *
+     * 시나리오: 2,000에서 1,000을 빼 1,000이 됐고(순수 손익 0), 이후 1,100으로 10% 벌었다.
+     *
+     * | | TWR | 순유입 |
+     * |---|---|---|
+     * | 올바름(`signedKrw`) | +10% | −1,000 |
+     * | 변이(`amountKrw`) | −63% | +1,000 |
+     */
+    @Test
+    fun `withdrawal keeps its sign in the generated body`() {
+        val withdrawal = CashFlow.create(
+            userId = userId, accountId = null, flowDate = LocalDate.of(2026, 6, 15),
+            type = FlowType.WITHDRAWAL, amount = BigDecimal("1000"), currency = "KRW",
+            amountKrw = BigDecimal("1000"), memo = null,
+        )
+        val generator = ReturnsReportGenerator(
+            FakeNavSource(listOf(nav(1, "2000"), nav(15, "1000"), nav(30, "1100"))),
+            FakeCashFlowRepo(listOf(withdrawal)),
+        )
+
+        val body = mapper.readTree(generator.generate(userId, period).bodyJson)
+
+        assertEquals(0.1, body["period"]["twr"].asDouble(), 0.001)
+        assertEquals(-1000.0, body["flowDecomposition"]["netFlow"].asDouble(), 0.001)
+    }
+
     @Test
     fun `insufficient nav observations throw`() {
         val generator = ReturnsReportGenerator(
