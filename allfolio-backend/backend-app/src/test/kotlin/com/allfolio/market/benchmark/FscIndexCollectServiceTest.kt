@@ -1,5 +1,6 @@
 package com.allfolio.market.benchmark
 
+import com.allfolio.common.metrics.NoOpPortalCallMetrics
 import com.allfolio.market.fsc.FscApiException
 import com.allfolio.unifiedasset.application.port.BenchmarkDailyStore
 import com.allfolio.unifiedasset.domain.benchmark.BenchmarkType
@@ -261,7 +262,12 @@ class FscIndexCollectServiceTest {
         private val rows: Map<String, List<Pair<LocalDate, BigDecimal>>> = emptyMap(),
         private val failing: Map<String, RuntimeException> = emptyMap(),
         private val interrupting: Set<String> = emptySet(),
-    ) : FscIndexClient(apiKey = "test-key", baseUrl = "http://localhost", objectMapper = ObjectMapper()) {
+    ) : FscIndexClient(
+        apiKey = "test-key",
+        baseUrl = "http://localhost",
+        objectMapper = ObjectMapper(),
+        portalMetrics = NoOpPortalCallMetrics,
+    ) {
 
         val fetched = mutableListOf<Pair<String, Pair<LocalDate, LocalDate>>>()
 

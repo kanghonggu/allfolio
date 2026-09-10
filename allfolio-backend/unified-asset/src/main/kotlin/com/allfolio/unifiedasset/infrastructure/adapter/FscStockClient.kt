@@ -1,5 +1,7 @@
 package com.allfolio.unifiedasset.infrastructure.adapter
 
+import com.allfolio.common.metrics.PortalCallMetrics
+import com.allfolio.common.metrics.PortalConsumer
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -33,6 +35,15 @@ import java.time.temporal.ChronoUnit
 class FscStockClient(
     @Value("\${fsc.api-key:}") private val apiKey: String,
     private val objectMapper: ObjectMapper,
+    /**
+     * 포털 호출 계측(AF-210). **기본값을 두지 않는다** — 빈이 없으면 조용히 0을 세는 대신
+     * 부팅이 실패해야 한다. 근거는 `PortalCallMetrics` KDoc.
+     *
+     * **오퍼레이션 셋을 따로 센다**([PortalConsumer.STOCK_PRICE]·[PortalConsumer.STOCK_ETF_PRICE]·
+     * [PortalConsumer.STOCK_LIST]). 폴백의 폴백이 몇 번 도는지가 이 계측이 답해야 할 질문이라,
+     * 클래스 단위로 뭉치면 그 질문이 사라진다.
+     */
+    private val portalMetrics: PortalCallMetrics,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -58,31 +69,43 @@ class FscStockClient(
      * 6자리 한국 종목코드 전용. 설정 없거나 조회 실패 시 null 반환.
      */
     fun getPrice(symbol: String): FscQuote? {
+        // 키가 없으면 호출이 아예 안 나간다 — 세지 않는다(안 나간 호출을 세면 한도 배분이 틀어진다)
         if (!isConfigured()) return null
-        return runCatching {
-            val json = client.get()
-                .uri("$baseUrl/GetStockSecuritiesInfoService/getStockPriceInfo") {
-                    it.queryParam("serviceKey", apiKey)
-                        .queryParam("numOfRows", 1)
-                        .queryParam("pageNo", 1)
-                        .queryParam("resultType", "json")
-                        .queryParam("likeSrtnCd", symbol)
-                        .build()
-                }
-                .retrieve()
-                .bodyToMono(String::class.java)
-                .block(Duration.ofSeconds(5))
-                ?: return null
+        // **`measurePortalCall` 헬퍼를 여기선 못 쓴다.** 아래 람다 안에 `return null`이
+        // 여럿이고(빈 본문·0건·값 파싱 실패), non-local return은 헬퍼의 카운터를 통째로
+        // 건너뛴다. `try/finally`는 어느 경로로 빠져나가든 반드시 돈다
+        var usable = false
+        try {
+            return runCatching {
+                val json = client.get()
+                    .uri("$baseUrl/GetStockSecuritiesInfoService/getStockPriceInfo") {
+                        it.queryParam("serviceKey", apiKey)
+                            .queryParam("numOfRows", 1)
+                            .queryParam("pageNo", 1)
+                            .queryParam("resultType", "json")
+                            .queryParam("likeSrtnCd", symbol)
+                            .build()
+                    }
+                    .retrieve()
+                    .bodyToMono(String::class.java)
+                    .block(Duration.ofSeconds(5))
+                    ?: return null
 
-            val resp = objectMapper.readValue(json, FscPriceResponse::class.java)
-            val item = resp.response?.body?.items?.item?.firstOrNull() ?: return null
-            val price = item.clpr?.toBigDecimalOrNull() ?: return null
-            val asOf = parseBasDt(item.basDt)
-            log.debug("[FSC] {} price={} (기준일 {})", symbol, price, asOf)
-            FscQuote(price, asOf)
-        }.onFailure { e ->
-            log.warn("[FSC] price lookup failed for {}: {}", symbol, e.message)
-        }.getOrNull()
+                val resp = objectMapper.readValue(json, FscPriceResponse::class.java)
+                val item = resp.response?.body?.items?.item?.firstOrNull() ?: return null
+                val price = item.clpr?.toBigDecimalOrNull() ?: return null
+                val asOf = parseBasDt(item.basDt)
+                log.debug("[FSC] {} price={} (기준일 {})", symbol, price, asOf)
+                FscQuote(price, asOf)
+            }.onFailure { e ->
+                log.warn("[FSC] price lookup failed for {}: {}", symbol, e.message)
+            }.getOrNull()?.also { usable = true }
+        } finally {
+            // **값을 못 얻은 호출도 한도는 똑같이 먹는다.** 포털은 미승인·쿼터초과를
+            // HTTP 200에 실어 주므로 전송 성공을 성공으로 세면 정작 한도 초과가 안 보인다
+            if (usable) portalMetrics.callSucceeded(PortalConsumer.STOCK_PRICE)
+            else portalMetrics.callFailed(PortalConsumer.STOCK_PRICE)
+        }
     }
 
     /**
@@ -112,93 +135,103 @@ class FscStockClient(
      * 사실에 가려진다.
      */
     fun getEtfPrice(symbol: String): FscQuote? {
+        // 키가 없으면 호출이 아예 안 나간다 — 세지 않는다
         if (!isConfigured()) return null
-        return runCatching {
-            val json = client.get()
-                .uri("$baseUrl/$ETF_PRICE_PATH") {
-                    it.queryParam("serviceKey", apiKey)
-                        .queryParam("numOfRows", 1)
-                        .queryParam("pageNo", 1)
-                        .queryParam("resultType", "json")
-                        // 날짜를 아예 싣지 않는다. 최신 1건만 필요한데, 무필터면 최신
-                        // 기준일자가 1페이지 첫 행으로 오기 때문이다(2026-08-21 실측:
-                        // getStockPriceInfo 1페이지=20260819, 마지막 페이지 1627=20200102).
-                        //
-                        // 🔴 기간을 쓸 일이 생기면 **endBasDt는 배타적**임을 기억할 것 —
-                        // 명세가 "기준일자가 검색값보다 작은"이다. begin=end로 주면 공집합이라
-                        // 0건이 오는데, 오류가 아니라 정상 응답이라 미지원으로 오해하기 쉽다
-                        // (2026-08-21 금시세로 실측: begin=end=20260819 → 0건,
-                        //  begin=20260819·end=20260820 → 20260819 2건).
-                        //
-                        // likeSrtnCd는 *포함* 검색이다("단축코드가 검색값을 포함"). 단축코드가
-                        // 6자리로 같은 길이라 6자리를 주면 사실상 일치지만, 그걸 믿지 않고
-                        // 아래에서 srtnCd를 대조한다. 이 오퍼레이션엔 일치형 srtnCd가 없다
-                        .queryParam("likeSrtnCd", symbol)
-                        .build()
-                }
-                .retrieve()
-                .bodyToMono(String::class.java)
-                .block(Duration.ofSeconds(5))
-                ?: return null
-
-            // 포털 오류는 HTTP 200에 **다른 봉투**로 온다. 정상 봉투로만 읽으면 미승인·쿼터초과가
-            // 전부 "값 없음"으로 뭉개진다 — 승인 전인지 승인 후 고장인지 로그에서 갈려야 한다.
-            objectMapper.readValue(json, FscErrorResponse::class.java)
-                .openApiServiceResponse?.cmmMsgHeader?.errMsg?.let { errMsg ->
-                    // 인증키는 쿼리 파라미터로 나간다 — 응답 본문·URL을 그대로 찍지 않는다.
-                    // 여기 싣는 건 포털이 정한 오류 코드뿐이다
-                    if (errMsg == NOT_REGISTERED) {
-                        log.warn(
-                            "[FSC] ETF 시세 미승인({}) — 공공데이터포털 15094806(증권상품시세정보) " +
-                            "활용신청이 필요하다. 주식시세정보 승인과는 별개다: symbol={}",
-                            errMsg, symbol,
-                        )
-                    } else {
-                        log.warn("[FSC] ETF 시세 오류 응답: errMsg={}, symbol={}", errMsg, symbol)
+        // `try/finally`인 이유는 [getPrice]와 같다 — 아래 람다의 non-local return들이
+        // 헬퍼(`measurePortalCall`)의 카운터를 건너뛴다. **미승인 봉투로 빠지는 경로가
+        // 바로 그 return이라** 여기서 새면 정작 재려던 것이 안 세진다
+        var usable = false
+        try {
+            return runCatching {
+                val json = client.get()
+                    .uri("$baseUrl/$ETF_PRICE_PATH") {
+                        it.queryParam("serviceKey", apiKey)
+                            .queryParam("numOfRows", 1)
+                            .queryParam("pageNo", 1)
+                            .queryParam("resultType", "json")
+                            // 날짜를 아예 싣지 않는다. 최신 1건만 필요한데, 무필터면 최신
+                            // 기준일자가 1페이지 첫 행으로 오기 때문이다(2026-08-21 실측:
+                            // getStockPriceInfo 1페이지=20260819, 마지막 페이지 1627=20200102).
+                            //
+                            // 🔴 기간을 쓸 일이 생기면 **endBasDt는 배타적**임을 기억할 것 —
+                            // 명세가 "기준일자가 검색값보다 작은"이다. begin=end로 주면 공집합이라
+                            // 0건이 오는데, 오류가 아니라 정상 응답이라 미지원으로 오해하기 쉽다
+                            // (2026-08-21 금시세로 실측: begin=end=20260819 → 0건,
+                            //  begin=20260819·end=20260820 → 20260819 2건).
+                            //
+                            // likeSrtnCd는 *포함* 검색이다("단축코드가 검색값을 포함"). 단축코드가
+                            // 6자리로 같은 길이라 6자리를 주면 사실상 일치지만, 그걸 믿지 않고
+                            // 아래에서 srtnCd를 대조한다. 이 오퍼레이션엔 일치형 srtnCd가 없다
+                            .queryParam("likeSrtnCd", symbol)
+                            .build()
                     }
+                    .retrieve()
+                    .bodyToMono(String::class.java)
+                    .block(Duration.ofSeconds(5))
+                    ?: return null
+
+                // 포털 오류는 HTTP 200에 **다른 봉투**로 온다. 정상 봉투로만 읽으면 미승인·쿼터초과가
+                // 전부 "값 없음"으로 뭉개진다 — 승인 전인지 승인 후 고장인지 로그에서 갈려야 한다.
+                objectMapper.readValue(json, FscErrorResponse::class.java)
+                    .openApiServiceResponse?.cmmMsgHeader?.errMsg?.let { errMsg ->
+                        // 인증키는 쿼리 파라미터로 나간다 — 응답 본문·URL을 그대로 찍지 않는다.
+                        // 여기 싣는 건 포털이 정한 오류 코드뿐이다
+                        if (errMsg == NOT_REGISTERED) {
+                            log.warn(
+                                "[FSC] ETF 시세 미승인({}) — 공공데이터포털 15094806(증권상품시세정보) " +
+                                "활용신청이 필요하다. 주식시세정보 승인과는 별개다: symbol={}",
+                                errMsg, symbol,
+                            )
+                        } else {
+                            log.warn("[FSC] ETF 시세 오류 응답: errMsg={}, symbol={}", errMsg, symbol)
+                        }
+                        return null
+                    }
+
+                val resp = objectMapper.readValue(json, FscPriceResponse::class.java)
+                val item = resp.response?.body?.items?.item?.firstOrNull() ?: return null
+
+                // likeSrtnCd 지원은 오퍼레이션마다 다르다. 무시되면 첫 행은 남의 종목이고,
+                // 그 값을 내 ETF의 "현재가"로 쓰는 것이 이 PR이 고치려는 고장 그 자체다
+                val code = item.srtnCd?.trim()
+                if (code != symbol) {
+                    log.warn(
+                        "[FSC] ETF 응답이 다른 종목이다 — likeSrtnCd가 먹지 않았을 수 있다: 요청={}, 응답={}",
+                        symbol, code,
+                    )
                     return null
                 }
 
-            val resp = objectMapper.readValue(json, FscPriceResponse::class.java)
-            val item = resp.response?.body?.items?.item?.firstOrNull() ?: return null
+                // 정렬은 최신순이다(2026-08-21 실측: likeSrtnCd=395270에 1페이지=20260820,
+                // 마지막 페이지 1236=20210730). 그래서 평시엔 이 가드가 걸리지 않는다.
+                //
+                // 그래도 남겨 두는 이유는 정렬이 뒤집힐까 봐가 아니라 **최신 행 자체가 오래될 수
+                // 있어서**다 — 상장폐지·거래정지된 종목은 마지막 거래일에 멈춰 있고, 그 값을
+                // 조용히 "현재가"로 쓰느니 없는 편이 낫다
+                val quoteDate = parseBasDt(item.basDt)
+                if (quoteDate == null) {
+                    log.warn("[FSC] ETF 응답에 기준일자가 없다(형식 변경 의심): symbol={}, basDt={}", symbol, item.basDt)
+                    return null
+                }
+                val ageDays = ChronoUnit.DAYS.between(quoteDate, LocalDate.now(clock))
+                if (ageDays > STALE_AFTER_DAYS) {
+                    log.warn(
+                        "[FSC] ETF 종가가 {}일 묵었다 — 현재가로 쓰지 않는다: symbol={}, 기준일={}",
+                        ageDays, symbol, quoteDate,
+                    )
+                    return null
+                }
 
-            // likeSrtnCd 지원은 오퍼레이션마다 다르다. 무시되면 첫 행은 남의 종목이고,
-            // 그 값을 내 ETF의 "현재가"로 쓰는 것이 이 PR이 고치려는 고장 그 자체다
-            val code = item.srtnCd?.trim()
-            if (code != symbol) {
-                log.warn(
-                    "[FSC] ETF 응답이 다른 종목이다 — likeSrtnCd가 먹지 않았을 수 있다: 요청={}, 응답={}",
-                    symbol, code,
-                )
-                return null
-            }
-
-            // 정렬은 최신순이다(2026-08-21 실측: likeSrtnCd=395270에 1페이지=20260820,
-            // 마지막 페이지 1236=20210730). 그래서 평시엔 이 가드가 걸리지 않는다.
-            //
-            // 그래도 남겨 두는 이유는 정렬이 뒤집힐까 봐가 아니라 **최신 행 자체가 오래될 수
-            // 있어서**다 — 상장폐지·거래정지된 종목은 마지막 거래일에 멈춰 있고, 그 값을
-            // 조용히 "현재가"로 쓰느니 없는 편이 낫다
-            val quoteDate = parseBasDt(item.basDt)
-            if (quoteDate == null) {
-                log.warn("[FSC] ETF 응답에 기준일자가 없다(형식 변경 의심): symbol={}, basDt={}", symbol, item.basDt)
-                return null
-            }
-            val ageDays = ChronoUnit.DAYS.between(quoteDate, LocalDate.now(clock))
-            if (ageDays > STALE_AFTER_DAYS) {
-                log.warn(
-                    "[FSC] ETF 종가가 {}일 묵었다 — 현재가로 쓰지 않는다: symbol={}, 기준일={}",
-                    ageDays, symbol, quoteDate,
-                )
-                return null
-            }
-
-            val price = item.clpr?.toBigDecimalOrNull() ?: return null
-            log.debug("[FSC] ETF {} price={} (기준일 {})", symbol, price, quoteDate)
-            FscQuote(price, quoteDate)
-        }.onFailure { e ->
-            log.warn("[FSC] ETF price lookup failed for {}: {}", symbol, e.message)
-        }.getOrNull()
+                val price = item.clpr?.toBigDecimalOrNull() ?: return null
+                log.debug("[FSC] ETF {} price={} (기준일 {})", symbol, price, quoteDate)
+                FscQuote(price, quoteDate)
+            }.onFailure { e ->
+                log.warn("[FSC] ETF price lookup failed for {}: {}", symbol, e.message)
+            }.getOrNull()?.also { usable = true }
+        } finally {
+            if (usable) portalMetrics.callSucceeded(PortalConsumer.STOCK_ETF_PRICE)
+            else portalMetrics.callFailed(PortalConsumer.STOCK_ETF_PRICE)
+        }
     }
 
     /**
@@ -223,39 +256,56 @@ class FscStockClient(
         return result
     }
 
-    private fun fetchStockPage(page: Int, size: Int): List<KrStockItem> = runCatching {
-        val json = client.get()
-            .uri("$baseUrl/GetKrxListedInfoService/getItemInfo") {
-                it.queryParam("serviceKey", apiKey)
-                    .queryParam("numOfRows", size)
-                    .queryParam("pageNo", page)
-                    .queryParam("resultType", "json")
-                    .build()
-            }
-            .retrieve()
-            .bodyToMono(String::class.java)
-            .block(Duration.ofSeconds(15))
-            ?: return emptyList()
+    /**
+     * **페이지 하나가 포털 호출 하나다** — [listAllStocks]가 이 함수를 여러 번 돈다.
+     * 계측이 [listAllStocks]가 아니라 여기 붙은 것이 그래서다(AF-210).
+     */
+    private fun fetchStockPage(page: Int, size: Int): List<KrStockItem> {
+        // `try/finally`인 이유는 [getPrice]와 같다 — 아래 `?: return emptyList()`가 non-local return이다
+        var usable = false
+        try {
+            return runCatching {
+                val json = client.get()
+                    .uri("$baseUrl/GetKrxListedInfoService/getItemInfo") {
+                        it.queryParam("serviceKey", apiKey)
+                            .queryParam("numOfRows", size)
+                            .queryParam("pageNo", page)
+                            .queryParam("resultType", "json")
+                            .build()
+                    }
+                    .retrieve()
+                    .bodyToMono(String::class.java)
+                    .block(Duration.ofSeconds(15))
+                    ?: return emptyList()
 
-        val resp = objectMapper.readValue(json, FscListResponse::class.java)
-        resp.response?.body?.items?.item
-            ?.filter { it.srtnCd?.isNotBlank() == true && it.itmsNm?.isNotBlank() == true }
-            ?.map { item ->
-                val market = when (item.mrktCtg?.uppercase()) {
-                    "KOSPI" -> "KOSPI"
-                    "KOSDAQ" -> "KOSDAQ"
-                    "KONEX" -> "KONEX"
-                    else -> item.mrktCtg ?: "KRX"
-                }
-                KrStockItem(
-                    symbol = item.srtnCd!!.trim(),
-                    name = item.itmsNm!!.trim(),
-                    market = market,
-                )
-            } ?: emptyList()
-    }.onFailure { e ->
-        log.warn("[FSC] 종목목록 page={} 조회 실패: {}", page, e.message)
-    }.getOrElse { emptyList() }
+                val resp = objectMapper.readValue(json, FscListResponse::class.java)
+                // **0건이어도 성공이다** — 마지막 페이지는 정상적으로 빌 수 있다. 반면
+                // 미승인·쿼터초과는 최상위 키가 다른 봉투로 와서 여기가 null이 되므로 실패로 갈린다
+                val items = resp.response?.body?.items?.item ?: return@runCatching emptyList<KrStockItem>()
+                usable = true
+                items
+                    .filter { it.srtnCd?.isNotBlank() == true && it.itmsNm?.isNotBlank() == true }
+                    .map { item ->
+                        val market = when (item.mrktCtg?.uppercase()) {
+                            "KOSPI" -> "KOSPI"
+                            "KOSDAQ" -> "KOSDAQ"
+                            "KONEX" -> "KONEX"
+                            else -> item.mrktCtg ?: "KRX"
+                        }
+                        KrStockItem(
+                            symbol = item.srtnCd!!.trim(),
+                            name = item.itmsNm!!.trim(),
+                            market = market,
+                        )
+                    }
+            }.onFailure { e ->
+                log.warn("[FSC] 종목목록 page={} 조회 실패: {}", page, e.message)
+            }.getOrElse { emptyList() }
+        } finally {
+            if (usable) portalMetrics.callSucceeded(PortalConsumer.STOCK_LIST)
+            else portalMetrics.callFailed(PortalConsumer.STOCK_LIST)
+        }
+    }
 
     // ── Response DTOs ──────────────────────────────────────────────
 

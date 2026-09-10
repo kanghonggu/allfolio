@@ -1,5 +1,6 @@
 package com.allfolio.market.commodity.fsc
 
+import com.allfolio.common.metrics.NoOpPortalCallMetrics
 import com.allfolio.market.commodity.CommodityObservation
 import com.allfolio.market.commodity.CommodityProperties
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -150,7 +151,12 @@ class FscCommoditySourceTest {
         FscGoldRow(srtnCd, date, BigDecimal(price), changeValue = null, changeRate = null)
 
     private class FakeClient(private val response: FscGoldFetch = FscGoldFetch(emptyList(), 0)) :
-        FscCommodityClient(apiKey = "test-key", baseUrl = "http://localhost", objectMapper = ObjectMapper()) {
+        FscCommodityClient(
+            apiKey = "test-key",
+            baseUrl = "http://localhost",
+            objectMapper = ObjectMapper(),
+            portalMetrics = NoOpPortalCallMetrics,
+        ) {
 
         val requested = mutableListOf<Pair<LocalDate, LocalDate>>()
 

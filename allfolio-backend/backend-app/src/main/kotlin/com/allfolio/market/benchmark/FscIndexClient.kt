@@ -1,5 +1,8 @@
 package com.allfolio.market.benchmark
 
+import com.allfolio.common.metrics.PortalCallMetrics
+import com.allfolio.common.metrics.PortalConsumer
+import com.allfolio.common.metrics.measurePortalCall
 import com.allfolio.market.fsc.FscApiException
 import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.JsonNode
@@ -48,6 +51,11 @@ class FscIndexClient(
     // 컴파일 상수여야 해서 상수 참조로 묶지 못한다 — 주소를 고칠 땐 세 파일을 같이 볼 것
     @Value("\${fsc.base-url:https://apis.data.go.kr/1160100/service}") private val baseUrl: String,
     private val objectMapper: ObjectMapper,
+    /**
+     * 포털 호출 계측(AF-210). **기본값을 두지 않는다** — 빈이 없으면 조용히 0을 세는 대신
+     * 부팅이 실패해야 한다. 근거는 `PortalCallMetrics` KDoc.
+     */
+    private val portalMetrics: PortalCallMetrics,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -89,63 +97,68 @@ class FscIndexClient(
         // 지수 이름과 구간만 남긴다. 전체 URL을 찍으면 serviceKey가 그대로 로그에 박힌다
         log.info("[FSC] 지수시세 조회 {}({}) {}~{}", item.idxNm, item.idxCsf, from, to)
 
-        val body = try {
-            webClient.get()
-                .uri { b ->
-                    b.path(PATH)
-                        .queryParam("serviceKey", apiKey)
-                        .queryParam("resultType", "json")
-                        .queryParam("numOfRows", PAGE_SIZE)
-                        .queryParam("pageNo", 1)
-                        // 서버 필터. **응답을 줄이려는 것이지 정확성의 근거가 아니다** —
-                        // 정확성은 아래 (idxNm, idxCsf) 재검증이 책임진다
-                        .queryParam("idxNm", item.idxNm)
-                        // **`yyyyMMdd`다. ISO(`yyyy-MM-dd`)가 아니다** —
-                        // LocalDate.toString()을 그대로 넘기면 조용히 0건이 된다
-                        .queryParam("beginBasDt", DATE_FORMAT.format(from))
-                        // **🔴 하루를 더하는 것은 `endBasDt`가 배타적이기 때문이다 — 지우지 말 것.**
-                        // 활용가이드가 `endBasDt`를 "기준일자가 검색값보다 **작은** 데이터를 검색"으로
-                        // 정의한다(`beginBasDt`만 "크거나 같은"). **이 오퍼레이션으로 직접 쟀다**
-                        // (2026-08-21, 운영 키, `idxNm=코스피`):
-                        //   `beginBasDt=endBasDt=20260819` → `resultCode=00` · `totalCount=0`
-                        //   `beginBasDt=20260819&endBasDt=20260820` → `basDt=20260819`
-                        // **뒤 호출이 대조군이다** — 그게 없으면 앞의 0건이 "배타적"인지 "그날 값이
-                        // 없다"인지 못 가른다. (금시세 `getGoldPriceInfo`도 같은 날 같은 결과였다.)
-                        //
-                        // 안 더하면 마지막 날이 조용히 빠진다: 기본 창(14일)은 다음 실행이 메우지만,
-                        // 백필은 끝날을 잃고 `from == to` 조회는 언제나 0건이다.
-                        .queryParam("endBasDt", DATE_FORMAT.format(to.plusDays(1)))
-                        .build()
-                }
-                .retrieve()
-                .bodyToMono(String::class.java)
-                .block(timeout)
-                ?: throw FscApiException("EMPTY", "응답 본문이 비어 있습니다")
-        } catch (e: FscApiException) {
-            throw e
-        } catch (e: WebClientResponseException) {
-            // 상태만 남긴다. 본문에는 우리 요청 URL이 되울려 올 수 있고 거기 키가 들어 있다.
-            // cause도 붙이지 않는다 — Reactor checkpoint 프레임에 URI가 통째로 있다
-            log.warn("[FSC] HTTP {}", e.statusCode.value())
-            throw FscApiException(
-                "HTTP-${e.statusCode.value()}",
-                "공공데이터포털이 HTTP ${e.statusCode.value()} 를 반환했습니다",
-            )
-        } catch (e: Throwable) {
-            if (e is Error) throw e
-            if (e is InterruptedException || e.cause is InterruptedException) Thread.currentThread().interrupt()
-            log.warn("[FSC] 호출 실패 reason={}", e.javaClass.simpleName)
-            throw FscApiException("IO", "공공데이터포털 호출에 실패했습니다")
-        }
+        // **여기서부터가 포털 호출 1회다**(AF-210). 위 `isConfigured()` 가드는 호출이
+        // 나가기 전이라 세지 않는다 — 안 나간 호출을 세면 한도 배분이 그만큼 틀어진다.
+        // 파싱 단계의 실패도 실패로 센다 — 포털은 미승인·쿼터초과를 HTTP 200에 실어 준다
+        return portalMetrics.measurePortalCall(PortalConsumer.INDEX) {
+            val body = try {
+                webClient.get()
+                    .uri { b ->
+                        b.path(PATH)
+                            .queryParam("serviceKey", apiKey)
+                            .queryParam("resultType", "json")
+                            .queryParam("numOfRows", PAGE_SIZE)
+                            .queryParam("pageNo", 1)
+                            // 서버 필터. **응답을 줄이려는 것이지 정확성의 근거가 아니다** —
+                            // 정확성은 아래 (idxNm, idxCsf) 재검증이 책임진다
+                            .queryParam("idxNm", item.idxNm)
+                            // **`yyyyMMdd`다. ISO(`yyyy-MM-dd`)가 아니다** —
+                            // LocalDate.toString()을 그대로 넘기면 조용히 0건이 된다
+                            .queryParam("beginBasDt", DATE_FORMAT.format(from))
+                            // **🔴 하루를 더하는 것은 `endBasDt`가 배타적이기 때문이다 — 지우지 말 것.**
+                            // 활용가이드가 `endBasDt`를 "기준일자가 검색값보다 **작은** 데이터를 검색"으로
+                            // 정의한다(`beginBasDt`만 "크거나 같은"). **이 오퍼레이션으로 직접 쟀다**
+                            // (2026-08-21, 운영 키, `idxNm=코스피`):
+                            //   `beginBasDt=endBasDt=20260819` → `resultCode=00` · `totalCount=0`
+                            //   `beginBasDt=20260819&endBasDt=20260820` → `basDt=20260819`
+                            // **뒤 호출이 대조군이다** — 그게 없으면 앞의 0건이 "배타적"인지 "그날 값이
+                            // 없다"인지 못 가른다. (금시세 `getGoldPriceInfo`도 같은 날 같은 결과였다.)
+                            //
+                            // 안 더하면 마지막 날이 조용히 빠진다: 기본 창(14일)은 다음 실행이 메우지만,
+                            // 백필은 끝날을 잃고 `from == to` 조회는 언제나 0건이다.
+                            .queryParam("endBasDt", DATE_FORMAT.format(to.plusDays(1)))
+                            .build()
+                    }
+                    .retrieve()
+                    .bodyToMono(String::class.java)
+                    .block(timeout)
+                    ?: throw FscApiException("EMPTY", "응답 본문이 비어 있습니다")
+            } catch (e: FscApiException) {
+                throw e
+            } catch (e: WebClientResponseException) {
+                // 상태만 남긴다. 본문에는 우리 요청 URL이 되울려 올 수 있고 거기 키가 들어 있다.
+                // cause도 붙이지 않는다 — Reactor checkpoint 프레임에 URI가 통째로 있다
+                log.warn("[FSC] HTTP {}", e.statusCode.value())
+                throw FscApiException(
+                    "HTTP-${e.statusCode.value()}",
+                    "공공데이터포털이 HTTP ${e.statusCode.value()} 를 반환했습니다",
+                )
+            } catch (e: Throwable) {
+                if (e is Error) throw e
+                if (e is InterruptedException || e.cause is InterruptedException) Thread.currentThread().interrupt()
+                log.warn("[FSC] 호출 실패 reason={}", e.javaClass.simpleName)
+                throw FscApiException("IO", "공공데이터포털 호출에 실패했습니다")
+            }
 
-        // 본문이 JSON이 아니면(인증 오류 시 XML 봉투를 주는 경우가 있다) Jackson 예외가 원본 본문을
-        // `[Source: (String)"..."]`로 물고 나온다 — 그 본문에 되울려 온 쿼리가 있으면 키가 새므로
-        // 여기서 갈아끼운다. cause도 붙이지 않는다(같은 본문을 물고 있다)
-        return try {
-            parse(body, item)
-        } catch (e: JsonProcessingException) {
-            log.warn("[FSC] 응답이 JSON이 아닙니다 reason={}", e.javaClass.simpleName)
-            throw FscApiException("MALFORMED", "응답 본문이 올바른 JSON이 아닙니다")
+            // 본문이 JSON이 아니면(인증 오류 시 XML 봉투를 주는 경우가 있다) Jackson 예외가 원본 본문을
+            // `[Source: (String)"..."]`로 물고 나온다 — 그 본문에 되울려 온 쿼리가 있으면 키가 새므로
+            // 여기서 갈아끼운다. cause도 붙이지 않는다(같은 본문을 물고 있다)
+            try {
+                parse(body, item)
+            } catch (e: JsonProcessingException) {
+                log.warn("[FSC] 응답이 JSON이 아닙니다 reason={}", e.javaClass.simpleName)
+                throw FscApiException("MALFORMED", "응답 본문이 올바른 JSON이 아닙니다")
+            }
         }
     }
 

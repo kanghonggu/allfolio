@@ -1,5 +1,6 @@
 package com.allfolio.unifiedasset.infrastructure.adapter
 
+import com.allfolio.common.metrics.NoOpPortalCallMetrics
 import com.allfolio.unifiedasset.application.usecase.FakeStockTradeRepository
 import com.allfolio.unifiedasset.domain.account.Account
 import com.allfolio.unifiedasset.domain.account.AccountProvider
@@ -50,7 +51,7 @@ class StockSyncAdapterPriceSourceTest {
         private val etfPrice: BigDecimal? = null,
         private val priceAsOf: LocalDate? = null,
         private val etfPriceAsOf: LocalDate? = null,
-    ) : FscStockClient("", ObjectMapper()) {
+    ) : FscStockClient("", ObjectMapper(), NoOpPortalCallMetrics) {
         var callCount = 0
         var etfCallCount = 0
         override fun getPrice(symbol: String): FscStockClient.FscQuote? {

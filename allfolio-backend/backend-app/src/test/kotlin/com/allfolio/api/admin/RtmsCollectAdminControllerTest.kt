@@ -1,5 +1,6 @@
 package com.allfolio.api.admin
 
+import com.allfolio.common.metrics.NoOpPortalCallMetrics
 import com.allfolio.market.realestate.RtmsClient
 import com.allfolio.market.realestate.RtmsCollectService
 import com.allfolio.market.realestate.RtmsCollectSummary
@@ -35,7 +36,7 @@ class RtmsCollectAdminControllerTest {
     )
 
     private val service = object : RtmsCollectService(
-        RtmsClient("K", "http://unused", ObjectMapper()),
+        RtmsClient("K", "http://unused", ObjectMapper(), NoOpPortalCallMetrics),
         object : RtmsDealStore {
             override fun upsertAll(deals: List<com.allfolio.market.realestate.RtmsDeal>, collectedAt: LocalDateTime) = 0
             override fun findFetch(sggCode: String, month: YearMonth) = null
