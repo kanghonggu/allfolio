@@ -36,6 +36,37 @@ class CashFlowTest {
         assertThat(cf(FlowType.FX_OUT).signedKrw()).isEqualByComparingTo("0")
     }
 
+    /**
+     * 🔴 금액 양수 검증 (AF-199 · 변이 CF-M3).
+     *
+     * 화면에도 검증이 있지만 **도메인 불변식이 뚫리면 다른 입구가 열린다** — CSV 임포트,
+     * 어드민 경로, 배치는 화면을 안 지난다. 기준선에서 이 `require`를 지워도 아무 테스트도
+     * 안 깨졌다.
+     */
+    @Test
+    fun `금액이 0 이하면 만들 수 없다`() {
+        fun make(amount: String) = CashFlow.create(
+            user, a1, date, FlowType.DEPOSIT, BigDecimal(amount), "KRW", BigDecimal("1000"), null,
+        )
+        assertThatThrownBy { make("0") }.isInstanceOf(IllegalArgumentException::class.java)
+        assertThatThrownBy { make("-1") }.isInstanceOf(IllegalArgumentException::class.java)
+        assertThat(make("1").amount).isEqualByComparingTo(BigDecimal.ONE)
+    }
+
+    /**
+     * 통화는 대문자로 정규화한다 (AF-199 · 변이 CF-M5).
+     *
+     * 안 하면 `usd`와 `USD`가 **다른 통화로 갈린다** — 통화별 집계가 둘로 쪼개지고
+     * 합계가 맞는 채로 표만 이상해져 알아채기 어렵다.
+     */
+    @Test
+    fun `통화는 대문자로 정규화한다`() {
+        val flow = CashFlow.create(
+            user, a1, date, FlowType.DEPOSIT, BigDecimal.TEN, "usd", BigDecimal("13000"), null,
+        )
+        assertThat(flow.currency).isEqualTo("USD")
+    }
+
     @Test
     fun `transferPair는 동일 linkId로 OUT@from IN@to 2레그를 만든다`() {
         val (out, inn) = CashFlow.transferPair(user, a1, a2, date, BigDecimal("500"), "KRW", BigDecimal("500"), "이체")

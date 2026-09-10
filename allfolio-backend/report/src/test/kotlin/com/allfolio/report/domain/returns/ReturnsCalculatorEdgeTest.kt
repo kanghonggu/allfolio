@@ -120,6 +120,35 @@ class ReturnsCalculatorEdgeTest {
     }
 
     /**
+     * 🔴 커버리지 앵커는 **cutoff 이전 마지막** 관측이다 (AF-199 · 변이 RRG-M3).
+     *
+     * 기존 `ReturnsCalculatorTest > periodTwrPercent - cutoff 이전 마지막 관측을 기저로 쓴다`가
+     * 이름으로는 이걸 문다. 그런데 **두 후보 관측의 NAV가 둘 다 1000**이라 앵커를 앞으로
+     * 옮겨도 답이 같다 — 기준선에서 `sorted.last` → `sorted.first` 변이가 통과한 이유다.
+     *
+     * 여기서는 두 후보의 NAV를 다르게 둬서 **선택이 결과를 바꾸게** 한다:
+     *
+     * | 앵커 | 기저 | 결과 |
+     * |---|---|---|
+     * | 6/3 (마지막, 올바름) | 1000 | +20% |
+     * | 6/1 (첫, 변이) | 800 | +50% |
+     */
+    @Test
+    fun `앵커는 cutoff 이전 마지막 관측이다 — 첫 관측이 아니다`() {
+        val result = ReturnsCalculator.periodTwrPercent(
+            navSeries = listOf(
+                NavPoint(d(1), bd("800")),
+                NavPoint(d(3), bd("1000")),
+                NavPoint(d(30), bd("1200")),
+            ),
+            flows = emptyList(),
+            cutoff = d(5), asOf = d(30),
+        )
+
+        assertClose("20.00", result, eps = "0.01")
+    }
+
+    /**
      * 기간 **밖**의 플로우는 애초에 안 들어온다 — `from..to` 필터가 먼저 걸린다.
      * 위 두 경계와 달리 이건 `periodFlows` 단계라 자리가 다르고, 한쪽만 고쳐도 다른 쪽은
      * 조용히 남는다.
