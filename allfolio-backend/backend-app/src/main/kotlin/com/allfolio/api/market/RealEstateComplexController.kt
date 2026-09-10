@@ -1,5 +1,6 @@
 package com.allfolio.api.market
 
+import com.allfolio.market.realestate.ComplexSearchResult
 import com.allfolio.market.realestate.ComplexSearchService
 import com.allfolio.market.realestate.ComplexView
 import org.springframework.http.HttpStatus
@@ -32,13 +33,18 @@ class RealEstateComplexController(
      * **거래가 없었던 단지는 안 나온다.** 국토부 API에 "단지 목록"이라는 것이 없어서
      * 우리가 받아 둔 거래에서 역으로 뽑기 때문이다. 그게 맞는 동작이기도 하다 —
      * 실거래가 없으면 자동 평가도 못 한다. 화면이 그렇게 말해야 한다.
+     *
+     * 🔴 **다만 "무엇을" 말해야 하는지가 갈린다** (AF-202). 응답이 `collected`를 함께 주는
+     * 이유다 — 그 시군구를 한 번도 수집하지 않았으면 빈 목록은 **그 지역 데이터가 없다**는
+     * 뜻이지 "그 단지에 거래가 없다"가 아니다. 2026-09-09 데모에서 화면이 후자로 말했고,
+     * 사용자는 자기 아파트에 실거래가 없다고 잘못 읽었다.
      */
     @GetMapping("/complexes")
     fun complexes(
         @RequestParam sgg: String,
         @RequestParam(required = false) q: String?,
         @RequestParam(required = false) limit: Int?,
-    ): ResponseEntity<List<ComplexView>> {
+    ): ResponseEntity<ComplexSearchResult> {
         // 5자리가 아니면 캐시에 매칭되는 행이 없어 조용히 빈 목록이 된다.
         // 오류가 아니라 빈 결과라 화면에서 "그 단지가 없다"로 읽힌다 — 먼저 막는다.
         if (!sgg.matches(Regex("\\d{5}"))) {

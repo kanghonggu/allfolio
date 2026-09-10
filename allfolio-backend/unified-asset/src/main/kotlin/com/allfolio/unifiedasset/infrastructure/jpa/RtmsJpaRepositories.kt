@@ -74,7 +74,19 @@ interface RtmsDealCacheJpaRepository : JpaRepository<RtmsDealCacheEntity, UUID> 
     ): List<ComplexRow>
 }
 
-interface RtmsFetchLogJpaRepository : JpaRepository<RtmsFetchLogEntity, RtmsFetchLogId>
+interface RtmsFetchLogJpaRepository : JpaRepository<RtmsFetchLogEntity, RtmsFetchLogId> {
+    /**
+     * 이 시군구를 **한 번이라도 받았는가** (AF-202).
+     *
+     * 단지 검색이 빈 결과를 줄 때 **"안 받았다"와 "받았는데 없다"를 가르는** 유일한 근거다.
+     * 둘을 못 가르면 화면이 미수집 지역을 "실거래가 없는 단지"라고 말한다 — 2026-09-09
+     * 데모에서 실제로 그랬다.
+     *
+     * 월 단위가 아니라 시군구 단위로 묻는다. 한 달이라도 받았으면 그 지역은 "수집한 곳"이고,
+     * 그때부터 빈 결과는 검색어나 거래 부재의 문제다.
+     */
+    fun existsBySggCode(sggCode: String): Boolean
+}
 
 /** [RtmsDealCacheJpaRepository.findComplexRows]의 투영 */
 interface ComplexRow {

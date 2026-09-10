@@ -24,6 +24,29 @@ data class ComplexView(
 )
 
 /**
+ * 검색 결과. **빈 목록의 사유를 함께 준다** (AF-202).
+ *
+ * 예전에는 `List<ComplexView>`만 돌려줘서, 화면이 빈 결과를 보고 *"최근 실거래가 없는
+ * 단지입니다"*라고 말했다. 그런데 그 문장이 참인 경우는 셋 중 하나뿐이다:
+ *
+ * 1. 그 시군구를 **한 번도 수집하지 않았다** ← 2026-09-09 데모에서 실제로 이것이었다
+ * 2. 수집했는데 검색어에 맞는 단지가 없다
+ * 3. 그 단지에 최근 거래가 없다
+ *
+ * 1번을 3번이라고 말하면 **사용자가 "우리 아파트는 실거래가 없구나"로 잘못 배운다.**
+ * 전국 250여 시군구 중 수집된 곳이 3개뿐이던 시점이라 대부분의 사용자가 1번을 만났다.
+ */
+data class ComplexSearchResult(
+    /**
+     * 이 시군구를 한 번이라도 수집했는가.
+     *
+     * `false`면 [complexes]가 빈 것은 **데이터가 없어서지 그 지역에 거래가 없어서가 아니다.**
+     */
+    val collected: Boolean,
+    val complexes: List<ComplexView>,
+)
+
+/**
  * 단지·평형 검색 (R2).
  *
  * ## 왜 캐시에서만 찾는가
@@ -48,7 +71,7 @@ interface ComplexSearchService {
      * @param query 단지명 일부. 비면 [sggCode] 전체를 준다
      * @param sggCode 법정동 앞 5자리. **필수다** — 전국을 훑으면 "래미안"에 수백 개가 걸린다
      */
-    fun search(sggCode: String, query: String?, limit: Int = DEFAULT_LIMIT): List<ComplexView>
+    fun search(sggCode: String, query: String?, limit: Int = DEFAULT_LIMIT): ComplexSearchResult
 
     companion object {
         const val DEFAULT_LIMIT = 20
