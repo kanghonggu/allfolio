@@ -1,5 +1,6 @@
 package com.allfolio.market.realestate
 
+import com.allfolio.common.metrics.NoOpPortalCallMetrics
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -196,7 +197,7 @@ class RtmsCollectServiceTest {
         private val pages: Map<String, Int>,
         private val failing: Set<String> = emptySet(),
         private val droppedPerPage: Int = 0,
-    ) : RtmsClient("KEY", "http://unused", ObjectMapper()) {
+    ) : RtmsClient("KEY", "http://unused", ObjectMapper(), NoOpPortalCallMetrics) {
         var callCount = 0
         val seen = mutableListOf<String>()
 

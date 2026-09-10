@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
+import com.allfolio.common.metrics.NoOpPortalCallMetrics
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
@@ -92,7 +93,7 @@ class FscEtfPriceTest {
     private fun serving(body: String): Int = serve { respond(it, 200, body) }
 
     private fun client(port: Int, key: String = API_KEY) =
-        FscStockClient(key, ObjectMapper()).apply {
+        FscStockClient(key, ObjectMapper(), NoOpPortalCallMetrics).apply {
             baseUrl = "http://127.0.0.1:$port"
             // 이 픽스처를 실제로 받은 시각(2026-08-21 11:42 KST)에 고정한다 — 그러지 않으면
             // 이 파일 전체가 2026-09월이 되는 순간 신선도 가드에 걸려 죽는다
