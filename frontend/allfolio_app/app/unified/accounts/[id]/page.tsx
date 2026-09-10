@@ -51,6 +51,13 @@ type FieldConfig = {
   namePlaceholder: string
   symbolLabel?: string
   symbolPlaceholder?: string
+  /**
+   * 있으면 심볼 칸이 자유 입력이 아니라 드롭다운이 된다.
+   *
+   * **`value`는 서버가 해석할 수 있는 값이어야 한다.** 금의 경우 `GoldWeight.FACTORS`의
+   * 키다 — 라벨만 고치고 값을 바꾸면 평가가 조용히 멈춘다(아래 GOLD 주석 참조).
+   */
+  symbolOptions?: { value: string; label: string }[]
   quantityLabel?: string
   quantityPlaceholder?: string
   showSymbol: boolean
@@ -91,8 +98,19 @@ const TYPE_CONFIG: Record<string, FieldConfig> = {
   },
   GOLD: {
     namePlaceholder: '예: 순금 24K 골드바',
-    symbolLabel: '단위',
-    symbolPlaceholder: 'g / 돈 / oz',
+    symbolLabel: '단위 *',
+    // 🔴 **이 값들은 서버의 `GoldWeight.FACTORS` 키다.** 손으로 적던 자리라 `그람`·`온즈`
+    // 같은 표기가 섞였고, 서버는 오타를 추측하지 않으므로(`toGrams`가 null) 그런 금은
+    // `KrxGoldSource.valuate`에서 **조용히 자동 평가에서 빠졌다** — 화면엔 사용자가 손으로
+    // 넣은 금액이 그대로 남아 아무도 못 알아챈다. 골라 넣게 해서 그 경로를 없앤다.
+    //
+    // 라벨에 그램 환산을 적어 둔 것은 사용자가 자기 눈으로 검산하라는 뜻이다. 돈을 g로
+    // 잘못 고르면 평가액이 3.75배가 되는데, 금액만 보고는 그럴듯하다.
+    symbolOptions: [
+      { value: 'g', label: '그램 (g)' },
+      { value: '돈', label: '돈 (3.75g)' },
+      { value: 'oz', label: '트로이온스 (31.1035g)' },
+    ],
     quantityLabel: '중량',
     quantityPlaceholder: '예: 37.5',
     showSymbol: true,
@@ -101,7 +119,7 @@ const TYPE_CONFIG: Record<string, FieldConfig> = {
     currentValueLabel: '현재 총 가치',
     memoLabel: '상세 설명',
     memoPlaceholder: '예: KEB하나은행 구매, 골드바 보관함 보관',
-    hint: '중량 × 현재 금 시세로 현재 총 가치를 계산하세요.',
+    hint: '단위를 골라야 매일 KRX 금 시세로 자동 평가됩니다. 현재 총 가치는 그때까지 쓰일 값입니다.',
   },
   WATCH: {
     namePlaceholder: '예: 롤렉스 데이트저스트 41',
@@ -578,11 +596,27 @@ export default function AccountDetailPage() {
               {/* 심볼/주소/단위 */}
               {cfg.showSymbol && (
                 <Field id="asset-symbol" label={cfg.symbolLabel ?? ''} className="sm:col-span-2">
-                  <Input type="text"
-                    placeholder={cfg.symbolPlaceholder}
-                    value={assetForm.symbol ?? ''}
-                    onChange={e => set('symbol', e.target.value)}
-                  />
+                  {cfg.symbolOptions ? (
+                    // **비어 있는 첫 옵션이 `required`를 실제로 동작하게 하는 자리다.** 이게
+                    // 없으면 브라우저가 첫 항목을 이미 고른 것으로 보고 그냥 통과시킨다 —
+                    // 그러면 g이 기본값이 되어, 고르지 않은 사용자의 돈짜리 금이 3.75배로
+                    // 평가된다. 안 고른 것은 안 고른 것으로 남아야 한다.
+                    <Select required
+                      value={assetForm.symbol ?? ''}
+                      onChange={e => set('symbol', e.target.value)}
+                    >
+                      <option value="" disabled>단위를 고르세요</option>
+                      {cfg.symbolOptions.map(o => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <Input type="text"
+                      placeholder={cfg.symbolPlaceholder}
+                      value={assetForm.symbol ?? ''}
+                      onChange={e => set('symbol', e.target.value)}
+                    />
+                  )}
                 </Field>
               )}
 
