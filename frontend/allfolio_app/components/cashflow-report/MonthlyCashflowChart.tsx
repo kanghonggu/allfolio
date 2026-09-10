@@ -2,11 +2,28 @@
 'use client'
 
 import {
-  Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, CartesianGrid, ComposedChart, LabelList, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import SectionHeader from '@/components/ui/SectionHeader'
 import type { CashflowMonthly } from '@/types/cashflow-report'
 import { fmtKrw } from '@/lib/report-format'
+
+/**
+ * 인쇄 전용 값 라벨 (AF-206).
+ * 인쇄물엔 호버가 없으므로 Tooltip에만 있던 값을 SVG <text>로 항상 렌더하고,
+ * 화면에서는 globals.css의 `@media screen { .print-only-label { display: none } }`으로 가린다.
+ * 세로쓰기(angle -90)는 개월 수가 늘어도 이웃 라벨과 부딪히지 않게 하기 위함.
+ */
+const printLabel = {
+  className: 'print-only-label',
+  position: 'top' as const,
+  angle: -90,
+  offset: 12,
+  fill: 'var(--c-ink)',
+  fontSize: 8,
+  fontFamily: 'var(--font-mono), monospace',
+  formatter: (v: number) => fmtKrw(v),
+}
 
 export function MonthlyCashflowChart({ rows }: { rows: CashflowMonthly[] }) {
   return (
@@ -35,9 +52,15 @@ export function MonthlyCashflowChart({ rows }: { rows: CashflowMonthly[] }) {
                 contentStyle={{ background: 'var(--c-surface)', border: '1px solid var(--c-line-card)', borderRadius: 0, color: 'var(--c-ink)' }}
               />
               <Legend formatter={(v) => <span className="text-[11px] text-fg-3">{v}</span>} />
-              <Bar dataKey="inflow" fill="var(--c-gain)" name="유입" />
-              <Bar dataKey="outflow" fill="var(--c-loss)" name="유출" />
-              <Line dataKey="net" stroke="var(--c-ink)" name="순흐름" strokeWidth={2} dot={{ r: 3 }} />
+              <Bar dataKey="inflow" fill="var(--c-gain)" name="유입" isAnimationActive={false}>
+                <LabelList dataKey="inflow" {...printLabel} />
+              </Bar>
+              <Bar dataKey="outflow" fill="var(--c-loss)" name="유출" isAnimationActive={false}>
+                <LabelList dataKey="outflow" {...printLabel} />
+              </Bar>
+              <Line dataKey="net" stroke="var(--c-ink)" name="순흐름" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false}>
+                <LabelList dataKey="net" {...printLabel} />
+              </Line>
             </ComposedChart>
           </ResponsiveContainer>
         )}
