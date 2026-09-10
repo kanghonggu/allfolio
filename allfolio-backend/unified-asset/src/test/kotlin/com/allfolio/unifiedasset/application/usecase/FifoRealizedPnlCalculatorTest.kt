@@ -7,6 +7,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.util.UUID
 
 class FifoRealizedPnlCalculatorTest {
@@ -108,5 +109,65 @@ class FifoRealizedPnlCalculatorTest {
             period,
         )
         assertThat(r["GGG"]).isEqualByComparingTo("450") // 500 - 50
+    }
+
+    /** createdAt를 지정해 같은 날 거래의 입력순을 고정한다(create는 now()라 결정적이지 않음). */
+    private fun tradeCreatedAt(
+        type: StockTradeType,
+        symbol: String,
+        qty: String,
+        price: String,
+        on: LocalDate,
+        createdAt: LocalDateTime,
+    ) = StockTrade.reconstruct(
+        id = UUID.randomUUID(), accountId = acct, userId = user, tradeType = type,
+        stockName = symbol, symbol = symbol,
+        quantity = BigDecimal(qty), price = BigDecimal(price),
+        totalAmount = BigDecimal(qty).multiply(BigDecimal(price)),
+        fee = BigDecimal.ZERO, tax = BigDecimal.ZERO,
+        tradedAt = on, memo = null, createdAt = createdAt,
+    )
+
+    @Test
+    fun `같은 날 거래는 입력 목록 순서가 아니라 createdAt 순으로 소진된다`() {
+        val day = LocalDate.of(2026, 6, 10)
+        // createdAt: 100원 매수(09시) → 200원 매수(10시) → 매도(11시).
+        // 목록은 일부러 뒤섞어 넣는다 — 정렬이 createdAt를 보지 않으면 200원 lot이 먼저 소진된다.
+        val r = FifoRealizedPnlCalculator.calculate(
+            listOf(
+                tradeCreatedAt(StockTradeType.BUY, "HHH", "10", "200", day, LocalDateTime.of(2026, 6, 10, 10, 0)),
+                tradeCreatedAt(StockTradeType.SELL, "HHH", "10", "300", day, LocalDateTime.of(2026, 6, 10, 11, 0)),
+                tradeCreatedAt(StockTradeType.BUY, "HHH", "10", "100", day, LocalDateTime.of(2026, 6, 10, 9, 0)),
+            ),
+            period,
+        )
+        // FIFO는 09시 lot(100원)을 먼저 소진 → 10*(300-100). 목록순이면 10*(300-200)=1000이 된다.
+        assertThat(r["HHH"]).isEqualByComparingTo("2000")
+    }
+
+    @Test
+    fun `종료일 당일 매도는 그달 실현손익에 들어간다`() {
+        val trades = listOf(
+            trade(StockTradeType.BUY, "III", "10", "100", LocalDate.of(2026, 6, 10)),
+            trade(StockTradeType.SELL, "III", "10", "150", LocalDate.of(2026, 6, 30)), // period.end 당일
+        )
+        assertThat(FifoRealizedPnlCalculator.calculate(trades, period)["III"])
+            .isEqualByComparingTo("500")
+        // 그리고 다음 달로 새어 나가지 않는다
+        assertThat(FifoRealizedPnlCalculator.calculate(trades, ReportPeriod.monthly(2026, 7))["III"])
+            .isEqualByComparingTo("0")
+    }
+
+    @Test
+    fun `시작일 당일 매도는 전월이 아니라 그달 실현손익에 들어간다`() {
+        val trades = listOf(
+            trade(StockTradeType.BUY, "JJJ", "10", "100", LocalDate.of(2026, 5, 20)),
+            trade(StockTradeType.SELL, "JJJ", "10", "150", LocalDate.of(2026, 6, 1)), // period.start 당일
+        )
+        assertThat(FifoRealizedPnlCalculator.calculate(trades, period)["JJJ"])
+            .isEqualByComparingTo("500")
+        // 그리고 전월로 새어 나가지 않는다
+        assertThat(FifoRealizedPnlCalculator.calculate(trades, ReportPeriod.monthly(2026, 5))["JJJ"])
+            .isEqualByComparingTo("0")
     }
 }
