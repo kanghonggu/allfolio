@@ -27,6 +27,7 @@ export default function InfoTip({
   label,
   text,
   children,
+  floatIcon = false,
   className,
 }: {
   /** 무엇에 대한 설명인지 — 스크린리더용 버튼 이름에 쓴다 */
@@ -34,6 +35,20 @@ export default function InfoTip({
   text: React.ReactNode
   /** 함께 호버 영역이 될 화면 라벨. 없으면 아이콘만 그린다 */
   children?: React.ReactNode
+  /**
+   * 가운데 정렬 자리에서 켠다 — 아이콘을 `absolute`로 띄워 레이아웃 폭에서 뺀다.
+   *
+   * 기본값(false)에서 루트는 `inline-flex`로 **라벨 + gap 4px + 아이콘 13px**을 한 덩어리로 묶는다.
+   * 부모가 `text-center`거나 `items-center`면 그 덩어리가 가운데로 가므로 **글자의 중심이
+   * (4+13)/2 = 8.5px 왼쪽으로 밀린다.** 위아래로 숫자가 붙은 자리에서는 숫자와 라벨의 중심이 어긋난다.
+   *
+   * 켜면 아이콘이 흐름에서 빠져 루트 폭 = 글자 폭이 되고, 글자가 제자리에서 가운데 정렬된다.
+   * 아이콘은 글자 오른쪽 4px에 그대로 걸리고 눌린다.
+   *
+   * **좌측 정렬 자리에서는 켜지 마라** — 아이콘이 흐름에서 빠져 뒤 요소와 겹친다.
+   * 기본값을 false로 둔 이유도 그것이다(이미 붙인 좌측 정렬 자리들을 움직이지 않는다).
+   */
+  floatIcon?: boolean
   className?: string
 }) {
   const [hover, setHover] = useState(false)
@@ -95,7 +110,7 @@ export default function InfoTip({
   return (
     <span
       ref={wrapRef}
-      className={cx('inline-flex items-center gap-1', className)}
+      className={cx('inline-flex items-center gap-1', floatIcon && 'relative', className)}
       onPointerEnter={(e) => { if (e.pointerType === 'mouse') setHover(true) }}
       onPointerLeave={(e) => { if (e.pointerType === 'mouse') setHover(false) }}
     >
@@ -115,8 +130,13 @@ export default function InfoTip({
         // 이걸 열기로 받으면 두 번째 탭이 pinned만 끄고 포커스가 남아 닫히지 않는다.
         onFocus={(e) => { if (e.currentTarget.matches(':focus-visible')) setFocused(true) }}
         onBlur={() => setFocused(false)}
-        // 보이는 원은 13px이지만 before로 탭 영역을 25px까지 넓힌다 — 손가락으로 맞히기엔 13px이 작다
-        className="no-print relative inline-flex h-[13px] before:absolute before:-inset-[6px] before:content-[''] w-[13px] shrink-0 cursor-help items-center justify-center rounded-full border border-line font-serif text-[9px] italic leading-none text-fg-faint transition-colors hover:border-ink hover:text-ink focus-visible:border-ink focus-visible:text-ink focus-visible:outline-none"
+        // 보이는 원은 13px이지만 before로 탭 영역을 25px까지 넓힌다 — 손가락으로 맞히기엔 13px이 작다.
+        // position은 cx로 하나만 고른다 — 한 문자열에 relative와 absolute를 같이 두면 Tailwind가
+        // 내는 순서(absolute가 relative보다 앞)에 져서 absolute가 먹지 않는다.
+        className={cx(
+          "no-print inline-flex h-[13px] before:absolute before:-inset-[6px] before:content-[''] w-[13px] shrink-0 cursor-help items-center justify-center rounded-full border border-line font-serif text-[9px] italic leading-none text-fg-faint transition-colors hover:border-ink hover:text-ink focus-visible:border-ink focus-visible:text-ink focus-visible:outline-none",
+          floatIcon ? 'absolute left-full top-1/2 ml-1 -translate-y-1/2' : 'relative',
+        )}
       >
         i
       </button>
