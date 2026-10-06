@@ -303,7 +303,11 @@ class ReportService(
 
     @Transactional(readOnly = true)
     fun risk(userId: UUID): RiskReport {
-        val series = queryRiskSeries(userId)
+        // risk_daily가 아니라 NAV + 외부 플로우에서 다시 계산한다 — 입금이 수익으로, 출금이
+        // 손실로 잡히던 문제(daily_return 미조정). 근거는 FlowAdjustedRiskSeries KDoc.
+        val flows = cashFlowRepository.findByUserId(userId)
+            .map { com.allfolio.report.domain.returns.Flow(it.flowDate, it.signedKrw()) }
+        val series = FlowAdjustedRiskSeries.build(queryNavSeries(userId), flows)
         val latest = series.lastOrNull()
 
         return RiskReport(
@@ -631,20 +635,17 @@ class ReportService(
         }
     }
 
-    private fun queryRiskSeries(userId: UUID): List<DailyRisk> {
+    private fun queryNavSeries(userId: UUID): List<com.allfolio.report.domain.returns.NavPoint> {
         return try {
             jdbc.query(
-                """SELECT date, volatility, annualized_volatility, var95, max_drawdown
-                   FROM risk_daily
+                """SELECT date, nav
+                   FROM performance_daily
                    WHERE portfolio_id = ?
                    ORDER BY date ASC""",
                 { rs, _ ->
-                    DailyRisk(
+                    com.allfolio.report.domain.returns.NavPoint(
                         date = rs.getDate("date").toLocalDate(),
-                        volatility = rs.getBigDecimal("volatility"),
-                        annualizedVolatility = rs.getBigDecimal("annualized_volatility"),
-                        var95 = rs.getBigDecimal("var95"),
-                        maxDrawdown = rs.getBigDecimal("max_drawdown"),
+                        nav = rs.getBigDecimal("nav"),
                     )
                 },
                 userId,

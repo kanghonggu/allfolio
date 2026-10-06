@@ -62,7 +62,8 @@ class ReportServiceTest {
     private fun svc(
         fx: FxConverter = identityFx,
         benchmarkStore: com.allfolio.unifiedasset.application.port.BenchmarkDailyStore = emptyBenchmarkStore,
-    ) = ReportService(assetRepository, accountRepository, jdbc, fx, benchmarkStore, emptyCashFlows)
+        cashFlows: com.allfolio.unifiedasset.application.port.CashFlowRepository = emptyCashFlows,
+    ) = ReportService(assetRepository, accountRepository, jdbc, fx, benchmarkStore, cashFlows)
 
     // ── summary ───────────────────────────────────────────────
 
@@ -265,6 +266,32 @@ class ReportServiceTest {
         assertNull(result.sharpeRatio)
         assertNull(result.calmarRatio)
         assertTrue(result.series.isEmpty())
+    }
+
+    @Test
+    fun `risk - 입금일 NAV 급증은 변동성·VaR·MDD에 잡히지 않는다`() {
+        // 운용 수익 0. 3일째 1,000만 원 입금으로 NAV가 두 배. daily_return 기반이면 그날 +100%.
+        val day0 = java.time.LocalDate.of(2026, 9, 1)
+        val navs = listOf("10000000", "10000000", "20000000", "20000000").mapIndexed { i, v ->
+            com.allfolio.report.domain.returns.NavPoint(day0.plusDays(i.toLong()), bd(v))
+        }
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<com.allfolio.report.domain.returns.NavPoint>>(), any()))
+            .thenReturn(navs)
+        val deposit = com.allfolio.unifiedasset.domain.cashflow.CashFlow.create(
+            userId = userId, accountId = null, flowDate = day0.plusDays(2),
+            type = com.allfolio.unifiedasset.domain.cashflow.FlowType.DEPOSIT,
+            amount = bd("10000000"), currency = "KRW", amountKrw = bd("10000000"), memo = null,
+        )
+        val flows = object : com.allfolio.unifiedasset.application.port.CashFlowRepository by emptyCashFlows {
+            override fun findByUserId(userId: UUID) = listOf(deposit)
+        }
+
+        val result = svc(cashFlows = flows).risk(userId)
+
+        assertEquals(day0.plusDays(3), result.latestDate)
+        assertEquals(0, BigDecimal.ZERO.compareTo(result.volatility)) { "volatility ${result.volatility}" }
+        assertEquals(0, BigDecimal.ZERO.compareTo(result.var95)) { "var95 ${result.var95}" }
+        assertEquals(0, BigDecimal.ZERO.compareTo(result.maxDrawdown)) { "maxDrawdown ${result.maxDrawdown}" }
     }
 
     // ── byCurrency breakdown ──────────────────────────────────
