@@ -18,8 +18,10 @@ import com.allfolio.risk.domain.RiskEngine
  *
  * 창은 날짜마다 직전 [WINDOW_DAYS]일 `(d − 30, d]`의 구간 수익률이다. 구간이 [MIN_RETURNS]건
  * 미만인 날은 내지 않는다 — 한 건으로는 표준편차가 0으로 나와 "변동성 0%"로 읽힌다.
+ *
+ * 대시보드(`GetDashboardUseCase`)도 이 시계열의 마지막 날을 쓴다 — 두 화면이 같은 MDD·변동성·VaR를 보인다.
  */
-internal object FlowAdjustedRiskSeries {
+object FlowAdjustedRiskSeries {
 
     const val WINDOW_DAYS = 30L
     private const val MIN_RETURNS = 2
