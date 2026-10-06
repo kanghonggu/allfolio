@@ -3,7 +3,8 @@ export type PortfolioSnapshot = {
   date: string
   performance: {
     nav: number
-    dailyReturn: number
+    /** 매매 대금을 뺀 구간 수익률. 첫 관측일처럼 구간이 없는 날은 null */
+    dailyReturn: number | null
     cumulativeReturn: number
     benchmarkReturn: number | null
     alpha: number | null

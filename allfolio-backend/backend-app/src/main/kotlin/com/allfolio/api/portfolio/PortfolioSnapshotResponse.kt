@@ -15,7 +15,8 @@ data class PortfolioSnapshotResponse(
 ) {
     data class PerformanceSummary(
         val nav: BigDecimal,
-        val dailyReturn: BigDecimal,
+        /** 매매 대금을 뺀 구간 수익률. 첫 관측일처럼 구간이 없는 날은 null */
+        val dailyReturn: BigDecimal?,
         val cumulativeReturn: BigDecimal,
         val benchmarkReturn: BigDecimal?,
         val alpha: BigDecimal?,
@@ -31,16 +32,18 @@ data class PortfolioSnapshotResponse(
     companion object {
         fun of(
             performance: PerformanceDailyEntity,
+            dailyReturn: BigDecimal?,
             risk: DailyRisk?,
         ): PortfolioSnapshotResponse = PortfolioSnapshotResponse(
             portfolioId = performance.id.portfolioId,
             date        = performance.id.date,
             performance = PerformanceSummary(
                 nav              = performance.nav,
-                dailyReturn      = performance.dailyReturn,
+                dailyReturn      = dailyReturn,
                 cumulativeReturn = performance.cumulativeReturn,
                 benchmarkReturn  = performance.benchmarkReturn,
-                alpha            = performance.alpha,
+                // 저장 alpha는 저장 daily_return(미조정)에서 뺀 값이라 쓰지 않는다
+                alpha            = performance.benchmarkReturn?.let { b -> dailyReturn?.subtract(b) },
             ),
             risk = risk?.let {
                 RiskSummary(

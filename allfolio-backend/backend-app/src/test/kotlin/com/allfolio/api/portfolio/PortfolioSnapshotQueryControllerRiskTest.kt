@@ -20,8 +20,8 @@ import java.time.LocalDateTime
 import java.util.UUID
 
 /**
- * 거래 파이프라인 포트폴리오의 스냅샷 리스크는 risk_daily가 아니라 NAV + 매매 대금 플로우에서 계산한다.
- * 이 포트폴리오엔 현금이 없어 daily_return 기반이면 매수일이 수익, 매도일이 손실로 잡힌다.
+ * 거래 파이프라인 포트폴리오의 스냅샷 일간 수익률·리스크는 저장값(performance_daily.daily_return·risk_daily)이
+ * 아니라 NAV + 매매 대금 플로우에서 계산한다. 이 포트폴리오엔 현금이 없어 저장값은 매수일이 수익, 매도일이 손실이다.
  */
 class PortfolioSnapshotQueryControllerRiskTest {
 
@@ -39,13 +39,16 @@ class PortfolioSnapshotQueryControllerRiskTest {
         mock(SnapshotCacheRepository::class.java),
     )
 
-    private fun perf(day: Long, nav: String, tenantId: UUID = userId) = PerformanceDailyEntity(
+    private fun perf(
+        day: Long, nav: String, tenantId: UUID = userId,
+        storedDailyReturn: String = "0", benchmark: String? = null, storedAlpha: String? = null,
+    ) = PerformanceDailyEntity(
         id = SnapshotDailyId(tenantId, portfolioId, day0.plusDays(day)),
         nav = BigDecimal(nav),
-        dailyReturn = BigDecimal.ZERO,
+        dailyReturn = BigDecimal(storedDailyReturn),
         cumulativeReturn = BigDecimal.ZERO,
-        benchmarkReturn = null,
-        alpha = null,
+        benchmarkReturn = benchmark?.let(::BigDecimal),
+        alpha = storedAlpha?.let(::BigDecimal),
     )
 
     private fun trade(day: Long, type: TradeType, qty: String, price: String) = TradeRawEntity(
@@ -85,6 +88,56 @@ class PortfolioSnapshotQueryControllerRiskTest {
         val risk = latest(series, trades).risk!!
 
         assertThat(risk.maxDrawdown).isEqualByComparingTo("-0.1")
+    }
+
+    @Test
+    fun `일간 수익률 - 매수일·매도일은 0, 가격 하락일만 −10%`() {
+        // 저장값(daily_return)은 매수일 +100%, 매도일 −25%였다 — 그걸 일부러 심어 두고 안 쓰는지 본다
+        val stored = listOf(
+            perf(0, "1000000"),
+            perf(1, "2000000", storedDailyReturn = "1.0"),
+            perf(2, "1800000", storedDailyReturn = "-0.1"),
+            perf(3, "1350000", storedDailyReturn = "-0.25"),
+        )
+
+        assertThat(latest(stored.take(2), trades).performance.dailyReturn).isEqualByComparingTo("0")
+        assertThat(latest(stored.take(3), trades).performance.dailyReturn).isEqualByComparingTo("-0.1")
+        assertThat(latest(stored, trades).performance.dailyReturn).isEqualByComparingTo("0")
+    }
+
+    @Test
+    fun `일간 수익률 - 첫 관측일은 비교할 전날이 없어 0이 아니라 null`() {
+        val response = latest(series.take(1), trades.take(1))
+
+        assertThat(response.performance.nav).isEqualByComparingTo("1000000")
+        assertThat(response.performance.dailyReturn).isNull()
+    }
+
+    @Test
+    fun `일간 수익률 - 전량 매도로 NAV가 0인 다음 날은 전날 값을 빌려 오지 않고 null`() {
+        // 1일 전량 매도(구간 수익률 0) → 2일 NAV 0, 거래 없음: 분모 0이라 그날 구간이 없다.
+        // 날짜 확인이 빠지면 1일의 0이 2일 값으로 나간다.
+        val response = latest(
+            listOf(perf(0, "1000000"), perf(1, "0"), perf(2, "0")),
+            listOf(trade(0, TradeType.BUY, "10", "100000"), trade(1, TradeType.SELL, "10", "100000")),
+        )
+
+        assertThat(response.date).isEqualTo(day0.plusDays(2))
+        assertThat(response.performance.dailyReturn).isNull()
+    }
+
+    @Test
+    fun `알파는 저장값이 아니라 고친 일간 수익률에서 벤치마크를 뺀다`() {
+        // 매수일: 저장 daily_return +100%, 저장 alpha = 1.0 − 0.01 = 0.99. 고치면 0 − 0.01 = −0.01
+        val withBenchmark = listOf(
+            perf(0, "1000000"),
+            perf(1, "2000000", storedDailyReturn = "1.0", benchmark = "0.01", storedAlpha = "0.99"),
+        )
+
+        val p = latest(withBenchmark, trades).performance
+
+        assertThat(p.benchmarkReturn).isEqualByComparingTo("0.01")
+        assertThat(p.alpha).isEqualByComparingTo("-0.01")
     }
 
     @Test

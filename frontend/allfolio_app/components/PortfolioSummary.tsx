@@ -33,9 +33,14 @@ export default function PortfolioSummary({ snapshot }: Props) {
         </Card>
 
         <Card label="일간 수익률">
-          <Num className={`text-[17px] font-semibold ${pctColor(p.dailyReturn)}`}>
-            {pctStr(p.dailyReturn)}
-          </Num>
+          {/* 첫 관측일엔 비교할 전날이 없다 — 0%로 그리면 "변동 없음"으로 읽힌다 */}
+          {p.dailyReturn !== null ? (
+            <Num className={`text-[17px] font-semibold ${pctColor(p.dailyReturn)}`}>
+              {pctStr(p.dailyReturn)}
+            </Num>
+          ) : (
+            <Num className="text-[17px] font-semibold text-fg-muted">—</Num>
+          )}
         </Card>
 
         <Card label="누적 수익률">
