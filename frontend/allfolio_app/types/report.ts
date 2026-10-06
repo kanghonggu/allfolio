@@ -55,8 +55,10 @@ export interface AllocationReport {
 export interface DailyPerf {
   date:             string
   nav:              number
-  dailyReturn:      number
-  cumulativeReturn: number
+  // percent. 현금흐름을 뺀 그날 구간 수익률 — 구간이 없는 날(첫 관측 등)은 null
+  dailyReturn:      number | null
+  // percent. 선택 기간 시작부터 그날까지의 TWR — 스냅샷이 기간 시작을 못 덮으면 null
+  cumulativeReturn: number | null
   benchmarkReturn:  number | null
   alpha:            number | null
 }
