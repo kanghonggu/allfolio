@@ -29,6 +29,29 @@ export interface WatchRefLookup {
   officialPriceKrw?: number
 }
 
+/**
+ * 모델명으로 찾은 ref 후보 (AF-207). 서버가 watchpricedata `/api/refs`를 대신 부른다 —
+ * 브라우저는 상류를 직접 부르지 않는다.
+ */
+export interface WatchRefCandidate {
+  /** 표시용 원문 ref */
+  ref: string
+  /** 🔴 확인 단계(`lookupRef`)에 **그대로** 넘길 키 */
+  refKey: string
+  brand: string | null
+  modelTitle: string | null
+  officialPriceKrw: number | null
+}
+
+/**
+ * 🔴 **`OK`+빈 목록과 `UNAVAILABLE`은 다른 답이다.** 앞은 "후보가 없다", 뒤는 "검색을 못 했다"
+ * (상류 타임아웃·장애·배포 전). 화면 안내가 갈린다.
+ */
+export interface WatchRefSearch {
+  status: 'OK' | 'UNAVAILABLE'
+  candidates: WatchRefCandidate[]
+}
+
 export function createWatchApi(accessToken: string) {
   const api = axios.create({
     baseURL: BASE_URL,
@@ -42,5 +65,12 @@ export function createWatchApi(accessToken: string) {
     /** ref 하나를 확인한다. 없으면 `found=false`이고 오류가 아니다 */
     lookupRef: async (ref: string): Promise<WatchRefLookup> =>
       (await api.get<WatchRefLookup>('/refs/lookup', { params: { ref } })).data,
+
+    /**
+     * 모델명·ref 일부로 후보를 찾는다. 서버의 상류 타임아웃은 3초라 그보다 조금 넉넉하게 끊는다 —
+     * 자동완성이 등록 흐름을 붙잡으면 안 된다. 실패는 호출부가 `UNAVAILABLE`과 같이 다룬다.
+     */
+    searchRefs: async (q: string, signal?: AbortSignal): Promise<WatchRefSearch> =>
+      (await api.get<WatchRefSearch>('/refs/search', { params: { q }, timeout: 6_000, signal })).data,
   }
 }
