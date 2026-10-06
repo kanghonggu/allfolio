@@ -1,7 +1,6 @@
 package com.allfolio.service
 
 import com.allfolio.api.cache.SnapshotCacheRepository
-import com.allfolio.api.portfolio.PortfolioSnapshotResponse
 import com.allfolio.fx.CurrencyConverter
 import com.allfolio.metrics.BrokerMetrics
 import com.allfolio.snapshot.NativePrice
@@ -97,7 +96,7 @@ class SnapshotTriggerService(
             recentDailyReturns       = recentReturns,
         )
 
-        val (performance, risk) = metrics.recordSnapshotLatency { generateDailySnapshotUseCase.generate(command) }
+        val (performance, _) = metrics.recordSnapshotLatency { generateDailySnapshotUseCase.generate(command) }
 
         // ── AF-106 통화별 평가액 ────────────────────────────────────────
         // **실패가 스냅샷을 되돌리면 안 된다.** NAV는 핵심이고 통화 분해는 부가 기능이다.
@@ -132,9 +131,9 @@ class SnapshotTriggerService(
         }
 
         // ── Cache: @Transactional 커밋 후 실행 (UseCase 반환 = 커밋 완료) ─
-        val response = PortfolioSnapshotResponse.of(performance, risk)
+        // evict만 한다. latest는 조회가 채운다 — 리스크를 매매 대금 플로우로 계산하는 곳이 거기뿐이고,
+        // 여기서 채우면 risk_daily(매수일=수익) 값이 캐시에 들어간다. TTL이 없어 그대로 남는다.
         snapshotCache.evict(tenantId, portfolioId, tradeDate)
-        snapshotCache.saveLatest(tenantId, portfolioId, response)
 
         log.info("[Trigger] done nav={} date={} portfolio={}", performance.nav, tradeDate, portfolioId)
         return performance
