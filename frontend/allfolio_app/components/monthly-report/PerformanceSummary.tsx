@@ -1,5 +1,7 @@
 // components/monthly-report/PerformanceSummary.tsx
 import Label from '@/components/ui/Label'
+import InfoTip from '@/components/ui/InfoTip'
+import { METRIC_HELP } from '@/lib/metric-help'
 import Num from '@/components/ui/Num'
 import SectionHeader from '@/components/ui/SectionHeader'
 import { dirTone } from '@/lib/format'
@@ -15,10 +17,10 @@ export function PerformanceSummary({ perf }: { perf: Performance }) {
       <SectionHeader label="성과 요약" />
 
       <div className="grid gap-px border border-line-soft bg-line-soft sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi label="TWR (시간가중)" value={fmtPct(m.twr)} toneOf={m.twr} />
-        <Kpi label="MWR (금액가중)" value={fmtPct(m.mwr)} toneOf={m.mwr} />
-        <Kpi label="기말 NAV" value={fmtKrw(m.endNav)} />
-        <Kpi label="순증(입출금)" value={fmtKrw(m.netFlow)} />
+        <Kpi label="TWR (시간가중)" value={fmtPct(m.twr)} toneOf={m.twr} help={METRIC_HELP.twr} />
+        <Kpi label="MWR (금액가중)" value={fmtPct(m.mwr)} toneOf={m.mwr} help={METRIC_HELP.mwr} />
+        <Kpi label="기말 NAV" value={fmtKrw(m.endNav)} help={METRIC_HELP.endNav} />
+        <Kpi label="순증(입출금)" value={fmtKrw(m.netFlow)} help={METRIC_HELP.netFlow} />
       </div>
 
       {m.benchmark && (
@@ -45,7 +47,7 @@ export function PerformanceSummary({ perf }: { perf: Performance }) {
           ))}
         </div>
         <div className="self-start">
-          <Kpi label="연환산 변동성" value={fmtPct(perf.volatility)} standalone />
+          <Kpi label="연환산 변동성" value={fmtPct(perf.volatility)} help={METRIC_HELP.monthlyVolatility} standalone />
         </div>
       </div>
     </section>
@@ -57,15 +59,18 @@ function Kpi({
   value,
   toneOf,
   standalone = false,
+  help,
 }: {
   label: string
   value: string
   toneOf?: number | null
   standalone?: boolean
+  help?: string
 }) {
+  const head = <Label size="sm" tone="faint">{label}</Label>
   return (
     <div className={standalone ? 'border border-line-soft bg-surface px-3.5 py-3' : 'bg-surface px-3.5 py-3'}>
-      <Label size="sm" tone="faint">{label}</Label>
+      {help ? <InfoTip label={label} text={help}>{head}</InfoTip> : head}
       <Num tone={toneOf === undefined ? undefined : dirTone(toneOf)} className="mt-1 block text-[16px]">
         {value}
       </Num>

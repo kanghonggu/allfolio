@@ -5,6 +5,8 @@ import {
   Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import SectionHeader from '@/components/ui/SectionHeader'
+import InfoTip from '@/components/ui/InfoTip'
+import { METRIC_HELP } from '@/lib/metric-help'
 import type { FlowDecomposition } from '@/types/monthly-report'
 import { fmtKrw } from '@/lib/report-format'
 
@@ -30,7 +32,13 @@ export function FlowWaterfall({ flow }: { flow: FlowDecomposition }) {
 
   return (
     <section className="break-inside-avoid">
-      <SectionHeader label="입출금 효과 분해" />
+      <SectionHeader
+        label={
+          <InfoTip label="입출금 효과 분해" text={METRIC_HELP.flowEffectMonthly}>
+            입출금 효과 분해
+          </InfoTip>
+        }
+      />
       <div className="border-t-[1.5px] border-ink pt-3">
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={steps}>

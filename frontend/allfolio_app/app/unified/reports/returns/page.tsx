@@ -10,6 +10,8 @@ import { isoDate, todayIso } from '@/lib/date'
 import PageHeader from '@/components/ui/PageHeader'
 import SectionHeader from '@/components/ui/SectionHeader'
 import Label from '@/components/ui/Label'
+import InfoTip from '@/components/ui/InfoTip'
+import { METRIC_HELP } from '@/lib/metric-help'
 import Num from '@/components/ui/Num'
 import Button from '@/components/ui/Button'
 import Field, { Input, Select } from '@/components/ui/Field'
@@ -258,25 +260,33 @@ export default function ReturnsReportPage() {
             {/* ② 요약 카드 */}
             <div className="mt-8 grid grid-cols-1 gap-px border border-line-soft bg-line-soft sm:grid-cols-2 lg:grid-cols-4">
               <div className="bg-surface px-3.5 py-3">
-                <Label size="sm" tone="faint">기간 수익률 (TWR)</Label>
+                <InfoTip label="기간 수익률 TWR" text={METRIC_HELP.twr}>
+                  <Label size="sm" tone="faint">기간 수익률 (TWR)</Label>
+                </InfoTip>
                 <Num className={`mt-1 block text-[20px] ${pctColor(analysis.summary.twr)}`}>
                   {fmtPct(analysis.summary.twr)}
                 </Num>
               </div>
               <div className="bg-surface px-3.5 py-3">
-                <Label size="sm" tone="faint">체감 수익률 (MWR·XIRR)</Label>
+                <InfoTip label="체감 수익률 MWR" text={METRIC_HELP.mwr}>
+                  <Label size="sm" tone="faint">체감 수익률 (MWR·XIRR)</Label>
+                </InfoTip>
                 <Num className={`mt-1 block text-[20px] ${pctColor(analysis.summary.mwr)}`}>
                   {fmtPct(analysis.summary.mwr)}
                 </Num>
               </div>
               <div className="bg-surface px-3.5 py-3">
-                <Label size="sm" tone="faint">기간 손익금액</Label>
+                <InfoTip label="기간 손익금액" text={METRIC_HELP.investmentPnl}>
+                  <Label size="sm" tone="faint">기간 손익금액</Label>
+                </InfoTip>
                 <Num className={`mt-1 block text-[20px] ${pctColor(analysis.summary.investmentPnl)}`}>
                   {fmtKrw(analysis.summary.investmentPnl)}
                 </Num>
               </div>
               <div className="bg-surface px-3.5 py-3">
-                <Label size="sm" tone="faint">순입출금</Label>
+                <InfoTip label="순입출금" text={METRIC_HELP.netFlow}>
+                  <Label size="sm" tone="faint">순입출금</Label>
+                </InfoTip>
                 <Num className="mt-1 block text-[20px]">{fmtKrw(analysis.summary.netFlow)}</Num>
               </div>
               {analysis.benchmark && (
@@ -378,7 +388,13 @@ export default function ReturnsReportPage() {
                 값이 위 TWR과 조금 어긋나 보이는 건 정상이고(교차항), 곱이 어긋나면 버그다. */}
             {analysis.currencyAttribution && (
               <section className="mt-8 border border-line-card bg-surface-muted p-5">
-                <SectionHeader label="수익 기여도 — 자산 vs 환율" />
+                <SectionHeader
+                  label={
+                    <InfoTip label="수익 기여도" text={METRIC_HELP.currencyAttribution}>
+                      수익 기여도 — 자산 vs 환율
+                    </InfoTip>
+                  }
+                />
                 <dl className="space-y-2">
                   <div className="flex items-baseline justify-between border-b border-line pb-2">
                     <dt className="text-[13px] text-fg-2">기간 수익 (TWR)</dt>
@@ -415,7 +431,13 @@ export default function ReturnsReportPage() {
             {/* ⑥ 워터폴 */}
             {waterfall.length > 0 && (
               <section className="mt-8">
-                <SectionHeader label="입출금 효과 분해" />
+                <SectionHeader
+                  label={
+                    <InfoTip label="입출금 효과 분해" text={METRIC_HELP.flowEffect}>
+                      입출금 효과 분해
+                    </InfoTip>
+                  }
+                />
                 <p className="mb-4 mt-[-6px] text-xs text-fg-faint">
                   자산 증가가 입금 때문인지 수익 때문인지 — 투자손익은 요약 카드와 동일 값
                 </p>
