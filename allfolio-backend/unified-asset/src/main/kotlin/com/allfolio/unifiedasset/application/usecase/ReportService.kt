@@ -293,10 +293,7 @@ class ReportService(
             periodReturns = periodReturns,
             dailySeries = dailySeries,
             coverageDays = coverageDays,
-            // cumulative_return은 ratio(0~1) 저장 — 응답은 기간 카드(totalReturn 등)와 동일한 percent (QA P1 #7)
-            twr = if (dailySeries.isNotEmpty())
-                dailySeries.last().cumulativeReturn.multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
-            else totalReturn,
+            twr = sinceInceptionTwrPercent(fullSeries, flows),
             benchmarkAlpha = latestAlpha,
         )
     }
@@ -660,6 +657,30 @@ class ReportService(
      * 시계열이 요청 기간을 못 덮으면(윈도 중간 시작) 왜곡된 수치 대신 null을 내려
      * FE가 '데이터 부족'으로 표기하게 한다 — 모든 기간이 같은 값(+2060%)을 반환하던 버그 제거.
      */
+    /**
+     * 첫 관측일부터 마지막 관측일까지의 TWR(percent) — 화면의 "전체 수익률" 아래 "TWR" 줄.
+     *
+     * 저장된 `cumulative_return`을 쓰지 않는다. PerformanceSnapshotService가 그 값을
+     * `(NAV − 최초 NAV) / 최초 NAV`로 써서 입금이 통째로 수익, 출금이 손실로 잡힌다(실측 +2060%류).
+     * 기간 카드([computePeriodReturns])와 같은 엔진·같은 현금흐름으로 체인링킹한다.
+     *
+     * 관측이 2건 미만이면 null(FE는 줄을 숨긴다). 예전엔 이때 매입 원가 기준 totalReturn을
+     * 넣었는데, 그건 TWR이 아니라 "TWR:" 라벨 아래 다른 지표가 나가는 것이었다.
+     * percent 스케일은 기간 카드와 같다(QA P1 #7).
+     */
+    private fun sinceInceptionTwrPercent(
+        series: List<DailyPerf>,
+        flows: List<com.allfolio.report.domain.returns.Flow>,
+    ): BigDecimal? {
+        if (series.size < 2) return null
+        val navPoints = series.map { com.allfolio.report.domain.returns.NavPoint(it.date, it.nav) }
+        return com.allfolio.report.domain.returns.ReturnsCalculator
+            .calculate(navPoints, flows, series.first().date, series.last().date)
+            .twr
+            ?.multiply(BigDecimal(100))
+            ?.setScale(2, RoundingMode.HALF_UP)
+    }
+
     private fun computePeriodReturns(
         series: List<DailyPerf>,
         flows: List<com.allfolio.report.domain.returns.Flow>,
