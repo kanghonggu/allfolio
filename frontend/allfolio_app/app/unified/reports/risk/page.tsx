@@ -25,10 +25,6 @@ function fmtPct(n: number | null | undefined, decimals = 2) {
   if (n === null || n === undefined) return '—'
   return `${n.toFixed(decimals)}%`
 }
-function fmtN(n: number | null | undefined, decimals = 4) {
-  if (n === null || n === undefined) return '—'
-  return n.toFixed(decimals)
-}
 
 export default function RiskPage() {
   const reportApi = useReportApi()
@@ -116,24 +112,8 @@ export default function RiskPage() {
         </div>
         )}
 
-        {hasData && (
-        <div className="mt-3 grid gap-px border border-line-soft bg-line-soft sm:grid-cols-2">
-          <RiskCard
-            label="Sharpe Ratio"
-            help={METRIC_HELP.sharpe}
-            value={fmtN(data.sharpeRatio)}
-            desc="위험 대비 수익 (무위험 5% 기준)"
-            valueClass={data.sharpeRatio !== null ? (Number(data.sharpeRatio) > 1 ? 'text-ok' : Number(data.sharpeRatio) > 0 ? 'text-warn' : 'text-danger') : 'text-fg-faint'}
-          />
-          <RiskCard
-            label="Calmar Ratio"
-            help={METRIC_HELP.calmar}
-            value={fmtN(data.calmarRatio)}
-            desc="연수익 / MDD"
-            valueClass={data.calmarRatio !== null ? (Number(data.calmarRatio) > 1 ? 'text-ok' : 'text-warn') : 'text-fg-faint'}
-          />
-        </div>
-        )}
+        {/* Sharpe·Calmar 카드는 숨긴다 — ReportService.computeSharpe/computeCalmar가 항상 null이라
+            늘 "—"였는데 "무위험 5% 기준"이라고 적혀 계산되는 것처럼 보였다. 계산을 구현하면 되살린다. */}
 
         {/* Risk Metrics Guide */}
         <section className="mt-8">
@@ -142,8 +122,6 @@ export default function RiskPage() {
             <div><span className="font-medium text-fg-2">변동성</span> — 낮을수록 안정적. 15% 이하: 양호, 30% 이상: 고위험</div>
             <div><span className="font-medium text-fg-2">VaR 95%</span> — &quot;95% 확률로 하루에 이 이상 잃지 않음&quot;</div>
             <div><span className="font-medium text-fg-2">MDD</span> — 고점 대비 최대 하락폭. -20% 이하: 위험 주의</div>
-            <div><span className="font-medium text-fg-2">Sharpe</span> — 1 이상: 우수, 0~1: 보통, 0 미만: 부진</div>
-            <div><span className="font-medium text-fg-2">Calmar</span> — MDD 대비 수익. 1 이상: 양호</div>
             <div><span className="font-medium text-fg-2">HHI</span> — 0.25 초과 시 집중 위험</div>
           </div>
         </section>
