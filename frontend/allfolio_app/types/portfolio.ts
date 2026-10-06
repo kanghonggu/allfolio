@@ -8,12 +8,13 @@ export type PortfolioSnapshot = {
     benchmarkReturn: number | null
     alpha: number | null
   }
+  /** 구간 수익률이 2건 미만이면 null — 0으로 채우면 "변동성 0%"로 읽힌다 */
   risk: {
     volatility: number
     annualizedVolatility: number
     var95: number
     maxDrawdown: number
-  }
+  } | null
 }
 
 export type Position = {

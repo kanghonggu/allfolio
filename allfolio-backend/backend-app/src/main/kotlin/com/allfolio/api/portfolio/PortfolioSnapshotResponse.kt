@@ -1,7 +1,7 @@
 package com.allfolio.api.portfolio
 
 import com.allfolio.snapshot.infrastructure.entity.PerformanceDailyEntity
-import com.allfolio.snapshot.infrastructure.entity.RiskDailyEntity
+import com.allfolio.unifiedasset.application.usecase.DailyRisk
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.util.UUID
@@ -10,7 +10,8 @@ data class PortfolioSnapshotResponse(
     val portfolioId: UUID,
     val date: LocalDate,
     val performance: PerformanceSummary,
-    val risk: RiskSummary,
+    /** 구간 수익률이 2건 미만이면 null — 0으로 채우면 "변동성 0%"로 읽힌다 */
+    val risk: RiskSummary?,
 ) {
     data class PerformanceSummary(
         val nav: BigDecimal,
@@ -30,7 +31,7 @@ data class PortfolioSnapshotResponse(
     companion object {
         fun of(
             performance: PerformanceDailyEntity,
-            risk: RiskDailyEntity,
+            risk: DailyRisk?,
         ): PortfolioSnapshotResponse = PortfolioSnapshotResponse(
             portfolioId = performance.id.portfolioId,
             date        = performance.id.date,
@@ -41,12 +42,14 @@ data class PortfolioSnapshotResponse(
                 benchmarkReturn  = performance.benchmarkReturn,
                 alpha            = performance.alpha,
             ),
-            risk = RiskSummary(
-                volatility           = risk.volatility,
-                annualizedVolatility = risk.annualizedVolatility,
-                var95                = risk.var95,
-                maxDrawdown          = risk.maxDrawdown,
-            ),
+            risk = risk?.let {
+                RiskSummary(
+                    volatility           = it.volatility,
+                    annualizedVolatility = it.annualizedVolatility,
+                    var95                = it.var95,
+                    maxDrawdown          = it.maxDrawdown,
+                )
+            },
         )
     }
 }
