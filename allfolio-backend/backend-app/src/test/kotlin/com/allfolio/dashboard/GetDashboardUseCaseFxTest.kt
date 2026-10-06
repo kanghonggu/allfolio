@@ -5,7 +5,6 @@ import com.allfolio.fx.FxRateService
 import com.allfolio.fx.UsdQuoteRef
 import com.allfolio.snapshot.infrastructure.repository.BenchmarkDailyJpaRepository
 import com.allfolio.snapshot.infrastructure.repository.PerformanceDailyJpaRepository
-import com.allfolio.snapshot.infrastructure.repository.RiskDailyJpaRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
 import com.allfolio.unifiedasset.domain.asset.Asset
@@ -30,7 +29,6 @@ class GetDashboardUseCaseFxTest {
 
     private val assetRepository = mock(AssetRepository::class.java)
     private val performanceRepo = mock(PerformanceDailyJpaRepository::class.java)
-    private val riskRepo = mock(RiskDailyJpaRepository::class.java)
     private val benchmarkRepo = mock(BenchmarkDailyJpaRepository::class.java)
     private val fx = object : FxConverter {
         override fun toKrw(amount: BigDecimal, currency: String): BigDecimal =
@@ -53,7 +51,7 @@ class GetDashboardUseCaseFxTest {
     }
 
     private val useCase = GetDashboardUseCase(
-        assetRepository, performanceRepo, riskRepo, benchmarkRepo, fx,
+        assetRepository, performanceRepo, benchmarkRepo, fx,
         mock(com.allfolio.unifiedasset.application.port.CashFlowRepository::class.java),
         CurrencyConverter(fxRateService),
     )

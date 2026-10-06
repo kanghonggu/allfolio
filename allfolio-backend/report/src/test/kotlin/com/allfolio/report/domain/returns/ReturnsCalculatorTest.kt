@@ -169,4 +169,62 @@ class ReturnsCalculatorTest {
         // endNav = startNav + netFlow + investmentPnl
         assertClose("2200", result.startNav!! + result.netFlow + result.investmentPnl!!)
     }
+
+    // ── segmentReturns (리스크 지표용 구간 수익률) ──────────────────
+
+    @Test
+    fun `segmentReturns - 입금일은 수익률 0이고 출금일은 손실이 아니다`() {
+        // 1000 → 6/2 입금 1000(NAV 2000) → 6/3 +5%(2100) → 6/4 출금 600(NAV 1500)
+        val segs = ReturnsCalculator.segmentReturns(
+            navSeries = listOf(
+                NavPoint(d(1), bd("1000")),
+                NavPoint(d(2), bd("2000")),
+                NavPoint(d(3), bd("2100")),
+                NavPoint(d(4), bd("1500")),
+            ),
+            flows = listOf(Flow(d(2), bd("1000")), Flow(d(4), bd("-600"))),
+        )
+        assertEquals(listOf(d(2), d(3), d(4)), segs.map { it.date })
+        assertClose("0", segs[0].ratio)      // (2000-1000-1000)/(1000+1000)
+        assertClose("0.05", segs[1].ratio)   // 100/2000
+        assertClose("0", segs[2].ratio)      // (1500-2100+600)/2100
+    }
+
+    @Test
+    fun `segmentReturns - 체인링킹하면 calculate의 twr과 같다`() {
+        val navs = listOf(
+            NavPoint(d(1), bd("1000")),
+            NavPoint(d(5), bd("2050")),
+            NavPoint(d(9), bd("1900")),
+            NavPoint(d(20), bd("2300")),
+        )
+        val flows = listOf(Flow(d(5), bd("1000")), Flow(d(20), bd("-100")))
+        val chained = ReturnsCalculator.segmentReturns(navs, flows)
+            .fold(BigDecimal.ONE) { acc, s -> acc * (BigDecimal.ONE + s.ratio) } - BigDecimal.ONE
+        val twr = ReturnsCalculator.calculate(navs, flows, d(1), d(20)).twr
+        assertClose(twr!!.toPlainString(), chained, eps = "1E-12")
+    }
+
+    @Test
+    fun `segmentReturns - 분모가 0 이하인 구간은 건너뛴다`() {
+        // 6/2 전액 출금으로 NAV 0 → 6/3 재입금. 6/3 구간은 기저가 0이라 판단 불가
+        val segs = ReturnsCalculator.segmentReturns(
+            navSeries = listOf(
+                NavPoint(d(1), bd("1000")),
+                NavPoint(d(2), bd("0")),
+                NavPoint(d(3), bd("500")),
+            ),
+            flows = listOf(Flow(d(2), bd("-1000"))),
+        )
+        assertEquals(listOf(d(2)), segs.map { it.date })
+    }
+
+    @Test
+    fun `segmentReturns - 입력 순서와 무관하게 날짜순 구간을 낸다`() {
+        val sorted = listOf(NavPoint(d(1), bd("1000")), NavPoint(d(2), bd("1100")), NavPoint(d(3), bd("990")))
+        val segs = ReturnsCalculator.segmentReturns(sorted.reversed(), emptyList())
+        assertEquals(listOf(d(2), d(3)), segs.map { it.date })
+        assertClose("0.1", segs[0].ratio)
+        assertClose("-0.1", segs[1].ratio)
+    }
 }
