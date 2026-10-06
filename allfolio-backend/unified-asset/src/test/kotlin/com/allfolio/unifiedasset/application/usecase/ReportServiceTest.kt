@@ -538,14 +538,13 @@ class ReportServiceTest {
         org.mockito.Mockito.lenient().`when`(assetRepository.findByUserId(userId)).thenReturn(
             listOf(stock(purchasePrice = bd("100000"), quantity = bd("10"), currentValue = bd("2000000"))),
         )
-        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
-            .thenReturn(
-                listOf(
-                    DailyPerf(today.minusDays(90), bd("1000000"), bd("0"), bd("0"), null, null),
-                    DailyPerf(today.minusDays(30), bd("1100000"), bd("0"), bd("0.1"), null, null),
-                    DailyPerf(today, bd("1210000"), bd("0"), bd("0.21"), null, null),
-                ),
-            )
+        stubPerformanceDaily(
+            listOf(
+                DailyPerf(today.minusDays(90), bd("1000000"), bd("0"), bd("0"), null, null),
+                DailyPerf(today.minusDays(30), bd("1100000"), bd("0"), bd("0.1"), null, null),
+                DailyPerf(today, bd("1210000"), bd("0"), bd("0.21"), null, null),
+            ),
+        )
 
         val oneMonth = svc().benchmark(userId, "1M").portfolioReturn
         val threeMonth = svc().benchmark(userId, "3M").portfolioReturn
@@ -569,13 +568,12 @@ class ReportServiceTest {
             listOf(stock(purchasePrice = bd("100000"), quantity = bd("10"), currentValue = bd("2000000"))),
         )
         // 사흘치뿐 — 1M 창(30일)을 못 덮는다
-        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
-            .thenReturn(
-                listOf(
-                    DailyPerf(today.minusDays(2), bd("1000000"), bd("0"), bd("0"), null, null),
-                    DailyPerf(today, bd("1210000"), bd("0"), bd("0.21"), null, null),
-                ),
-            )
+        stubPerformanceDaily(
+            listOf(
+                DailyPerf(today.minusDays(2), bd("1000000"), bd("0"), bd("0"), null, null),
+                DailyPerf(today, bd("1210000"), bd("0"), bd("0.21"), null, null),
+            ),
+        )
         val store = benchStore(
             com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.SPX to listOf(
                 today.minusDays(30) to bd("100"),
@@ -589,6 +587,23 @@ class ReportServiceTest {
         // 지수는 그대로 보여 준다 — 없는 것은 우리 쪽이다
         assertEquals(0, bd("10.00").compareTo(result.benchmarks.single().benchmarkReturn))
         assertNull(result.benchmarks.single().alpha) { "기저 없는 알파가 나왔다" }
+    }
+
+    /**
+     * `performance_daily` 조회를 **`since` 인자를 실제로 지키는** 가짜로 세운다.
+     *
+     * 🔴 **그냥 목으로 두면 "전 구간을 읽는다"를 아무도 안 잰다.** 운영 SQL은
+     * `date >= ?`로 거르는데 목은 인자와 무관하게 같은 행을 돌려주므로, 구현이
+     * `"ALL"` 대신 선택 기간으로 읽도록 바뀌어도 테스트가 통과한다 — 실제로 그 변이를
+     * 넣었을 때 전부 초록이었다. 앵커(기간 시작 이전 마지막 관측)를 잃는 것이 이 수정의
+     * 핵심이라, 거르는 쪽을 흉내 내야 계측이 생긴다.
+     */
+    private fun stubPerformanceDaily(rows: List<DailyPerf>) {
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenAnswer { inv ->
+                val since = inv.arguments.last() as java.time.LocalDate
+                rows.filter { !it.date.isBefore(since) }
+            }
     }
 
     private fun bd(s: String) = BigDecimal(s)
