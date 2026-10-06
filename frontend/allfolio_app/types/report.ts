@@ -128,8 +128,12 @@ export interface PositionsReport {
 
 export interface BenchmarkItem {
   name:            string
+  // 사용자가 이 지수에 해당하는 시장을 보유 중인가 — 칩 **기본값**으로만 쓴다 (AF-107).
+  // 통화 기준 근사라 틀릴 수 있어 목록에서 지우지는 않는다.
+  held:            boolean
   benchmarkReturn: number
-  alpha:           number
+  // null = 포트폴리오 쪽 기저가 없어 알파를 낼 수 없음 (AF-107)
+  alpha:           number | null
 }
 
 export interface BenchmarkSeries {
@@ -145,7 +149,8 @@ export interface BenchmarkReport {
   userId:          string
   period:          string
   generatedAt:     string
-  portfolioReturn: number
+  // null = 스냅샷이 선택 기간을 못 덮음. **취득가 기준 수익률로 대체하지 않는다** (AF-107)
+  portfolioReturn: number | null
   benchmarks:      BenchmarkItem[]
   series:          BenchmarkSeries[]
 }

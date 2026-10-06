@@ -132,15 +132,19 @@ data class BenchmarkReport(
     val userId: UUID,
     val period: String,
     val generatedAt: OffsetDateTime,
-    val portfolioReturn: BigDecimal,
+    /** 선택 기간의 TWR(percent). **시계열이 기간을 못 덮으면 null** — 숫자를 만들지 않는다 */
+    val portfolioReturn: BigDecimal?,
     val benchmarks: List<BenchmarkItem>,
     val series: List<BenchmarkSeries>,
 )
 
 data class BenchmarkItem(
     val name: String,
+    /** 사용자가 이 지수에 해당하는 시장을 들고 있는가. FE가 칩 기본값으로 쓴다 (AF-107) */
+    val held: Boolean,
     val benchmarkReturn: BigDecimal,
-    val alpha: BigDecimal,
+    /** 포트폴리오 쪽 기저가 없으면 null */
+    val alpha: BigDecimal?,
 )
 
 /** percent 스케일. 지수 값이 null이면 해당 날짜에 실데이터 없음 (합성값으로 채우지 않는다 — QA P1 #10) */
@@ -371,29 +375,47 @@ class ReportService(
     @Transactional(readOnly = true)
     fun benchmark(userId: UUID, period: String): BenchmarkReport {
         val dailySeries = queryPerformanceSeries(userId, period)
-        val assets = assetRepository.findByUserId(userId)
-        val totalValue = assets.navInKrw(fx)
-        val totalCost = assets.sumOf { it.purchaseCostInKrw(fx) }
-
-        val portfolioReturn = if (totalCost > BigDecimal.ZERO)
-            (totalValue - totalCost).divide(totalCost, 4, RoundingMode.HALF_UP)
-                .multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
-        else BigDecimal.ZERO
 
         // 실제 지수 시계열(benchmark_daily, 일일 sync) 기반 — 데이터 없으면 목록에서 제외 (QA P1 #10)
         val today = LocalDate.now(KST)
         val since = today.minusDays(periodDays(period).toLong())
+
+        // 🔴 **알파는 두 수가 같은 창일 때만 뜻이 있다** (AF-107).
+        //
+        // 여기 있던 것은 보유 자산의 `(평가액 − 취득가) / 취득가`였다 — **기간을 안 본다.**
+        // 지수 쪽은 `since` 기준인데 포트폴리오 쪽은 취득 이래 전체라, 기간을 바꾸면
+        // 지수만 움직이고 그 차를 알파라고 불렀다. 1W를 골라도 1Y를 골라도 같은 숫자였다.
+        //
+        // 같은 `since`로 TWR을 낸다. 앵커(기간 시작 이전 마지막 관측)를 잡아야 하므로
+        // 창이 아니라 **전 구간**을 읽는다 — performance()가 기간 카드에 쓰는 것과 같은 엔진이다.
+        val fullSeries = queryPerformanceSeries(userId, "ALL")
+        val flows = cashFlowRepository.findByUserId(userId)
+            .map { com.allfolio.report.domain.returns.Flow(it.flowDate, it.signedKrw()) }
+        val portfolioReturn = com.allfolio.report.domain.returns.ReturnsCalculator.periodTwrPercent(
+            fullSeries.map { com.allfolio.report.domain.returns.NavPoint(it.date, it.nav) },
+            flows,
+            since,
+            today,
+        )
         val indexSeries = com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.entries.associateWith { type ->
             // 휴장일 대비 앵커 여유 2주 — 기간 시작 이전 마지막 종가를 기저로 쓴다
             benchmarkStore.series(type, since.minusDays(14), today)
         }
 
+        // 보유 시장 판정 (AF-107) — *"국내주식만 가진 사용자에게 항셍은 소음이다"*.
+        // 숨기는 게 아니라 **기본으로 켜 둘 것**을 고르는 데 쓴다. 매핑이 틀렸을 때
+        // 사용자가 보고 싶은 지수를 영영 못 보는 쪽보다, 칩 하나가 꺼진 채 남는 쪽이 낫다.
+        val held = heldMarkets(assetRepository.findByUserId(userId))
+
         val benchmarks = indexSeries.mapNotNull { (type, rows) ->
             val ret = indexPeriodReturn(rows, since) ?: return@mapNotNull null
             BenchmarkItem(
+                held = type in held,
                 name = type.label,
                 benchmarkReturn = ret,
-                alpha = portfolioReturn.subtract(ret).setScale(2, RoundingMode.HALF_UP),
+                // 기저가 없으면 알파도 없다. 취득가 기준 수익률로 조용히 갈아타면
+                // 화면은 그게 TWR인 줄 알고 지수와 나란히 놓는다 — 고치려던 그 상태다.
+                alpha = portfolioReturn?.subtract(ret)?.setScale(2, RoundingMode.HALF_UP),
             )
         }
 
@@ -681,6 +703,35 @@ class ReportService(
         "YTD" -> LocalDate.now(KST).dayOfYear
         "1Y"  -> 365; "ALL" -> 3650
         else  -> 30
+    }
+
+    /**
+     * 보유 자산에서 "이 사람과 상관있는 지수"를 고른다 (AF-107).
+     *
+     * | 지수 | 조건 |
+     * | --- | --- |
+     * | KOSPI | 통화가 KRW인 주식 |
+     * | S&P 500 | 통화가 KRW가 아닌 주식 |
+     * | Bitcoin | 암호화폐 |
+     *
+     * **통화로 가르는 것은 근사다.** 원화로 환산해 담은 해외주식이나 KRW 표시 해외 ETF는
+     * KOSPI 쪽으로 잡힌다. 그래서 이 판정이 지수를 **숨기지 않는다** — 칩 기본값만 정한다.
+     * 정확히 가르려면 종목의 상장 시장이 필요한데 `ua_assets`에 그 컬럼이 없다.
+     */
+    private fun heldMarkets(assets: List<com.allfolio.unifiedasset.domain.asset.Asset>):
+        Set<com.allfolio.unifiedasset.domain.benchmark.BenchmarkType> {
+        return assets.mapNotNullTo(mutableSetOf()) { a ->
+            when {
+                a.type == com.allfolio.unifiedasset.domain.asset.AssetType.CRYPTO ->
+                    com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.BTC
+                a.type == com.allfolio.unifiedasset.domain.asset.AssetType.STOCK &&
+                    a.currency.equals("KRW", ignoreCase = true) ->
+                    com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.KOSPI
+                a.type == com.allfolio.unifiedasset.domain.asset.AssetType.STOCK ->
+                    com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.SPX
+                else -> null
+            }
+        }
     }
 
     /** 기간 시작 이전 마지막 종가 대비 최종 종가 수익률(percent). 데이터 2건 미만이면 null */
