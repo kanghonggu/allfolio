@@ -30,6 +30,9 @@ data class NavFxPoint(val date: LocalDate, val nav: BigDecimal, val navAtPriorFx
  *  `(1+asset)(1+fx)−1 == TWR` */
 data class Attribution(val assetContribution: BigDecimal, val fxContribution: BigDecimal)
 
+/** 관측 구간 하나의 수익률. [date]는 구간 끝 관측일, [ratio]는 0~1 스케일 */
+data class SegmentReturn(val date: LocalDate, val ratio: BigDecimal)
+
 data class PeriodReturns(
     val twr: BigDecimal?,
     val mwr: BigDecimal?,
@@ -207,13 +210,28 @@ object ReturnsCalculator {
         return out
     }
 
+    /**
+     * 관측 구간별 외부 플로우 조정 수익률 — [twr]이 체인링킹하는 바로 그 값들.
+     *
+     * 리스크 지표(변동성·VaR·MDD)의 입력이다. `performance_daily.daily_return`은
+     * `(NAV_t − NAV_{t−1}) / NAV_{t−1}`라 입금일이 수익, 출금일이 손실로 잡혀 그대로 쓸 수 없다.
+     * 공식을 따로 두지 않고 [segments]를 같이 쓰므로 TWR 화면과 리스크 화면이 같은 수익률을 본다.
+     *
+     * 분모 ≤ 0 구간은 결과에서 빠진다(규약은 [segments]). 첫 관측은 기저라 구간이 없다.
+     */
+    fun segmentReturns(navSeries: List<NavPoint>, flows: List<Flow>): List<SegmentReturn> {
+        val series = navSeries.sortedBy { it.date }
+        val navs = series.map { it.nav }
+        return segments(series.map { it.date }, navs, flows).map { s ->
+            SegmentReturn(series[s.i].date, (navs[s.i] - navs[s.i - 1] - s.net).divide(s.denominator, MC))
+        }
+    }
+
     /** 구간별 r_i = (NAV_i − NAV_{i−1} − 순플로우_i) / (NAV_{i−1} + 입금_i) 체인링킹 */
     private fun twr(series: List<NavPoint>, flows: List<Flow>): BigDecimal {
-        val navs = series.map { it.nav }
         var product = BigDecimal.ONE
-        for (s in segments(series.map { it.date }, navs, flows)) {
-            val r = (navs[s.i] - navs[s.i - 1] - s.net).divide(s.denominator, MC)
-            product = product.multiply(BigDecimal.ONE + r, MC)
+        for (s in segmentReturns(series, flows)) {
+            product = product.multiply(BigDecimal.ONE + s.ratio, MC)
         }
         return product - BigDecimal.ONE
     }
