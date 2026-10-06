@@ -144,7 +144,8 @@ export interface BenchmarkItem {
 
 export interface BenchmarkSeries {
   date:      string
-  portfolio: number
+  // null = 스냅샷이 기간 시작을 못 덮음 — portfolioReturn이 null인 것과 같은 경우
+  portfolio: number | null
   // null = 해당 날짜 실데이터 없음 (합성값으로 채우지 않음)
   sp500:     number | null
   btc:       number | null

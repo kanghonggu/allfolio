@@ -156,7 +156,8 @@ data class BenchmarkItem(
 /** percent 스케일. 지수 값이 null이면 해당 날짜에 실데이터 없음 (합성값으로 채우지 않는다 — QA P1 #10) */
 data class BenchmarkSeries(
     val date: LocalDate,
-    val portfolio: BigDecimal,
+    /** 기간 시작(앵커)부터 그날까지의 TWR(percent). 스냅샷이 기간 시작을 못 덮으면 null — portfolioReturn과 같다 */
+    val portfolio: BigDecimal?,
     val sp500: BigDecimal?,
     val btc: BigDecimal?,
     val kospi: BigDecimal?,
@@ -433,7 +434,7 @@ class ReportService(
             )
         }
 
-        val series = buildBenchmarkSeries(dailySeries, indexSeries, since)
+        val series = buildBenchmarkSeries(dailySeries, fullSeries, flows, indexSeries, since)
 
         return BenchmarkReport(
             userId = userId,
@@ -768,10 +769,13 @@ class ReportService(
      */
     private fun buildBenchmarkSeries(
         perfSeries: List<DailyPerf>,
+        fullSeries: List<DailyPerf>,
+        flows: List<com.allfolio.report.domain.returns.Flow>,
         indexSeries: Map<com.allfolio.unifiedasset.domain.benchmark.BenchmarkType, List<Pair<LocalDate, BigDecimal>>>,
         since: LocalDate,
     ): List<BenchmarkSeries> {
         if (perfSeries.isEmpty()) return emptyList()
+        val portfolioPctAt = portfolioTwrLine(fullSeries, flows, since)
 
         fun indexPctAt(type: com.allfolio.unifiedasset.domain.benchmark.BenchmarkType, date: LocalDate): BigDecimal? {
             val rows = indexSeries[type].orEmpty()
@@ -786,11 +790,46 @@ class ReportService(
         return perfSeries.map { perf ->
             BenchmarkSeries(
                 date      = perf.date,
-                portfolio = perf.cumulativeReturn.multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP),
+                portfolio = portfolioPctAt(perf.date),
                 sp500     = indexPctAt(com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.SPX, perf.date),
                 btc       = indexPctAt(com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.BTC, perf.date),
                 kospi     = indexPctAt(com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.KOSPI, perf.date),
             )
+        }
+    }
+
+    /**
+     * 벤치마크 차트의 포트폴리오 선 — 날짜 → 기간 시작부터 그날까지의 TWR(percent).
+     *
+     * 저장 `cumulative_return`을 쓰지 않는다. 그 값은 `(NAV − 최초 NAV) / 최초 NAV`라 **입금일에 선이 튀었고**,
+     * 기준점도 첫 스냅샷이라 같은 차트의 지수 선(기간 시작 기준)·헤드라인 [BenchmarkReport.portfolioReturn]과
+     * 출발점이 달랐다.
+     *
+     * - 앵커: 기간 시작 이전(포함) 마지막 관측 — [ReturnsCalculator.periodTwrPercent]와 같은 규칙이라 마지막 점이
+     *   헤드라인과 같다.
+     * - 그날까지의 구간 수익률([ReturnsCalculator.segmentReturns])을 체인링킹. 분모 ≤ 0으로 빠진 구간은 직전 값을 잇는다.
+     * - 앵커가 없으면(스냅샷이 기간 시작을 못 덮음) 모든 점이 null — 헤드라인이 "데이터 부족"인 것과 같다.
+     */
+    private fun portfolioTwrLine(
+        fullSeries: List<DailyPerf>,
+        flows: List<com.allfolio.report.domain.returns.Flow>,
+        since: LocalDate,
+    ): (LocalDate) -> BigDecimal? {
+        val sorted = fullSeries.sortedBy { it.date }
+        val anchor = sorted.lastOrNull { !it.date.isAfter(since) }?.date ?: return { null }
+        val navPoints = sorted.map { com.allfolio.report.domain.returns.NavPoint(it.date, it.nav) }
+        val cumulative = java.util.TreeMap<LocalDate, BigDecimal>()
+        cumulative[anchor] = BigDecimal.ZERO
+        var growth = BigDecimal.ONE
+        for (seg in com.allfolio.report.domain.returns.ReturnsCalculator.segmentReturns(navPoints, flows)) {
+            if (!seg.date.isAfter(anchor)) continue
+            growth = growth.multiply(BigDecimal.ONE + seg.ratio, java.math.MathContext(20, RoundingMode.HALF_UP))
+            cumulative[seg.date] = growth - BigDecimal.ONE
+        }
+        return { date ->
+            cumulative.floorEntry(date)?.value
+                ?.multiply(BigDecimal(100))
+                ?.setScale(2, RoundingMode.HALF_UP)
         }
     }
 
