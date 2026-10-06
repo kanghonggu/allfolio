@@ -61,10 +61,14 @@ export const METRIC_HELP = {
   // MonthlyReportGenerator body.performance.month.endNav: 기간 마지막 관측일의 NAV
   endNav: '이 달 마지막으로 평가액을 잰 날의 원화 환산 평가액입니다.',
 
-  // ── 리스크 (B-04) ─ risk_daily 최신 행. SnapshotTriggerService가 직전 30일 일간 수익률로 RiskEngine을 돌린다 ──
+  // ── 리스크 (B-04) ──────────────────────────────────────────────────
+  // main d6eacca(#253)에서 계산 경로가 바뀌었다. 더 이상 risk_daily를 읽지 않는다 —
+  // ReportService.risk가 FlowAdjustedRiskSeries로 읽는 시점에 다시 계산하고, 일 수익률은
+  // TWR 엔진(ReturnsCalculator.segmentReturns)의 구간 수익률이다. 즉 입출금이 빠진 값이다.
+  // 창은 날짜마다 직전 30일 (d−30, d] (FlowAdjustedRiskSeries.WINDOW_DAYS).
   // RiskEngine.computeStdDev: 표본 표준편차(n−1)
   dailyVolatility:
-    '최근 30일간 하루 수익률(전일 대비 평가액 변화율)이 평균에서 얼마나 흔들렸는지를 나타낸 표준편차입니다. 클수록 하루 등락이 큽니다.',
+    '최근 30일간 하루 수익률이 평균에서 얼마나 흔들렸는지를 나타낸 표준편차입니다. 하루 수익률은 입금·출금 금액을 빼고 잰 평가액 변화율이라 입출금 자체는 등락으로 잡히지 않습니다. 클수록 하루 등락이 큽니다.',
   // RiskEngine: annualizedVolatility = σ × √252
   annualizedVolatility:
     '하루 변동성에 √252(1년 거래일 수의 제곱근)를 곱해 1년 단위로 환산한 값입니다.',
