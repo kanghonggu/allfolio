@@ -42,11 +42,12 @@ class PortfolioSnapshotQueryControllerRiskTest {
     private fun perf(
         day: Long, nav: String, tenantId: UUID = userId,
         storedDailyReturn: String = "0", benchmark: String? = null, storedAlpha: String? = null,
+        storedCumulative: String = "0",
     ) = PerformanceDailyEntity(
         id = SnapshotDailyId(tenantId, portfolioId, day0.plusDays(day)),
         nav = BigDecimal(nav),
         dailyReturn = BigDecimal(storedDailyReturn),
-        cumulativeReturn = BigDecimal.ZERO,
+        cumulativeReturn = BigDecimal(storedCumulative),
         benchmarkReturn = benchmark?.let(::BigDecimal),
         alpha = storedAlpha?.let(::BigDecimal),
     )
@@ -124,6 +125,39 @@ class PortfolioSnapshotQueryControllerRiskTest {
 
         assertThat(response.date).isEqualTo(day0.plusDays(2))
         assertThat(response.performance.dailyReturn).isNull()
+    }
+
+    @Test
+    fun `누적 수익률 - 매수·매도는 안 쌓이고 가격 하락 −10%만 남는다`() {
+        // 저장 cumulative_return은 미조정 체인링킹이라 1일 +100%, 2일 +80%, 3일 +35% — 일부러 심어 둔다
+        val stored = listOf(
+            perf(0, "1000000"),
+            perf(1, "2000000", storedCumulative = "1.0"),
+            perf(2, "1800000", storedCumulative = "0.8"),
+            perf(3, "1350000", storedCumulative = "0.35"),
+        )
+
+        assertThat(latest(stored.take(2), trades).performance.cumulativeReturn).isEqualByComparingTo("0")
+        assertThat(latest(stored.take(3), trades).performance.cumulativeReturn).isEqualByComparingTo("-0.1")
+        assertThat(latest(stored, trades).performance.cumulativeReturn).isEqualByComparingTo("-0.1")
+    }
+
+    @Test
+    fun `누적 수익률 - 구간 수익률을 더하지 않고 곱해서 잇는다`() {
+        // +10% 뒤 −10% → 1.1 × 0.9 − 1 = −1%. 더하면 0%가 된다
+        val response = latest(
+            listOf(perf(0, "1000000"), perf(1, "1100000"), perf(2, "990000")),
+            listOf(trade(0, TradeType.BUY, "10", "100000")),
+        )
+
+        assertThat(response.performance.cumulativeReturn).isEqualByComparingTo("-0.01")
+    }
+
+    @Test
+    fun `누적 수익률 - 첫 관측일은 기준점이라 0이다`() {
+        val response = latest(listOf(perf(0, "1000000", storedCumulative = "0.5")), trades.take(1))
+
+        assertThat(response.performance.cumulativeReturn).isEqualByComparingTo("0")
     }
 
     @Test

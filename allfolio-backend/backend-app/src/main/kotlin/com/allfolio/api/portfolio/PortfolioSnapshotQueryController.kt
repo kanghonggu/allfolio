@@ -15,6 +15,8 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RestController
+import java.math.BigDecimal
+import java.math.MathContext
 import java.math.RoundingMode
 import java.time.LocalDate
 import java.util.UUID
@@ -78,14 +80,16 @@ class PortfolioSnapshotQueryController(
     }
 
     /**
-     * 그날의 일간 수익률·리스크를 NAV + 매매 대금 플로우에서 읽는 시점에 계산한다 —
-     * `performance_daily.daily_return`·`risk_daily`를 쓰지 않는다.
+     * 그날의 일간·누적 수익률과 리스크를 NAV + 매매 대금 플로우에서 읽는 시점에 계산한다 —
+     * `performance_daily`의 daily_return·cumulative_return과 `risk_daily`를 쓰지 않는다.
      *
      * 저장된 daily_return은 `(NAV − 전일 NAV) / 전일 NAV`인데 이 포트폴리오엔 현금이 없어 매수일이 수익,
      * 매도일이 손실로 잡힌다. risk_daily는 그 값을 먹은 결과다. 플로우 정의는 [TradeFlows].
      *
      * - 일간 수익률: 그날로 끝나는 구간 수익률([ReturnsCalculator.segmentReturns]) — 리스크가 체인링킹하는 바로 그 값.
      *   첫 관측일·분모 ≤ 0인 날은 구간이 없어 null이다(저장값은 첫날 0이었다).
+     * - 누적 수익률: 첫 관측일부터 그날까지 구간 수익률을 체인링킹(TWR) — `Π(1 + r) − 1`. ReturnsCalculator의
+     *   TWR과 같은 연결 방식이다. 첫 관측일은 구간이 없어 0(기준점이라 0이 맞다 — 일간 수익률의 "모름"과 다르다).
      * - 알파: 저장값이 `저장 daily_return − 벤치마크`라 같이 다시 뺀다. 안 그러면 옆 칸의 수익률과 안 맞는다.
      * - 리스크: B-04·대시보드와 같은 [FlowAdjustedRiskSeries]. 구간이 2건 미만인 날은 null
      *   — 한 건으로는 변동성이 0으로 나와 "위험 없음"으로 읽힌다.
@@ -100,11 +104,14 @@ class PortfolioSnapshotQueryController(
             .findByPortfolioIdAndExecutedAtLessThanEqualOrderByExecutedAtAsc(portfolioId, date.atTime(23, 59, 59))
         val flows = TradeFlows.of(trades, currencyConverter::toKrw)
 
-        val dailyReturn = ReturnsCalculator.segmentReturns(navs, flows)
+        val segments = ReturnsCalculator.segmentReturns(navs, flows)
+        val dailyReturn = segments
             .lastOrNull()?.takeIf { it.date == date }
             ?.ratio?.setScale(RETURN_SCALE, RoundingMode.HALF_UP)
+        val cumulativeReturn = (segments.fold(BigDecimal.ONE) { acc, s -> acc.multiply(BigDecimal.ONE + s.ratio, MC) } - BigDecimal.ONE)
+            .setScale(RETURN_SCALE, RoundingMode.HALF_UP)
         val risk = FlowAdjustedRiskSeries.build(navs, flows).lastOrNull()?.takeIf { it.date == date }
-        return PortfolioSnapshotResponse.of(performance, dailyReturn, risk)
+        return PortfolioSnapshotResponse.of(performance, dailyReturn, cumulativeReturn, risk)
     }
 
     companion object {
@@ -113,5 +120,8 @@ class PortfolioSnapshotQueryController(
 
         /** performance_daily.daily_return 저장 스케일(DailyPerformanceEngine)과 같게 */
         private const val RETURN_SCALE = 10
+
+        /** 체인링킹 중간 정밀도 — ReturnsCalculator와 같게 */
+        private val MC = MathContext(20, RoundingMode.HALF_UP)
     }
 }
