@@ -132,7 +132,8 @@ data class BenchmarkReport(
     val userId: UUID,
     val period: String,
     val generatedAt: OffsetDateTime,
-    val portfolioReturn: BigDecimal,
+    /** 선택 기간의 TWR(percent). **시계열이 기간을 못 덮으면 null** — 숫자를 만들지 않는다 */
+    val portfolioReturn: BigDecimal?,
     val benchmarks: List<BenchmarkItem>,
     val series: List<BenchmarkSeries>,
 )
@@ -140,7 +141,8 @@ data class BenchmarkReport(
 data class BenchmarkItem(
     val name: String,
     val benchmarkReturn: BigDecimal,
-    val alpha: BigDecimal,
+    /** 포트폴리오 쪽 기저가 없으면 null */
+    val alpha: BigDecimal?,
 )
 
 /** percent 스케일. 지수 값이 null이면 해당 날짜에 실데이터 없음 (합성값으로 채우지 않는다 — QA P1 #10) */
@@ -371,18 +373,28 @@ class ReportService(
     @Transactional(readOnly = true)
     fun benchmark(userId: UUID, period: String): BenchmarkReport {
         val dailySeries = queryPerformanceSeries(userId, period)
-        val assets = assetRepository.findByUserId(userId)
-        val totalValue = assets.navInKrw(fx)
-        val totalCost = assets.sumOf { it.purchaseCostInKrw(fx) }
-
-        val portfolioReturn = if (totalCost > BigDecimal.ZERO)
-            (totalValue - totalCost).divide(totalCost, 4, RoundingMode.HALF_UP)
-                .multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
-        else BigDecimal.ZERO
 
         // 실제 지수 시계열(benchmark_daily, 일일 sync) 기반 — 데이터 없으면 목록에서 제외 (QA P1 #10)
         val today = LocalDate.now(KST)
         val since = today.minusDays(periodDays(period).toLong())
+
+        // 🔴 **알파는 두 수가 같은 창일 때만 뜻이 있다** (AF-107).
+        //
+        // 여기 있던 것은 보유 자산의 `(평가액 − 취득가) / 취득가`였다 — **기간을 안 본다.**
+        // 지수 쪽은 `since` 기준인데 포트폴리오 쪽은 취득 이래 전체라, 기간을 바꾸면
+        // 지수만 움직이고 그 차를 알파라고 불렀다. 1W를 골라도 1Y를 골라도 같은 숫자였다.
+        //
+        // 같은 `since`로 TWR을 낸다. 앵커(기간 시작 이전 마지막 관측)를 잡아야 하므로
+        // 창이 아니라 **전 구간**을 읽는다 — performance()가 기간 카드에 쓰는 것과 같은 엔진이다.
+        val fullSeries = queryPerformanceSeries(userId, "ALL")
+        val flows = cashFlowRepository.findByUserId(userId)
+            .map { com.allfolio.report.domain.returns.Flow(it.flowDate, it.signedKrw()) }
+        val portfolioReturn = com.allfolio.report.domain.returns.ReturnsCalculator.periodTwrPercent(
+            fullSeries.map { com.allfolio.report.domain.returns.NavPoint(it.date, it.nav) },
+            flows,
+            since,
+            today,
+        )
         val indexSeries = com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.entries.associateWith { type ->
             // 휴장일 대비 앵커 여유 2주 — 기간 시작 이전 마지막 종가를 기저로 쓴다
             benchmarkStore.series(type, since.minusDays(14), today)
@@ -393,7 +405,9 @@ class ReportService(
             BenchmarkItem(
                 name = type.label,
                 benchmarkReturn = ret,
-                alpha = portfolioReturn.subtract(ret).setScale(2, RoundingMode.HALF_UP),
+                // 기저가 없으면 알파도 없다. 취득가 기준 수익률로 조용히 갈아타면
+                // 화면은 그게 TWR인 줄 알고 지수와 나란히 놓는다 — 고치려던 그 상태다.
+                alpha = portfolioReturn?.subtract(ret)?.setScale(2, RoundingMode.HALF_UP),
             )
         }
 

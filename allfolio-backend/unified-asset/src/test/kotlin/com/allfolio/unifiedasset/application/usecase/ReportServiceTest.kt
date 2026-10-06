@@ -451,7 +451,6 @@ class ReportServiceTest {
 
     @Test
     fun `벤치마크는 실제 지수 시계열로 기간 수익률을 계산한다`() {
-        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
         `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
             .thenReturn(emptyList())
         val today = java.time.LocalDate.now()
@@ -473,7 +472,6 @@ class ReportServiceTest {
 
     @Test
     fun `지수 데이터가 없으면 하드코딩 폴백 없이 빈 목록을 반환한다`() {
-        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
         `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
             .thenReturn(emptyList())
 
@@ -485,7 +483,6 @@ class ReportServiceTest {
 
     @Test
     fun `시계열은 포트폴리오 percent와 지수 정규화 percent를 결합한다`() {
-        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
         val today = java.time.LocalDate.now()
         val perfRows = listOf(
             DailyPerf(today.minusDays(2), bd("1000000"), bd("0"), bd("0"), null, null),
@@ -510,6 +507,88 @@ class ReportServiceTest {
         // 데이터 없는 지수는 null (합성값 금지)
         assertNull(last.sp500)
         assertNull(last.btc)
+    }
+
+    // ── benchmark: 포트폴리오와 지수가 같은 창을 봐야 한다 (AF-107) ──────
+
+    /**
+     * 🔴 **알파는 두 수가 같은 기간일 때만 뜻이 있다.**
+     *
+     * `benchmarkReturn`은 `since = today − periodDays(period)` 기준인데, `portfolioReturn`은
+     * 보유 자산의 `(평가액 − 취득가) / 취득가`였다 — **기간을 아예 안 본다.** 그래서 기간을
+     * 바꾸면 지수 쪽만 움직이고 포트폴리오 숫자는 그대로였고, 그 차를 알파라고 불렀다.
+     *
+     * 아래 시계열은 **구간마다 수익률이 다르게** 잡혀 있다. 기간을 구별하지 않는 구현은
+     * 두 단언 중 하나를 반드시 어긴다.
+     *
+     * | 창 | 기저 | 끝 | TWR |
+     * | --- | --- | --- | --- |
+     * | 1M (today−30) | 1,100,000 | 1,210,000 | **+10.00%** |
+     * | 3M (today−90) | 1,000,000 | 1,210,000 | **+21.00%** |
+     *
+     * 보유 자산은 취득가 1,000,000 · 평가액 2,000,000(= +100%)으로 둔다. 옛 구현이면
+     * 두 기간 모두 100.00이 나온다.
+     */
+    @Test
+    fun `포트폴리오 수익률은 지수와 같은 창의 TWR이다`() {
+        val today = java.time.LocalDate.now()
+        // **lenient인 것이 요점이다.** 취득가 1,000,000 · 평가액 2,000,000(= +100%)을 넣어 두지만
+        // 고친 구현은 자산을 읽지 않는다. strict 스텁이면 "안 불렀다"로 터지는데, 그 사실 자체가
+        // 이 테스트가 지키려는 것이다 — 보유 수익률이 기간 수익률 자리에 못 들어온다.
+        org.mockito.Mockito.lenient().`when`(assetRepository.findByUserId(userId)).thenReturn(
+            listOf(stock(purchasePrice = bd("100000"), quantity = bd("10"), currentValue = bd("2000000"))),
+        )
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenReturn(
+                listOf(
+                    DailyPerf(today.minusDays(90), bd("1000000"), bd("0"), bd("0"), null, null),
+                    DailyPerf(today.minusDays(30), bd("1100000"), bd("0"), bd("0.1"), null, null),
+                    DailyPerf(today, bd("1210000"), bd("0"), bd("0.21"), null, null),
+                ),
+            )
+
+        val oneMonth = svc().benchmark(userId, "1M").portfolioReturn
+        val threeMonth = svc().benchmark(userId, "3M").portfolioReturn
+
+        assertEquals(0, bd("10.00").compareTo(oneMonth)) { "1M expected +10.00% but was $oneMonth" }
+        assertEquals(0, bd("21.00").compareTo(threeMonth)) { "3M expected +21.00% but was $threeMonth" }
+    }
+
+    /**
+     * 커버리지가 모자라면 **숫자를 만들어내지 않는다.** `periodTwrPercent`가 null을 주는
+     * 자리이고(시계열 첫 관측이 cutoff 이후), 여기서 취득가 기준 수익률로 조용히 갈아타면
+     * 화면은 그게 TWR인 줄 알고 지수와 나란히 놓는다 — 고치려던 바로 그 상태다.
+     */
+    @Test
+    fun `시계열이 기간을 못 덮으면 포트폴리오 수익률도 알파도 null이다`() {
+        val today = java.time.LocalDate.now()
+        // **lenient인 것이 요점이다.** 취득가 1,000,000 · 평가액 2,000,000(= +100%)을 넣어 두지만
+        // 고친 구현은 자산을 읽지 않는다. strict 스텁이면 "안 불렀다"로 터지는데, 그 사실 자체가
+        // 이 테스트가 지키려는 것이다 — 보유 수익률이 기간 수익률 자리에 못 들어온다.
+        org.mockito.Mockito.lenient().`when`(assetRepository.findByUserId(userId)).thenReturn(
+            listOf(stock(purchasePrice = bd("100000"), quantity = bd("10"), currentValue = bd("2000000"))),
+        )
+        // 사흘치뿐 — 1M 창(30일)을 못 덮는다
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenReturn(
+                listOf(
+                    DailyPerf(today.minusDays(2), bd("1000000"), bd("0"), bd("0"), null, null),
+                    DailyPerf(today, bd("1210000"), bd("0"), bd("0.21"), null, null),
+                ),
+            )
+        val store = benchStore(
+            com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.SPX to listOf(
+                today.minusDays(30) to bd("100"),
+                today to bd("110"),
+            ),
+        )
+
+        val result = svc(benchmarkStore = store).benchmark(userId, "1M")
+
+        assertNull(result.portfolioReturn) { "커버리지 미달인데 숫자가 나왔다: ${result.portfolioReturn}" }
+        // 지수는 그대로 보여 준다 — 없는 것은 우리 쪽이다
+        assertEquals(0, bd("10.00").compareTo(result.benchmarks.single().benchmarkReturn))
+        assertNull(result.benchmarks.single().alpha) { "기저 없는 알파가 나왔다" }
     }
 
     private fun bd(s: String) = BigDecimal(s)
