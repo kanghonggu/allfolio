@@ -28,6 +28,20 @@ function fmtN(n: number | null | undefined, decimals = 4) {
   return n.toFixed(decimals)
 }
 
+// 샤프·칼마는 위 카드(직전 30일)와 달리 설정 이후 전체를 연환산한다 — 백엔드 RiskAdjustedRatios
+const RATIO_MIN_NOTE = '설정 이후 구간 수익률 30건 이상 필요'
+
+function sharpeDesc(rate: number | null, rateDate: string | null, ratioMdd: number | null) {
+  if (ratioMdd === null) return RATIO_MIN_NOTE
+  if (rate === null) return '무위험 수익률(CD 91일) 미수집'
+  return `설정 이후 연환산 · 무위험 CD 91일 ${Number(rate).toFixed(2)}% (${rateDate})`
+}
+function calmarDesc(ratioMdd: number | null) {
+  if (ratioMdd === null) return RATIO_MIN_NOTE
+  if (Number(ratioMdd) === 0) return '설정 이후 낙폭 없음 — 비율 정의 불가'
+  return '설정 이후 연환산 수익 / 설정 이후 MDD'
+}
+
 export default function RiskPage() {
   const reportApi = useReportApi()
   const { data, isLoading, isError } = useQuery({
@@ -115,13 +129,13 @@ export default function RiskPage() {
           <RiskCard
             label="Sharpe Ratio"
             value={fmtN(data.sharpeRatio)}
-            desc="위험 대비 수익 (무위험 5% 기준)"
+            desc={sharpeDesc(data.riskFreeRate, data.riskFreeRateDate, data.ratioMaxDrawdown)}
             valueClass={data.sharpeRatio !== null ? (Number(data.sharpeRatio) > 1 ? 'text-ok' : Number(data.sharpeRatio) > 0 ? 'text-warn' : 'text-danger') : 'text-fg-faint'}
           />
           <RiskCard
             label="Calmar Ratio"
             value={fmtN(data.calmarRatio)}
-            desc="연수익 / MDD"
+            desc={calmarDesc(data.ratioMaxDrawdown)}
             valueClass={data.calmarRatio !== null ? (Number(data.calmarRatio) > 1 ? 'text-ok' : 'text-warn') : 'text-fg-faint'}
           />
         </div>

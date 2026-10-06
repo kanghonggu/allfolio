@@ -63,7 +63,9 @@ class ReportServiceTest {
         fx: FxConverter = identityFx,
         benchmarkStore: com.allfolio.unifiedasset.application.port.BenchmarkDailyStore = emptyBenchmarkStore,
         cashFlows: com.allfolio.unifiedasset.application.port.CashFlowRepository = emptyCashFlows,
-    ) = ReportService(assetRepository, accountRepository, jdbc, fx, benchmarkStore, cashFlows)
+        riskFree: com.allfolio.unifiedasset.application.port.RiskFreeRateSource =
+            com.allfolio.unifiedasset.application.port.RiskFreeRateSource { null },
+    ) = ReportService(assetRepository, accountRepository, jdbc, fx, benchmarkStore, cashFlows, riskFree)
 
     // ── summary ───────────────────────────────────────────────
 
@@ -265,6 +267,7 @@ class ReportServiceTest {
         assertNull(result.maxDrawdown)
         assertNull(result.sharpeRatio)
         assertNull(result.calmarRatio)
+        assertNull(result.ratioMaxDrawdown)
         assertTrue(result.series.isEmpty())
     }
 
@@ -292,6 +295,67 @@ class ReportServiceTest {
         assertEquals(0, BigDecimal.ZERO.compareTo(result.volatility)) { "volatility ${result.volatility}" }
         assertEquals(0, BigDecimal.ZERO.compareTo(result.var95)) { "var95 ${result.var95}" }
         assertEquals(0, BigDecimal.ZERO.compareTo(result.maxDrawdown)) { "maxDrawdown ${result.maxDrawdown}" }
+    }
+
+    /** 41일 NAV, +1%/−0.5% 교대 운용 수익, 20일째 1,000만 원 입금 — 구간 수익률 40건 */
+    private fun stubRiskHistory(): Pair<List<com.allfolio.report.domain.returns.NavPoint>, List<com.allfolio.unifiedasset.domain.cashflow.CashFlow>> {
+        val day0 = java.time.LocalDate.of(2026, 8, 1)
+        var nav = 10_000_000.0
+        val navs = mutableListOf(com.allfolio.report.domain.returns.NavPoint(day0, nav.toBigDecimal()))
+        val flows = mutableListOf<com.allfolio.unifiedasset.domain.cashflow.CashFlow>()
+        for (i in 1..40) {
+            val dep = if (i == 20) 10_000_000.0 else 0.0
+            if (dep > 0) flows += com.allfolio.unifiedasset.domain.cashflow.CashFlow.create(
+                userId = userId, accountId = null, flowDate = day0.plusDays(i.toLong()),
+                type = com.allfolio.unifiedasset.domain.cashflow.FlowType.DEPOSIT,
+                amount = dep.toBigDecimal(), currency = "KRW", amountKrw = dep.toBigDecimal(), memo = null,
+            )
+            nav = (nav + dep) * (1 + if (i % 2 == 1) 0.01 else -0.005)
+            navs += com.allfolio.report.domain.returns.NavPoint(day0.plusDays(i.toLong()), nav.toBigDecimal())
+        }
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<com.allfolio.report.domain.returns.NavPoint>>(), any()))
+            .thenReturn(navs)
+        return navs to flows
+    }
+
+    @Test
+    fun `risk - 샤프·칼마를 플로우 조정 설정 이후 연환산으로 내고 무위험 수익률을 같이 싣는다`() {
+        val (navs, cashFlows) = stubRiskHistory()
+        val flows = object : com.allfolio.unifiedasset.application.port.CashFlowRepository by emptyCashFlows {
+            override fun findByUserId(userId: UUID) = cashFlows
+        }
+        val cd91 = com.allfolio.unifiedasset.application.port.RiskFreeRate(
+            "CD_91D", java.time.LocalDate.of(2026, 9, 30), bd("3.12"),
+        )
+
+        val result = svc(cashFlows = flows, riskFree = { cd91 }).risk(userId)
+
+        val expected = RiskAdjustedRatios.compute(
+            navs, cashFlows.map { com.allfolio.report.domain.returns.Flow(it.flowDate, it.signedKrw()) }, bd("3.12"),
+        )!!
+        assertEquals(0, expected.sharpe!!.compareTo(result.sharpeRatio)) { "sharpe ${result.sharpeRatio}" }
+        assertEquals(0, expected.calmar!!.compareTo(result.calmarRatio)) { "calmar ${result.calmarRatio}" }
+        assertEquals(0, expected.maxDrawdown.compareTo(result.ratioMaxDrawdown))
+        assertTrue(result.ratioMaxDrawdown!!.signum() < 0)
+        assertEquals(0, bd("3.12").compareTo(result.riskFreeRate))
+        assertEquals(cd91.quoteDate, result.riskFreeRateDate)
+        // 40일·MDD −0.5%짜리 이력의 연환산이라 운용 수익만으로도 칼마가 약 300이다(짧은 이력의 한계).
+        // 입금을 수익으로 셌다면 기간 수익률이 두 배가 되어 연환산 후 칼마가 수십만이 된다
+        assertTrue(result.calmarRatio!! < bd("1000")) { "calmar ${result.calmarRatio}" }
+    }
+
+    @Test
+    fun `risk - 무위험 수익률 수집값이 없으면 샤프는 null, 칼마는 낸다`() {
+        val (_, cashFlows) = stubRiskHistory()
+        val flows = object : com.allfolio.unifiedasset.application.port.CashFlowRepository by emptyCashFlows {
+            override fun findByUserId(userId: UUID) = cashFlows
+        }
+
+        val result = svc(cashFlows = flows).risk(userId)
+
+        assertNull(result.sharpeRatio)
+        assertNull(result.riskFreeRate)
+        assertTrue(result.calmarRatio != null)
     }
 
     // ── byCurrency breakdown ──────────────────────────────────
