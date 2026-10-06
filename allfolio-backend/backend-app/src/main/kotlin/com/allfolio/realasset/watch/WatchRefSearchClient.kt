@@ -77,7 +77,7 @@ class WatchRefSearchClient(
             log.warn("[시계] ref 검색 실패: {}", e.statusCode)
             RefSearchOutcome.Unavailable("HTTP_${e.statusCode.value()}")
         } catch (e: Exception) {
-            // 타임아웃(콜드스타트·느린 질의)·연결 실패·역직렬화 실패.
+            // 타임아웃(느린 ES·Mongo 질의, 상류 장애)·연결 실패·역직렬화 실패.
             log.warn("[시계] ref 검색 실패: {}", e.javaClass.simpleName)
             RefSearchOutcome.Unavailable(e.javaClass.simpleName)
         }
@@ -87,10 +87,12 @@ class WatchRefSearchClient(
         /**
          * 3초.
          *
-         * - 상류가 따뜻할 때 `/api/valuation` 응답은 0.15~0.41초였다(curl 실측 2026-10-06, 3회).
+         * - watchpricedata는 EC2에서 `docker run -d`로 상시 떠 있어 **잠들지 않는다**(콜드스타트 없음 —
+         *   allfolio 백엔드의 Render 무료 인스턴스와 다르다). `/api/valuation` 5회 연속 실측(curl,
+         *   2026-10-06): 첫 호출 1.77초(연결 수립·ES 캐시), 이후 0.17~0.45초.
          *   `/api/refs`는 배포 전이라 못 쟀다 — 같은 서버의 Mongo 정규식 질의라 비슷한 자릿수로
-         *   잡았다. 3초면 그 열 배 가까운 여유다.
-         * - 그보다 오래 걸리면 콜드스타트이거나 상류가 아픈 것이고, 어느 쪽이든 자동완성을
+         *   잡았다. 3초면 첫 호출도 들어간다.
+         * - 그보다 오래 걸리면 질의가 무겁거나 상류가 아픈 것이고, 어느 쪽이든 자동완성을
          *   기다리게 할 이유가 없다 — 직접 입력 경로로 보내는 편이 빠르다.
          * - 확인(lookup)은 20초를 그대로 둔다. 그건 사용자가 버튼을 눌러 기다리는 단계다.
          */
