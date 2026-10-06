@@ -24,7 +24,7 @@ export default function Badge({
   className?: string
 }) {
   return (
-    <span className={cx('whitespace-nowrap font-mono text-[9.5px] tracking-label', variantText[variant], className)}>
+    <span className={cx('whitespace-nowrap font-mono text-caption tracking-label', variantText[variant], className)}>
       {children}
     </span>
   )

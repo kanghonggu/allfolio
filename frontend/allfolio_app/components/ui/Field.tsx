@@ -31,7 +31,7 @@ export default function Field({
 
   return (
     <div className={className}>
-      <label htmlFor={id} className="mb-1.5 block font-mono text-[10px] tracking-label text-fg-muted">
+      <label htmlFor={id} className="mb-1.5 block font-mono text-caption tracking-label text-fg-muted">
         {label}
       </label>
       {control}
