@@ -15,7 +15,7 @@ const GRADE: Record<MetricGrade, { label: string; variant: BadgeVariant }> = {
 
 function Stars({ count }: { count: number }) {
   return (
-    <span className="font-mono text-[10px] leading-none" aria-label={`5점 만점에 ${count}점`}>
+    <span className="font-mono text-caption leading-none" aria-label={`5점 만점에 ${count}점`}>
       <span className="text-ink">{'★'.repeat(count)}</span>
       <span className="text-line">{'★'.repeat(Math.max(0, 5 - count))}</span>
     </span>
@@ -73,11 +73,11 @@ export default function MetricTable({ metrics }: { metrics: DashboardMetrics }) 
                 key={r.key}
                 className="grid grid-cols-[1.3fr_1fr_1fr_0.9fr] items-baseline gap-3 border-b border-line-hair py-2.5"
               >
-                <span className="text-[13px] text-fg-2">{r.label}</span>
-                <Num tone={dirTone(r.metric.value)} className="text-right text-[12.5px]">
+                <span className="text-body text-fg-2">{r.label}</span>
+                <Num tone={dirTone(r.metric.value)} className="text-right text-body">
                   {signPct(r.metric.value)}
                 </Num>
-                <Num className="text-right text-[12.5px] text-fg-muted">
+                <Num className="text-right text-body text-fg-muted">
                   {r.metric.benchmarkVsKospi != null ? `${signPct(r.metric.benchmarkVsKospi)}p` : '—'}
                 </Num>
                 <span className="flex items-baseline justify-end gap-2">
@@ -90,13 +90,13 @@ export default function MetricTable({ metrics }: { metrics: DashboardMetrics }) 
                 key={r.key}
                 className="grid grid-cols-[1.3fr_1fr_1fr_0.9fr] items-baseline gap-3 border-b border-line-hair py-2.5"
               >
-                <span className="flex min-w-0 flex-col text-[13px] text-fg-2">
+                <span className="flex min-w-0 flex-col text-body text-fg-2">
                   {r.label}
-                  <span className="text-[10.5px] text-fg-ghost">{r.emptyNote}</span>
+                  <span className="text-caption text-fg-ghost">{r.emptyNote}</span>
                 </span>
-                <span className="text-right font-mono text-[10px] tracking-label text-fg-faint">데이터 부족</span>
-                <Num className="text-right text-[12.5px] text-fg-ghost">—</Num>
-                <span className="text-right font-mono text-[10px] text-fg-ghost">—</span>
+                <span className="text-right font-mono text-caption tracking-label text-fg-faint">데이터 부족</span>
+                <Num className="text-right text-body text-fg-ghost">—</Num>
+                <span className="text-right font-mono text-caption text-fg-ghost">—</span>
               </div>
             ),
           )}
@@ -117,7 +117,7 @@ export default function MetricTable({ metrics }: { metrics: DashboardMetrics }) 
                 <Badge variant={GRADE[t.metric.grade].variant}>{GRADE[t.metric.grade].label}</Badge>
               </div>
               <Num className="mt-1 block text-[16px]">{t.format(t.metric.value)}</Num>
-              <p className="mt-0.5 text-[11px] text-fg-faint">{t.note}</p>
+              <p className="mt-0.5 text-caption text-fg-faint">{t.note}</p>
             </div>
           ))}
         </div>
@@ -126,7 +126,7 @@ export default function MetricTable({ metrics }: { metrics: DashboardMetrics }) 
       {warnings.length > 0 && (
         <div className="mt-3 space-y-1">
           {warnings.map((w) => (
-            <p key={w} className="text-[11.5px] leading-relaxed text-warn">주의 — {w}</p>
+            <p key={w} className="text-caption leading-relaxed text-warn">주의 — {w}</p>
           ))}
         </div>
       )}

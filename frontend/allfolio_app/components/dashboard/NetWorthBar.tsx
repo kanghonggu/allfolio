@@ -50,10 +50,10 @@ export default function NetWorthBar({
       </Num>
       {hasBaseline ? (
         <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <Num tone={dirTone(change30d)} className="text-[13px]">
+          <Num tone={dirTone(change30d)} className="text-body">
             {signWon(change30d)}
           </Num>
-          <Num tone={dirTone(change30d)} className="text-[13px]">
+          <Num tone={dirTone(change30d)} className="text-body">
             {signPct(changeRate30d)}
           </Num>
           <Label size="sm" tone="faint">30일 투자손익</Label>
@@ -64,7 +64,7 @@ export default function NetWorthBar({
           )}
         </div>
       ) : (
-        <p className="mt-2 text-[13px] text-fg-faint">30일 전 비교 데이터 없음</p>
+        <p className="mt-2 text-body text-fg-faint">30일 전 비교 데이터 없음</p>
       )}
 
       {hasFx && (

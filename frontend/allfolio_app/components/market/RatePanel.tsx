@@ -24,13 +24,13 @@ function Section({ title, rows }: { title: string; rows: RateView[] }) {
     <div>
       <Label size="sm" tone="faint">{title}</Label>
       <div className="mt-2 overflow-x-auto">
-        <table className="w-full text-[12px]">
+        <table className="w-full text-body">
           <tbody>
             {rows.map((r) => (
               <tr key={r.code} className="border-b border-line-card/50">
                 <td className="py-1.5">{rateLabel(r.code)}</td>
                 <td className="py-1.5 text-right">
-                  <Num className="text-[13px]">{fixed(r.value, RATE_DIGITS)}</Num>
+                  <Num className="text-body">{fixed(r.value, RATE_DIGITS)}</Num>
                 </td>
                 <td className="py-1.5 text-right">
                   {/* **bp다(%p 아님).** 1%p = 100bp — `-0.01bp` 같은 값이 보이면 단위가 100배 틀린 것이다.
@@ -45,7 +45,7 @@ function Section({ title, rows }: { title: string; rows: RateView[] }) {
                 </td>
                 {/* **기준일을 항목마다 단다.** 기준금리 공표가 시장금리보다 이틀 늦은 게
                     실측으로 확인됐다 — 공통 헤더에 시각 하나를 두면 화면이 거짓말을 한다 */}
-                <td className="py-1.5 text-right font-mono text-[10px] text-fg-faint">{r.quoteDate}</td>
+                <td className="py-1.5 text-right font-mono text-caption text-fg-faint">{r.quoteDate}</td>
               </tr>
             ))}
           </tbody>
@@ -78,12 +78,12 @@ export default function RatePanel({ rates }: { rates: RateView[] }) {
             <Num tone={dirTone(gap)} className="text-[18px]">{fixed(gap, 2)}%p</Num>
             {/* 여기 두 값도 표와 같은 4자리여야 한다 — 같은 화면에서 `2.75`와 `2.7500`이
                 동시에 보이면 둘이 다른 값처럼 읽힌다 */}
-            <span className="text-[11px] text-fg-2">
+            <span className="text-caption text-fg-2">
               한국 {fixed(krBase.value, RATE_DIGITS)} · 미국 {fixed(usBase.value, RATE_DIGITS)}
             </span>
           </div>
           {/* 두 기준일이 다르다 — 하나만 적으면 다른 쪽 값이 그 날짜 것으로 읽힌다 */}
-          <p className="mt-1 text-[10px] text-fg-faint">
+          <p className="mt-1 text-caption text-fg-faint">
             기준일이 다를 수 있습니다 — 한국 {krBase.quoteDate} · 미국 {usBase.quoteDate}
           </p>
         </div>

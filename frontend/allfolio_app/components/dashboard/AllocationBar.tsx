@@ -46,40 +46,44 @@ export default function AllocationBar({ allocation }: AllocationBarProps) {
         ))}
       </div>
 
-      <div className="border-t-[1.5px] border-ink">
-        <div className="grid grid-cols-[14px_1.2fr_0.7fr_1.1fr_0.9fr] items-baseline gap-2.5 border-b border-line py-2">
-          <span />
-          <Label size="sm" tone="faint">자산군</Label>
-          <Label size="sm" tone="faint" className="text-right">비중</Label>
-          <Label size="sm" tone="faint" className="text-right">평가액</Label>
-          <Label size="sm" tone="faint" className="text-right">판정</Label>
-        </div>
-        <div role="list" aria-label="자산 배분">
-          {allocation.map((item, i) => {
-            const pct = (item.ratio * 100).toFixed(1)
-            const grade = WARN_TEXT[item.grade as MetricGrade]
-            return (
-              // QA P2: 접근성 트리에서 유형 라벨이 확실히 잡히도록 row에 aria-label 부여
-              <div
-                key={item.type}
-                role="listitem"
-                aria-label={`${TYPE_KO[item.type] ?? item.type} ${pct}%`}
-                className="grid grid-cols-[14px_1.2fr_0.7fr_1.1fr_0.9fr] items-center gap-2.5 border-b border-line-hair py-2.5"
-              >
-                <span
-                  className="block h-[7px] w-[7px]"
-                  aria-hidden="true"
-                  style={{ background: TONES[i % TONES.length] }}
-                />
-                <span className="text-[13px]">{TYPE_KO[item.type] ?? item.type}</span>
-                <Num className="text-right text-xs">{pct}%</Num>
-                <Num className="text-right text-xs text-fg-3">{wonPlain(item.value)}</Num>
-                <span className="text-right">
-                  {grade && <Badge variant={grade.variant}>{grade.text}</Badge>}
-                </span>
-              </div>
-            )
-          })}
+      {/* 모바일에선 가로 스크롤 컨테이너 — 글자 하한(AF-209)을 올리자 375px에서 판정 배지가
+          화면 밖으로 밀려 페이지 전체가 가로로 흔들렸다. DataTable과 같은 처리다 */}
+      <div className="overflow-x-auto">
+        <div className="min-w-[400px] border-t-[1.5px] border-ink">
+          <div className="grid grid-cols-[14px_1.2fr_0.7fr_1.1fr_0.9fr] items-baseline gap-2.5 border-b border-line py-2">
+            <span />
+            <Label size="sm" tone="faint">자산군</Label>
+            <Label size="sm" tone="faint" className="text-right">비중</Label>
+            <Label size="sm" tone="faint" className="text-right">평가액</Label>
+            <Label size="sm" tone="faint" className="text-right">판정</Label>
+          </div>
+          <div role="list" aria-label="자산 배분">
+            {allocation.map((item, i) => {
+              const pct = (item.ratio * 100).toFixed(1)
+              const grade = WARN_TEXT[item.grade as MetricGrade]
+              return (
+                // QA P2: 접근성 트리에서 유형 라벨이 확실히 잡히도록 row에 aria-label 부여
+                <div
+                  key={item.type}
+                  role="listitem"
+                  aria-label={`${TYPE_KO[item.type] ?? item.type} ${pct}%`}
+                  className="grid grid-cols-[14px_1.2fr_0.7fr_1.1fr_0.9fr] items-center gap-2.5 border-b border-line-hair py-2.5"
+                >
+                  <span
+                    className="block h-[7px] w-[7px]"
+                    aria-hidden="true"
+                    style={{ background: TONES[i % TONES.length] }}
+                  />
+                  <span className="text-body">{TYPE_KO[item.type] ?? item.type}</span>
+                  <Num className="text-right text-body">{pct}%</Num>
+                  <Num className="text-right text-body text-fg-3">{wonPlain(item.value)}</Num>
+                  <span className="text-right">
+                    {grade && <Badge variant={grade.variant}>{grade.text}</Badge>}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
         </div>
       </div>
 
