@@ -292,13 +292,17 @@ export default function ReturnsReportPage() {
               {analysis.benchmark && (
                 <>
                   <div className="bg-surface px-3.5 py-3 lg:col-span-2">
-                    <Label size="sm" tone="faint">BM 수익률 ({analysis.benchmark.label})</Label>
+                    <InfoTip label="BM 수익률" text={METRIC_HELP.benchmarkPeriodReturn}>
+                      <Label size="sm" tone="faint">BM 수익률 ({analysis.benchmark.label})</Label>
+                    </InfoTip>
                     <Num className={`mt-1 block text-[20px] ${pctColor(analysis.benchmark.periodReturn)}`}>
                       {fmtPct(analysis.benchmark.periodReturn)}
                     </Num>
                   </div>
                   <div className="bg-surface px-3.5 py-3 lg:col-span-2">
-                    <Label size="sm" tone="faint">초과수익 (TWR − BM)</Label>
+                    <InfoTip label="초과수익" text={METRIC_HELP.excessReturn}>
+                      <Label size="sm" tone="faint">초과수익 (TWR − BM)</Label>
+                    </InfoTip>
                     <Num className={`mt-1 block text-[20px] ${pctColor(analysis.benchmark.excessReturn)}`}>
                       {analysis.benchmark.excessReturn === null
                         ? '—'

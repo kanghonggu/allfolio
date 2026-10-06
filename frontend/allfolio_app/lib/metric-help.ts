@@ -6,7 +6,8 @@
  * 순입출금"을 서로 연관된 값으로 오해한 게 이 파일의 출발점이라, 문구가 계산과 어긋나면
  * 도움말이 오해를 오히려 굳힌다.
  *
- * 벤치마크(BM 수익률·초과수익·알파) 문구는 일부러 없다 — 그 계산이 지금 바뀌는 중이다.
+ * 벤치마크 문구는 **화면마다 따로** 있다 — R-02와 B-06이 지수 기준점을 다르게 잡는다(아래 주석).
+ * B-02 "벤치마크 대비 알파"에는 일부러 없다 — 그 값은 마지막 하루의 일간 알파라 기간 알파가 아니다.
  */
 export const METRIC_HELP = {
   // ── 수익률 (R-02 수익률 보고서 · R-01 월간 운용보고서) ─────────────────
@@ -25,6 +26,23 @@ export const METRIC_HELP = {
   // CashFlow.signedKrw: 계좌 간 이체·환전(TRANSFER_*, FX_*)은 0
   netFlow:
     '이 기간에 외부에서 넣은 돈(입금)에서 뺀 돈(출금)을 뺀 금액입니다. 손익이 아니며, 계좌 간 이체·환전은 들어가지 않습니다.',
+  // GetReturnsAnalysisUseCase.benchmarkComparison: 설정한 BM의 [from, to] 종가 중 첫 종가 → 마지막 종가
+  benchmarkPeriodReturn:
+    '설정한 비교 지수의 이 기간 수익률입니다. 조회 기간 안의 첫 종가 대비 마지막 종가로 재며, 가격 지수라 배당은 들어가지 않습니다.',
+  // GetReturnsAnalysisUseCase.benchmarkComparison: excessReturn = twr − periodReturn
+  excessReturn:
+    '같은 기간 TWR에서 지수 수익률을 뺀 차이(%p)입니다. 수익률끼리의 차이라 금액이 아니며, ' +
+    '옆의 기간 손익금액·순입출금과는 직접 이어지지 않습니다. 플러스면 지수보다 잘한 것입니다.',
+
+  // ── 벤치마크 비교 (B-06) ─────────────────────────────────────────────
+  // ReportService.indexPeriodReturn: 기간 시작일 당일 또는 그 직전 마지막 종가 → 최신 종가
+  benchmarkIndexReturn:
+    '지수의 이 기간 수익률입니다. 기간 시작일(휴장이면 그 직전 거래일) 종가 대비 최신 종가로 재며, 가격 지수라 배당은 들어가지 않습니다.',
+  // ReportService.benchmark (AF-107): alpha = periodTwrPercent(같은 since) − 지수 수익률, 기저 없으면 null
+  benchmarkAlpha:
+    '같은 기간 포트폴리오 TWR에서 이 지수의 수익률을 뺀 차이(%p)입니다. 플러스면 지수보다 잘한 것입니다. ' +
+    '평가액 기록이 기간 시작까지 거슬러 가지 않으면 비교할 기준이 없어 "—"로 표시합니다.',
+
   // returns/page.tsx 워터폴: 기초 + 입금 − 출금 ± 투자손익 = 기말 (투자손익은 위 investmentPnl과 같은 값)
   flowEffect:
     '기초 평가액에 입금을 더하고 출금을 빼고 투자손익을 더하면 기말 평가액이 됩니다. ' +
