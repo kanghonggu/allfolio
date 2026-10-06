@@ -7,12 +7,12 @@ import com.allfolio.report.domain.returns.ReturnsCalculator
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.CashFlowRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
+import com.allfolio.unifiedasset.application.usecase.FlowAdjustedRiskSeries
 import com.allfolio.unifiedasset.application.usecase.currentValueInKrw
 import com.allfolio.unifiedasset.application.usecase.loanAmountInKrw
 import com.allfolio.unifiedasset.application.usecase.navInKrw
 import com.allfolio.unifiedasset.domain.asset.AssetLiquidityType
 import com.allfolio.snapshot.infrastructure.repository.PerformanceDailyJpaRepository
-import com.allfolio.snapshot.infrastructure.repository.RiskDailyJpaRepository
 import com.allfolio.snapshot.infrastructure.repository.BenchmarkDailyJpaRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -27,7 +27,6 @@ import java.util.UUID
 class GetDashboardUseCase(
     private val assetRepository: AssetRepository,
     private val performanceRepo: PerformanceDailyJpaRepository,
-    private val riskRepo: RiskDailyJpaRepository,
     private val benchmarkRepo: BenchmarkDailyJpaRepository,
     private val fx: FxConverter,
     private val cashFlowRepository: CashFlowRepository,
@@ -95,8 +94,9 @@ class GetDashboardUseCase(
         val return1m  = periodTwrPercent(today.minusDays(30))
         val return3m  = periodTwrPercent(today.minusDays(90))
 
-        // MDD
-        val latestRisk = riskRepo.findTopByIdPortfolioIdOrderByIdDateDesc(userId)
+        // MDD·변동성·VaR — risk_daily가 아니라 B-04 리스크 화면과 같은 플로우 조정 시계열의 마지막 날.
+        // risk_daily는 daily_return(입출금 미조정)을 먹어 입금일이 수익, 출금일이 손실로 잡힌다.
+        val latestRisk = FlowAdjustedRiskSeries.build(navSeries, flows).lastOrNull()
         val mdd = latestRisk?.maxDrawdown?.multiply(BigDecimal(100))
 
         // Phase 3: Sharpe, VaR, 변동성
