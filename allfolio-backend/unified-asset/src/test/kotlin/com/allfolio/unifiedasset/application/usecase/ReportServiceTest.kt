@@ -263,8 +263,6 @@ class ReportServiceTest {
         assertNull(result.volatility)
         assertNull(result.var95)
         assertNull(result.maxDrawdown)
-        assertNull(result.sharpeRatio)
-        assertNull(result.calmarRatio)
         assertTrue(result.series.isEmpty())
     }
 

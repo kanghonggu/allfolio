@@ -90,8 +90,6 @@ export interface RiskReport {
   annualizedVolatility: number | null
   var95:                number | null
   maxDrawdown:          number | null
-  sharpeRatio:          number | null
-  calmarRatio:          number | null
   latestDate:           string | null
   series:               DailyRisk[]
 }

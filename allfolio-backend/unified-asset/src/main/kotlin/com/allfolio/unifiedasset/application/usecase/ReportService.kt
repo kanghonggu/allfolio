@@ -83,8 +83,9 @@ data class RiskReport(
     val annualizedVolatility: BigDecimal?,
     val var95: BigDecimal?,
     val maxDrawdown: BigDecimal?,
-    val sharpeRatio: BigDecimal?,
-    val calmarRatio: BigDecimal?,
+    // Sharpe·Calmar 필드는 없앴다(AF-214). 둘 다 연수익률이 필요한데 이 경로엔 그 값이 없어
+    // computeSharpe/computeCalmar가 어떤 입력에서도 null을 돌려줬고, 화면은 늘 "—" 옆에
+    // "무위험 5% 기준"을 적어 계산되는 지표처럼 보였다. 구현할 때 연수익률 산정부터 새로 정할 것.
     val latestDate: LocalDate?,
     val series: List<DailyRisk>,
 )
@@ -317,8 +318,6 @@ class ReportService(
             annualizedVolatility = latest?.annualizedVolatility,
             var95 = latest?.var95,
             maxDrawdown = latest?.maxDrawdown,
-            sharpeRatio = computeSharpe(series),
-            calmarRatio = computeCalmar(series),
             latestDate = latest?.date,
             series = series,
         )
@@ -680,23 +679,6 @@ class ReportService(
             "YTD" to twrSince(LocalDate.of(now.year, 1, 1)),
             "1Y"  to twrSince(now.minusDays(365)),
         )
-    }
-
-    private fun computeSharpe(series: List<DailyRisk>): BigDecimal? {
-        if (series.isEmpty()) return null
-        // Approximation: annualized_vol from latest, assume 5% risk-free rate
-        val latest = series.last()
-        val vol = latest.annualizedVolatility
-        if (vol <= BigDecimal.ZERO) return null
-        // We don't have annualized return here, so return null
-        return null
-    }
-
-    private fun computeCalmar(series: List<DailyRisk>): BigDecimal? {
-        if (series.isEmpty()) return null
-        val mdd = series.minOf { it.maxDrawdown }
-        if (mdd >= BigDecimal.ZERO) return null
-        return null // need annual return
     }
 
     private fun periodDays(period: String): Int = when (period) {
