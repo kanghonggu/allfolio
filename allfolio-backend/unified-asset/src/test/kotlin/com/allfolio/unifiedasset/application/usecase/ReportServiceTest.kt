@@ -601,6 +601,40 @@ class ReportServiceTest {
      * 넣었을 때 전부 초록이었다. 앵커(기간 시작 이전 마지막 관측)를 잃는 것이 이 수정의
      * 핵심이라, 거르는 쪽을 흉내 내야 계측이 생긴다.
      */
+    /**
+     * 보유 시장 판정 (AF-107). *"국내주식만 가진 사용자에게 항셍은 소음이다"*.
+     *
+     * **숨기는 판정이 아니라 칩 기본값이다.** 통화로 가르는 것은 근사라(원화로 담은
+     * 해외주식은 KOSPI로 잡힌다) 틀렸을 때 지수가 사라지면 안 된다 — 꺼진 채 남아야 한다.
+     */
+    @Test
+    fun `보유 시장만 held가 참이다`() {
+        val today = java.time.LocalDate.now()
+        // 국내주식만 보유 — 암호화폐·해외주식 없음
+        `when`(assetRepository.findByUserId(userId)).thenReturn(
+            listOf(stock(currency = "KRW")),
+        )
+        stubPerformanceDaily(
+            listOf(
+                DailyPerf(today.minusDays(100), bd("1000000"), bd("0"), bd("0"), null, null),
+                DailyPerf(today, bd("1100000"), bd("0"), bd("0.1"), null, null),
+            ),
+        )
+        val store = benchStore(
+            com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.KOSPI to
+                listOf(today.minusDays(40) to bd("2500"), today to bd("2600")),
+            com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.BTC to
+                listOf(today.minusDays(40) to bd("100"), today to bd("120")),
+        )
+
+        val items = svc(benchmarkStore = store).benchmark(userId, "1M").benchmarks.associateBy { it.name }
+
+        assertTrue(items.getValue("KOSPI").held) { "국내주식 보유인데 KOSPI가 held=false" }
+        assertFalse(items.getValue("Bitcoin").held) { "암호화폐가 없는데 BTC가 held=true" }
+        // 🔴 안 들고 있어도 **목록에는 남는다** — 판정이 틀렸을 때 영영 못 보는 것을 막는다
+        assertEquals(2, items.size) { "보유 아닌 지수가 목록에서 사라졌다: ${items.keys}" }
+    }
+
     private fun stubPerformanceDaily(rows: List<DailyPerf>) {
         `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
             .thenAnswer { inv ->
