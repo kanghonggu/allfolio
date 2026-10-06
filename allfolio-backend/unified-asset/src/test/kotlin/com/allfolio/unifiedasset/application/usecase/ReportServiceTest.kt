@@ -540,8 +540,11 @@ class ReportServiceTest {
         )
         stubPerformanceDaily(
             listOf(
-                DailyPerf(today.minusDays(90), bd("1000000"), bd("0"), bd("0"), null, null),
-                DailyPerf(today.minusDays(30), bd("1100000"), bd("0"), bd("0.1"), null, null),
+                // 🔴 **관측일을 창 경계에 두면 안 된다.** today−30/today−90에 두었더니
+                // "전 구간을 읽는다"를 창만 읽도록 바꿔도 앵커가 같아 통과했다 — 테스트가
+                // 고정점 입력이라 아무것도 못 쟀다. 앵커를 창 **밖**으로 빼야 구별된다.
+                DailyPerf(today.minusDays(100), bd("1000000"), bd("0"), bd("0"), null, null),
+                DailyPerf(today.minusDays(35), bd("1100000"), bd("0"), bd("0.1"), null, null),
                 DailyPerf(today, bd("1210000"), bd("0"), bd("0.21"), null, null),
             ),
         )
