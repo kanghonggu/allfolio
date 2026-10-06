@@ -59,10 +59,11 @@ export default function PortfolioSummary({ snapshot }: Props) {
           리스크 지표
         </h3>
         <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm sm:grid-cols-4">
-          <RiskRow label="변동성 (일)" value={pctStr(r.volatility)} />
-          <RiskRow label="변동성 (연)" value={pctStr(r.annualizedVolatility)} />
-          <RiskRow label="VaR 95%" value={pctStr(r.var95)} />
-          <RiskRow label="최대 낙폭" value={pctStr(r.maxDrawdown)} color="text-loss" />
+          {/* 관측이 모자라면 서버가 null을 준다 — 0%로 그리면 "위험 없음"으로 읽힌다 */}
+          <RiskRow label="변동성 (일)" value={r ? pctStr(r.volatility) : '—'} />
+          <RiskRow label="변동성 (연)" value={r ? pctStr(r.annualizedVolatility) : '—'} />
+          <RiskRow label="VaR 95%" value={r ? pctStr(r.var95) : '—'} />
+          <RiskRow label="최대 낙폭" value={r ? pctStr(r.maxDrawdown) : '—'} color={r ? 'text-loss' : 'text-fg-muted'} />
         </div>
       </div>
 
