@@ -91,7 +91,8 @@ export default function BenchmarkPage() {
 
   const chartData = data.series.map((s: BenchmarkSeries) => ({
     date: s.date,
-    portfolio: Number(s.portfolio),
+    // Number(null)은 0이라 "+0.00%" 선을 지어낸다 — 위 pr과 같은 함정
+    portfolio: s.portfolio !== null ? Number(s.portfolio) : null,
     'S&P 500': s.sp500 !== null ? Number(s.sp500) : null,
     BTC: s.btc !== null ? Number(s.btc) : null,
     KOSPI: s.kospi !== null ? Number(s.kospi) : null,

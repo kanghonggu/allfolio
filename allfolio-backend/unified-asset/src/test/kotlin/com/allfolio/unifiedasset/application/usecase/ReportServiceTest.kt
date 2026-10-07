@@ -445,25 +445,256 @@ class ReportServiceTest {
 
     @Test
     fun `performance twr는 기간 카드와 같은 percent 스케일이다`() {
-        // cumulative_return은 ratio(0~1) 저장 — twr 응답은 percent로 환산돼야
-        // FE(fmtPct, x100 없음)에서 100배 축소 표시가 나지 않는다.
+        // twr 응답은 percent여야 FE(fmtPct, x100 없음)에서 100배 축소 표시가 나지 않는다.
+        // twr는 이제 NAV + 현금흐름으로 계산한다(저장 cumulative_return 아님) — 관측 2건으로 +20.6%를 만든다.
         `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
-        // 🔴 한 행만 두면 **구간이 없어** twr이 null이다 — 저장 cumulative_return을 그대로
-        // 쓰던 시절의 픽스처다. 단언(ratio → percent 환산)은 그대로 두고 입력만 구간이
-        // 생기게 바꾼다. 31,509,536 → 38,000,000 = +20.60%.
         val today = java.time.LocalDate.now()
-        stubPerformanceDaily(
-            listOf(
-                DailyPerf(today.minusDays(30), bd("31509536"), bd("0"), bd("0"), null, null),
-                DailyPerf(today, bd("38000000"), bd("0.001"), bd("0.2060"), null, null),
-            ),
+        val rows = listOf(
+            DailyPerf(today.minusDays(1), bd("10000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today, bd("12060000"), bd("0.206"), bd("0.2060"), null, null),
         )
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenReturn(rows)
 
         val result = svc().performance(userId, "1M")
 
         assertEquals(0, bd("20.60").compareTo(result.twr)) {
             "twr expected percent 20.60 but was ${result.twr}"
         }
+    }
+
+    @Test
+    fun `performance twr - 입금은 수익이 아니다 - 저장 cumulative_return을 쓰지 않는다`() {
+        // 운용 수익 0. 어제 1,000만 원 입금으로 NAV가 두 배. 저장 cumulative_return은 (NAV − 최초)/최초 = 1.0
+        // 이라 예전 twr은 +100.00%였다.
+        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
+        val today = java.time.LocalDate.now()
+        val rows = listOf(
+            DailyPerf(today.minusDays(2), bd("10000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today.minusDays(1), bd("20000000"), bd("1.0"), bd("1.0"), null, null),
+            DailyPerf(today, bd("20000000"), bd("0"), bd("1.0"), null, null),
+        )
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenReturn(rows)
+        val deposit = com.allfolio.unifiedasset.domain.cashflow.CashFlow.create(
+            userId = userId, accountId = null, flowDate = today.minusDays(1),
+            type = com.allfolio.unifiedasset.domain.cashflow.FlowType.DEPOSIT,
+            amount = bd("10000000"), currency = "KRW", amountKrw = bd("10000000"), memo = null,
+        )
+        val flows = object : com.allfolio.unifiedasset.application.port.CashFlowRepository by emptyCashFlows {
+            override fun findByUserId(userId: UUID) = listOf(deposit)
+        }
+
+        val result = svc(cashFlows = flows).performance(userId, "1M")
+
+        assertEquals(0, BigDecimal.ZERO.compareTo(result.twr)) { "twr ${result.twr}" }
+    }
+
+    @Test
+    fun `performance twr - 구간 수익률을 더하지 않고 곱해서 잇는다`() {
+        // +10% 뒤 −10% → 1.1 × 0.9 − 1 = −1.00%. 더하면 0%.
+        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
+        val today = java.time.LocalDate.now()
+        val rows = listOf(
+            DailyPerf(today.minusDays(2), bd("1000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today.minusDays(1), bd("1100000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today, bd("990000"), bd("0"), bd("0"), null, null),
+        )
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenReturn(rows)
+
+        val result = svc().performance(userId, "1M")
+
+        assertEquals(0, bd("-1.00").compareTo(result.twr)) { "twr ${result.twr}" }
+    }
+
+    @Test
+    fun `performance twr - 선택 기간과 무관하게 첫 관측일부터 잰다`() {
+        // 화면에서 "전체 수익률" 아래 붙는 줄이라 기간 버튼(1W)을 눌러도 전체 기간이어야 한다.
+        // 100일 전 100만 → 50일 전 150만(+50%) → 어제·오늘 150만. 1W 창만 보면 0%.
+        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
+        val today = java.time.LocalDate.now()
+        val all = listOf(
+            DailyPerf(today.minusDays(100), bd("1000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today.minusDays(50), bd("1500000"), bd("0.5"), bd("0.5"), null, null),
+            DailyPerf(today.minusDays(1), bd("1500000"), bd("0"), bd("0.5"), null, null),
+            DailyPerf(today, bd("1500000"), bd("0"), bd("0.5"), null, null),
+        )
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenAnswer { inv ->
+                val since = inv.arguments.last() as java.time.LocalDate
+                all.filter { !it.date.isBefore(since) }
+            }
+
+        val result = svc().performance(userId, "1W")
+
+        assertEquals(2, result.dailySeries.size) { "1W 시계열은 창 안의 2건이어야 스텁이 기간을 가른다" }
+        assertEquals(0, bd("50.00").compareTo(result.twr)) { "twr ${result.twr}" }
+    }
+
+    // ── performance dailySeries·benchmarkAlpha (저장값 대신 현금흐름 조정) ─────────────
+
+    /** 기간 쿼리는 since 이후만, 전체 쿼리(ALL)는 전부 — 실제 SQL의 `date >= ?`를 흉내 낸다 */
+    private fun stubPerfRows(rows: List<DailyPerf>) {
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenAnswer { inv ->
+                val since = inv.arguments.last() as java.time.LocalDate
+                rows.filter { !it.date.isBefore(since) }
+            }
+    }
+
+    private fun depositOn(date: java.time.LocalDate, krw: String) = object : com.allfolio.unifiedasset.application.port.CashFlowRepository by emptyCashFlows {
+        override fun findByUserId(userId: UUID) = listOf(
+            com.allfolio.unifiedasset.domain.cashflow.CashFlow.create(
+                userId = userId, accountId = null, flowDate = date,
+                type = com.allfolio.unifiedasset.domain.cashflow.FlowType.DEPOSIT,
+                amount = bd(krw), currency = "KRW", amountKrw = bd(krw), memo = null,
+            ),
+        )
+    }
+
+    @Test
+    fun `performance 누적선 - 입금일에 튀지 않고 기간 시작부터 percent로 잰다 - 끝점은 기간 카드와 같다`() {
+        // 40일 전 100만(1M 앵커) → 10일 전 +10% → 5일 전 1,000만 입금 → 오늘 그대로.
+        // 저장 cumulative_return은 비율이고 입금 후 10.1 — 화면엔 "10.1%"(실제론 +1010%)로 나가던 값.
+        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
+        val today = java.time.LocalDate.now()
+        stubPerfRows(listOf(
+            DailyPerf(today.minusDays(40), bd("1000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today.minusDays(10), bd("1100000"), bd("0.1"), bd("0.1"), null, null),
+            DailyPerf(today.minusDays(5), bd("11100000"), bd("9.09"), bd("10.1"), null, null),
+            DailyPerf(today, bd("11100000"), bd("0"), bd("10.1"), null, null),
+        ))
+
+        val result = svc(cashFlows = depositOn(today.minusDays(5), "10000000")).performance(userId, "1M")
+
+        assertEquals(listOf("10.00", "10.00", "10.00"), result.dailySeries.map { it.cumulativeReturn?.toPlainString() })
+        assertEquals(0, result.periodReturns["1M"]!!.compareTo(result.dailySeries.last().cumulativeReturn))
+    }
+
+    @Test
+    fun `performance 누적선 - 스냅샷이 기간 시작을 못 덮으면 null이다`() {
+        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
+        val today = java.time.LocalDate.now()
+        stubPerfRows(listOf(
+            DailyPerf(today.minusDays(2), bd("1000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today, bd("1100000"), bd("0.1"), bd("0.1"), null, null),
+        ))
+
+        val result = svc().performance(userId, "1M")
+
+        assertNull(result.periodReturns["1M"])
+        result.dailySeries.forEach { assertNull(it.cumulativeReturn) { "${it.date} ${it.cumulativeReturn}" } }
+    }
+
+    @Test
+    fun `performance 누적선 - YTD는 기간 카드처럼 1월 1일을 기준으로 잡는다`() {
+        // 12/31 100만 → 1/1 110만(+10%, 1월 1일 당일) → 오늘 그대로.
+        // 기간 카드 YTD 앵커는 1/1 관측 → 0.00%. 12/31을 앵커로 잡으면 선 끝이 10.00이 돼 카드와 어긋난다.
+        val today = java.time.LocalDate.now()
+        val jan1 = java.time.LocalDate.of(today.year, 1, 1)
+        org.junit.jupiter.api.Assumptions.assumeTrue(today.isAfter(jan1)) { "1월 1일엔 오늘과 1/1 행이 겹친다" }
+        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
+        stubPerfRows(listOf(
+            DailyPerf(jan1.minusDays(1), bd("1000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(jan1, bd("1100000"), bd("0.1"), bd("0.1"), null, null),
+            DailyPerf(today, bd("1100000"), bd("0"), bd("0.1"), null, null),
+        ))
+
+        val result = svc().performance(userId, "YTD")
+
+        assertEquals(0, bd("0.00").compareTo(result.periodReturns["YTD"]))
+        assertEquals(0, result.periodReturns["YTD"]!!.compareTo(result.dailySeries.last().cumulativeReturn))
+    }
+
+    @Test
+    fun `performance 일간 수익률 - 입금일은 0이고 percent다 - 저장 daily_return을 쓰지 않는다`() {
+        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
+        val today = java.time.LocalDate.now()
+        stubPerfRows(listOf(
+            DailyPerf(today.minusDays(40), bd("1000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today.minusDays(10), bd("1100000"), bd("0.1"), bd("0.1"), null, null),
+            DailyPerf(today.minusDays(5), bd("11100000"), bd("9.09"), bd("10.1"), null, null),
+        ))
+
+        val result = svc(cashFlows = depositOn(today.minusDays(5), "10000000")).performance(userId, "1M")
+
+        // 10일 전 +10% → 10.0000, 5일 전 입금일 → 0.0000 (저장값 9.09 = +909%)
+        assertEquals(listOf("10.0000", "0.0000"), result.dailySeries.map { it.dailyReturn?.toPlainString() })
+    }
+
+    @Test
+    fun `performance 일간 수익률 - 첫 관측일은 구간이 없어 null이다`() {
+        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
+        val today = java.time.LocalDate.now()
+        stubPerfRows(listOf(
+            DailyPerf(today.minusDays(2), bd("1000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today, bd("1100000"), bd("0.1"), bd("0.1"), null, null),
+        ))
+
+        val result = svc().performance(userId, "1M")
+
+        assertNull(result.dailySeries.first().dailyReturn)
+        assertEquals(0, bd("10.0000").compareTo(result.dailySeries.last().dailyReturn))
+    }
+
+    @Test
+    fun `performance 알파 - 같은 창의 포트폴리오 TWR − KOSPI 수익률`() {
+        // 포트폴리오 1M +10.00%, KOSPI 2500 → 2600 = +4.00% → 알파 6.00.
+        // KOSPI 기저는 기간 시작(30일 전) 이전 마지막 종가(35일 전 2500)다 — 그 앞의 40일 전 2400을 잡으면 +8.33%가 된다.
+        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
+        val today = java.time.LocalDate.now()
+        stubPerfRows(listOf(
+            DailyPerf(today.minusDays(40), bd("1000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today, bd("1100000"), bd("0.1"), bd("0.1"), null, bd("0.99")),
+        ))
+        val store = benchStore(
+            com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.KOSPI to listOf(
+                today.minusDays(40) to bd("2400"),
+                today.minusDays(35) to bd("2500"),
+                today to bd("2600"),
+            ),
+        )
+
+        val result = svc(benchmarkStore = store).performance(userId, "1M")
+
+        assertEquals(0, bd("10.00").compareTo(result.periodReturns["1M"]))
+        assertEquals(0, bd("6.00").compareTo(result.benchmarkAlpha)) { "alpha ${result.benchmarkAlpha}" }
+    }
+
+    @Test
+    fun `performance 알파 - KOSPI 시계열이 없거나 포트폴리오 기간 수익률이 없으면 null이다`() {
+        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
+        val today = java.time.LocalDate.now()
+        stubPerfRows(listOf(
+            DailyPerf(today.minusDays(40), bd("1000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today, bd("1100000"), bd("0.1"), bd("0.1"), null, bd("0.99")),
+        ))
+        val kospi = benchStore(
+            com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.KOSPI to listOf(
+                today.minusDays(35) to bd("2500"),
+                today to bd("2600"),
+            ),
+        )
+
+        // KOSPI 없음 — 저장 alpha(0.99)로 갈아타지 않는다
+        assertNull(svc().performance(userId, "1M").benchmarkAlpha)
+        // 1Y는 365일 전 이전 관측이 없어 포트폴리오 기간 수익률이 null
+        assertNull(svc(benchmarkStore = kospi).performance(userId, "1Y").benchmarkAlpha)
+    }
+
+    @Test
+    fun `performance twr - 관측이 1건이면 null이다 - 매입 원가 기준 수익률을 TWR 자리에 넣지 않는다`() {
+        val asset = stock(purchasePrice = bd("50000"), quantity = bd("10"), currentValue = bd("600000"))
+        `when`(assetRepository.findByUserId(userId)).thenReturn(listOf(asset))
+        val row = DailyPerf(java.time.LocalDate.now(), bd("600000"), bd("0"), bd("0.5"), null, null)
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenReturn(listOf(row))
+
+        val result = svc().performance(userId, "1M")
+
+        assertEquals(0, bd("20.00").compareTo(result.totalReturn))
+        assertNull(result.twr) { "twr ${result.twr}" }
     }
 
     @Test
@@ -576,10 +807,141 @@ class ReportServiceTest {
     }
 
     @Test
+    fun `벤치마크 포트폴리오 선 - 입금일에 튀지 않고 기간 시작부터 잰다`() {
+        // 40일 전 100만(앵커) → 10일 전 +10%(110만) → 5일 전 1,000만 입금(1,110만) → 오늘 1,110만.
+        // 저장 cumulative_return은 (NAV − 최초)/최초 = 10.1 → 예전 선은 입금일부터 +1010%.
+        val today = java.time.LocalDate.now()
+        val rows = listOf(
+            DailyPerf(today.minusDays(40), bd("1000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today.minusDays(10), bd("1100000"), bd("0.1"), bd("0.1"), null, null),
+            DailyPerf(today.minusDays(5), bd("11100000"), bd("9.09"), bd("10.1"), null, null),
+            DailyPerf(today, bd("11100000"), bd("0"), bd("10.1"), null, null),
+        )
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenAnswer { inv ->
+                val since = inv.arguments.last() as java.time.LocalDate
+                rows.filter { !it.date.isBefore(since) }
+            }
+        val deposit = com.allfolio.unifiedasset.domain.cashflow.CashFlow.create(
+            userId = userId, accountId = null, flowDate = today.minusDays(5),
+            type = com.allfolio.unifiedasset.domain.cashflow.FlowType.DEPOSIT,
+            amount = bd("10000000"), currency = "KRW", amountKrw = bd("10000000"), memo = null,
+        )
+        val flows = object : com.allfolio.unifiedasset.application.port.CashFlowRepository by emptyCashFlows {
+            override fun findByUserId(userId: UUID) = listOf(deposit)
+        }
+
+        val result = svc(cashFlows = flows).benchmark(userId, "1M")
+
+        // 1M 창(30일 전~) 안의 관측 3건: 10일 전 +10%, 5일 전(입금) +10%, 오늘 +10%
+        assertEquals(
+            listOf(today.minusDays(10), today.minusDays(5), today),
+            result.series.map { it.date },
+        )
+        result.series.forEach {
+            assertEquals(0, bd("10.00").compareTo(it.portfolio)) { "${it.date} portfolio ${it.portfolio}" }
+        }
+        // 선의 마지막 점은 같은 리포트의 헤드라인과 같다
+        assertEquals(0, result.portfolioReturn!!.compareTo(result.series.last().portfolio))
+    }
+
+    @Test
+    fun `벤치마크 포트폴리오 선 - 구간 수익률을 곱해서 잇는다`() {
+        // 앵커 100만 → +10%(110만) → −10%(99만): 선은 10.00 → −1.00 (더하면 0.00)
+        val today = java.time.LocalDate.now()
+        val rows = listOf(
+            DailyPerf(today.minusDays(40), bd("1000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today.minusDays(3), bd("1100000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today, bd("990000"), bd("0"), bd("0"), null, null),
+        )
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenAnswer { inv ->
+                val since = inv.arguments.last() as java.time.LocalDate
+                rows.filter { !it.date.isBefore(since) }
+            }
+
+        val result = svc().benchmark(userId, "1M")
+
+        assertEquals(listOf("10.00", "-1.00"), result.series.map { it.portfolio!!.toPlainString() })
+    }
+
+    @Test
+    fun `벤치마크 포트폴리오 선 - 기간 시작 이전의 수익은 선에 들어가지 않는다`() {
+        // 60일 전 100만 → 40일 전 200만(+100%, 기간 시작 전) → 10일 전 +10% → 오늘 그대로.
+        // 1M 앵커는 40일 전 관측이다. 선은 10.00, 10.00 — 기간 전 +100%까지 이으면 120.00이 된다.
+        val today = java.time.LocalDate.now()
+        val rows = listOf(
+            DailyPerf(today.minusDays(60), bd("1000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today.minusDays(40), bd("2000000"), bd("1.0"), bd("1.0"), null, null),
+            DailyPerf(today.minusDays(10), bd("2200000"), bd("0.1"), bd("1.2"), null, null),
+            DailyPerf(today, bd("2200000"), bd("0"), bd("1.2"), null, null),
+        )
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenAnswer { inv ->
+                val since = inv.arguments.last() as java.time.LocalDate
+                rows.filter { !it.date.isBefore(since) }
+            }
+
+        val result = svc().benchmark(userId, "1M")
+
+        assertEquals(listOf("10.00", "10.00"), result.series.map { it.portfolio!!.toPlainString() })
+        assertEquals(0, result.portfolioReturn!!.compareTo(result.series.last().portfolio))
+    }
+
+    @Test
+    fun `벤치마크 포트폴리오 선 - 구간이 없는 날(전액 출금 뒤 NAV 0)은 직전 값을 잇는다`() {
+        // 앵커 100만 → 10일 전 +10%(110만) → 5일 전 전액 출금(NAV 0, 구간 수익률 0) → 오늘 NAV 0.
+        // 오늘은 분모가 0이라 구간이 없다. 선이 거기서 끊기지 않고 10.00을 잇는다.
+        val today = java.time.LocalDate.now()
+        val rows = listOf(
+            DailyPerf(today.minusDays(40), bd("1000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today.minusDays(10), bd("1100000"), bd("0.1"), bd("0.1"), null, null),
+            DailyPerf(today.minusDays(5), bd("0"), bd("-1"), bd("-1"), null, null),
+            DailyPerf(today, bd("0"), bd("0"), bd("-1"), null, null),
+        )
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenAnswer { inv ->
+                val since = inv.arguments.last() as java.time.LocalDate
+                rows.filter { !it.date.isBefore(since) }
+            }
+        val withdrawal = com.allfolio.unifiedasset.domain.cashflow.CashFlow.create(
+            userId = userId, accountId = null, flowDate = today.minusDays(5),
+            type = com.allfolio.unifiedasset.domain.cashflow.FlowType.WITHDRAWAL,
+            amount = bd("1100000"), currency = "KRW", amountKrw = bd("1100000"), memo = null,
+        )
+        val flows = object : com.allfolio.unifiedasset.application.port.CashFlowRepository by emptyCashFlows {
+            override fun findByUserId(userId: UUID) = listOf(withdrawal)
+        }
+
+        val result = svc(cashFlows = flows).benchmark(userId, "1M")
+
+        assertEquals(listOf("10.00", "10.00", "10.00"), result.series.map { it.portfolio?.toPlainString() })
+    }
+
+    @Test
+    fun `벤치마크 포트폴리오 선 - 스냅샷이 기간 시작을 못 덮으면 null이다`() {
+        // 첫 스냅샷이 2일 전 — 1M 기간 시작(30일 전) 이전 관측이 없다. 헤드라인도 null.
+        val today = java.time.LocalDate.now()
+        val rows = listOf(
+            DailyPerf(today.minusDays(2), bd("1000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today, bd("1050000"), bd("0"), bd("0.05"), null, null),
+        )
+        `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
+            .thenReturn(rows)
+
+        val result = svc().benchmark(userId, "1M")
+
+        assertNull(result.portfolioReturn)
+        assertEquals(2, result.series.size)
+        result.series.forEach { assertNull(it.portfolio) { "${it.date} portfolio ${it.portfolio}" } }
+    }
+
+    @Test
     fun `시계열은 포트폴리오 percent와 지수 정규화 percent를 결합한다`() {
         val today = java.time.LocalDate.now()
+        // 포트폴리오 선은 기간 시작(1M = 30일 전) 이전 마지막 관측을 앵커로 잡는다 — 그 앞에 관측을 둔다
         val perfRows = listOf(
-            DailyPerf(today.minusDays(2), bd("1000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today.minusDays(40), bd("1000000"), bd("0"), bd("0"), null, null),
             DailyPerf(today, bd("1050000"), bd("0"), bd("0.05"), null, null),
         )
         `when`(jdbc.query(any<String>(), any<org.springframework.jdbc.core.RowMapper<DailyPerf>>(), any(), any()))
@@ -594,7 +956,7 @@ class ReportServiceTest {
         val result = svc(benchmarkStore = store).benchmark(userId, "1M")
 
         val last = result.series.last()
-        // 포트폴리오 cumulative_return(ratio 0.05) → percent 5.00
+        // 포트폴리오 1,000,000 → 1,050,000 (흐름 없음) = TWR +5.00%
         assertEquals(0, bd("5.00").compareTo(last.portfolio))
         // KOSPI 2500 → 2600 = +4.00%
         assertEquals(0, bd("4.00").compareTo(last.kospi))
@@ -727,129 +1089,6 @@ class ReportServiceTest {
         assertFalse(items.getValue("Bitcoin").held) { "암호화폐가 없는데 BTC가 held=true" }
         // 🔴 안 들고 있어도 **목록에는 남는다** — 판정이 틀렸을 때 영영 못 보는 것을 막는다
         assertEquals(2, items.size) { "보유 아닌 지수가 목록에서 사라졌다: ${items.keys}" }
-    }
-
-    /**
-     * 🔴 **선과 지수가 같은 0점에서 출발해야 한다.**
-     *
-     * `indexPctAt`은 `since` 이전 마지막 종가를 기저로 쓴다. 포트폴리오만 시계열 처음부터
-     * 누적하면 두 선이 다른 0점에서 시작해 **겹쳐 놓는 그림의 전제가 깨진다.**
-     *
-     * 위 `3M` 테스트는 이걸 **못 잡는다** — 창 시작(`today−90`)보다 시계열 첫날(`today−100`)이
-     * 앞서서 기저가 시계열 처음과 같아지기 때문이다(재기준화가 무효과). 창을 시계열 **안으로**
-     * 넣어야 갈린다.
-     *
-     * `1M`(`since = today−30`)이면 기저는 `today−50`(누적 +5%)이고,
-     * `(1.155 / 1.05) − 1 = 0.10` → **+10.00%**. 재기준화를 빼면 +15.50%가 나온다.
-     */
-    @Test
-    fun `벤치마크 선은 창 시작 시점을 0으로 다시 잡는다`() {
-        val today = java.time.LocalDate.now()
-        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
-        stubPerformanceDaily(
-            listOf(
-                DailyPerf(today.minusDays(100), bd("1000000"), bd("0"), bd("0"), null, null),
-                DailyPerf(today.minusDays(50), bd("2100000"), bd("1.1"), bd("1.10"), null, null),
-                DailyPerf(today, bd("2310000"), bd("0.1"), bd("1.31"), null, null),
-            ),
-        )
-        val store = benchStore(
-            com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.KOSPI to
-                listOf(today.minusDays(60) to bd("2500"), today to bd("2600")),
-        )
-
-        val result = svc(benchmarkStore = store, cashFlows = flowRepo(today.minusDays(50) to "1000000"))
-            .benchmark(userId, "1M")
-
-        assertEquals(0, bd("10.00").compareTo(result.series.last().portfolio)) {
-            "창 시작으로 안 잡았다: ${result.series.last().portfolio}"
-        }
-        assertEquals(0, result.portfolioReturn!!.compareTo(result.series.last().portfolio)) {
-            "카드 ${result.portfolioReturn} ≠ 선 ${result.series.last().portfolio}"
-        }
-    }
-
-    /** 현금흐름을 돌려주는 가짜 — 플로우 조정을 재려면 비어 있으면 안 된다 */
-    private fun flowRepo(vararg rows: Pair<java.time.LocalDate, String>) =
-        object : com.allfolio.unifiedasset.application.port.CashFlowRepository {
-            override fun save(cashFlow: com.allfolio.unifiedasset.domain.cashflow.CashFlow) = cashFlow
-            override fun findById(id: UUID): com.allfolio.unifiedasset.domain.cashflow.CashFlow? = null
-            override fun findByUserIdAndPeriod(userId: UUID, from: java.time.LocalDate, to: java.time.LocalDate) =
-                emptyList<com.allfolio.unifiedasset.domain.cashflow.CashFlow>()
-            override fun findByUserId(userId: UUID): List<com.allfolio.unifiedasset.domain.cashflow.CashFlow> =
-                rows.map { (d, amt) ->
-                    com.allfolio.unifiedasset.domain.cashflow.CashFlow.create(
-                        userId = userId, accountId = accountId, flowDate = d,
-                        type = com.allfolio.unifiedasset.domain.cashflow.FlowType.DEPOSIT,
-                        amount = bd(amt), currency = "KRW", amountKrw = bd(amt), memo = null,
-                    )
-                }
-            override fun delete(id: UUID) = Unit
-            override fun deleteByAccountId(accountId: UUID) = Unit
-        }
-
-    /**
-     * 🔴 **`twr`는 이름만 TWR이었다.**
-     *
-     * 저장된 `cumulative_return`은 `(NAV − 최초 NAV) / 최초 NAV`다 — 체인링킹도 아니고
-     * 플로우 조정도 아니다. 화면은 그걸 **"TWR: …"** 로 적는다.
-     *
-     * 아래는 입금 100만이 섞인 시계열이다. 저장값을 그대로 쓰면 **+131.00%**, 구간 수익률을
-     * 체인링킹하면 **+15.50%**다. 입금이 수익으로 쌓이는 폭이 그 차이다.
-     *
-     * | 날 | NAV | 입금 | 구간 수익률 |
-     * | --- | --- | --- | --- |
-     * | −100 | 1,000,000 | — | (기준점) |
-     * | −50 | 2,100,000 | 1,000,000 | (2.1M − 1M − 1M) / (1M + 1M) = **+5%** |
-     * | 오늘 | 2,310,000 | — | (2.31M − 2.1M) / 2.1M = **+10%** |
-     *
-     * `1.05 × 1.10 − 1 = 0.155`
-     */
-    @Test
-    fun `twr는 저장값이 아니라 체인링킹한 플로우 조정 수익률이다`() {
-        val today = java.time.LocalDate.now()
-        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
-        stubPerformanceDaily(
-            listOf(
-                // 저장값(cumulativeReturn)에 오염된 숫자를 일부러 심는다 — 안 쓰는지 본다
-                DailyPerf(today.minusDays(100), bd("1000000"), bd("0"), bd("0"), null, null),
-                DailyPerf(today.minusDays(50), bd("2100000"), bd("1.1"), bd("1.10"), null, null),
-                DailyPerf(today, bd("2310000"), bd("0.1"), bd("1.31"), null, null),
-            ),
-        )
-
-        val result = svc(cashFlows = flowRepo(today.minusDays(50) to "1000000")).performance(userId, "1Y")
-
-        assertEquals(0, bd("15.50").compareTo(result.twr)) { "expected +15.50% but was ${result.twr}" }
-    }
-
-    /** 벤치마크 차트의 포트폴리오 **선**도 같은 정의를 써야 한다 — 카드만 고치면 둘이 어긋난다 */
-    @Test
-    fun `벤치마크 차트의 포트폴리오 선도 플로우 조정 누적이다`() {
-        val today = java.time.LocalDate.now()
-        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
-        stubPerformanceDaily(
-            listOf(
-                DailyPerf(today.minusDays(100), bd("1000000"), bd("0"), bd("0"), null, null),
-                DailyPerf(today.minusDays(50), bd("2100000"), bd("1.1"), bd("1.10"), null, null),
-                DailyPerf(today, bd("2310000"), bd("0.1"), bd("1.31"), null, null),
-            ),
-        )
-        val store = benchStore(
-            com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.KOSPI to
-                listOf(today.minusDays(400) to bd("2500"), today to bd("2600")),
-        )
-
-        val result = svc(benchmarkStore = store, cashFlows = flowRepo(today.minusDays(50) to "1000000"))
-            .benchmark(userId, "3M")
-
-        assertEquals(0, bd("15.50").compareTo(result.series.last().portfolio)) {
-            "차트 선이 저장값을 쓴다: ${result.series.last().portfolio}"
-        }
-        // 카드와 선이 같은 정의를 쓴다 — 하나만 고치면 여기서 갈린다
-        assertEquals(0, result.portfolioReturn!!.compareTo(result.series.last().portfolio)) {
-            "카드 ${result.portfolioReturn} ≠ 선 ${result.series.last().portfolio}"
-        }
     }
 
     private fun stubPerformanceDaily(rows: List<DailyPerf>) {

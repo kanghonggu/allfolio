@@ -65,11 +65,17 @@ data class PerformanceReport(
     val coverageDays: Int,
 )
 
+/**
+ * performance_daily 한 행. DB에서 읽을 땐 저장값(비율 0~1, 현금흐름 미조정)이지만,
+ * [ReportService.performance] 응답으로 나갈 땐 수익률 두 칸을 현금흐름 조정 percent로 바꿔 싣는다.
+ */
 data class DailyPerf(
     val date: LocalDate,
     val nav: BigDecimal,
-    val dailyReturn: BigDecimal,
-    val cumulativeReturn: BigDecimal,
+    /** 응답: 그날로 끝나는 구간 수익률(percent). 구간이 없는 날(첫 관측·분모 ≤ 0)은 null */
+    val dailyReturn: BigDecimal?,
+    /** 응답: 선택 기간 시작부터 그날까지의 TWR(percent). 스냅샷이 기간 시작을 못 덮으면 null */
+    val cumulativeReturn: BigDecimal?,
     val benchmarkReturn: BigDecimal?,
     val alpha: BigDecimal?,
 )
@@ -156,7 +162,8 @@ data class BenchmarkItem(
 /** percent 스케일. 지수 값이 null이면 해당 날짜에 실데이터 없음 (합성값으로 채우지 않는다 — QA P1 #10) */
 data class BenchmarkSeries(
     val date: LocalDate,
-    val portfolio: BigDecimal,
+    /** 기간 시작(앵커)부터 그날까지의 TWR(percent). 스냅샷이 기간 시작을 못 덮으면 null — portfolioReturn과 같다 */
+    val portfolio: BigDecimal?,
     val sp500: BigDecimal?,
     val btc: BigDecimal?,
     val kospi: BigDecimal?,
@@ -290,20 +297,24 @@ class ReportService(
         val coverageDays = if (fullSeries.isEmpty()) 0
         else java.time.temporal.ChronoUnit.DAYS
             .between(fullSeries.first().date, fullSeries.last().date).toInt() + 1
-        // 저장된 daily_return·cumulative_return을 그대로 내보내면 입금이 수익으로 쌓인다.
-        // 창이 아니라 전 구간으로 지도를 만든 뒤 선택 기간 행에 얹는다 — 누적의 기준점은
-        // 시계열의 첫날이지 창의 첫날이 아니다.
-        val adjusted = flowAdjustedReturns(fullSeries, flows)
-        val adjustedSeries = dailySeries.map { d ->
-            val (daily, cum) = adjusted[d.date] ?: (BigDecimal.ZERO to BigDecimal.ZERO)
-            d.copy(
-                dailyReturn = daily,
-                cumulativeReturn = cum,
-                // 저장 alpha는 `저장 daily_return − 벤치마크`라 고친 수익률 옆에 두면 안 맞는다
-                alpha = d.benchmarkReturn?.let { daily.subtract(it) },
-            )
+        // 🔴 누적선·알파는 같은 화면 기간 카드와 같은 시작점을 쓴다 — 선의 끝점이 periodReturns[period]다.
+        val now = LocalDate.now(KST)
+        val cutoff = periodCutoff(period, now, fullSeries)
+        val cumulativeAt = portfolioTwrLine(fullSeries, flows, cutoff)
+        val dailyAt = dailyReturnPercentByDate(fullSeries, flows)
+        val responseSeries = dailySeries.map {
+            it.copy(dailyReturn = dailyAt[it.date], cumulativeReturn = cumulativeAt(it.date))
         }
-        val latestAlpha = adjustedSeries.lastOrNull()?.alpha
+
+        // 저장 alpha는 통합자산 스냅샷이 쓰지 않아 항상 null이었다(카드가 한 번도 안 떴다).
+        // benchmark()의 알파와 같은 정의: 같은 창의 포트폴리오 TWR − KOSPI 수익률.
+        val benchmarkAlpha = periodReturns[period]?.let { portfolio ->
+            val kospi = indexPeriodReturn(
+                benchmarkStore.series(com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.KOSPI, cutoff.minusDays(14), now),
+                cutoff,
+            )
+            kospi?.let { portfolio.subtract(it).setScale(2, RoundingMode.HALF_UP) }
+        }
 
         return PerformanceReport(
             userId = userId,
@@ -311,13 +322,10 @@ class ReportService(
             generatedAt = OffsetDateTime.now(KST),
             totalReturn = totalReturn,
             periodReturns = periodReturns,
-            dailySeries = adjustedSeries,
+            dailySeries = responseSeries,
             coverageDays = coverageDays,
-            // ratio(0~1) → 기간 카드(totalReturn 등)와 동일한 percent (QA P1 #7).
-            // **구간이 없으면 null이다** — 예전엔 취득가 기준 totalReturn으로 갈아탔는데,
-            // 화면이 그걸 "TWR"로 적으므로 다른 정의의 수치가 TWR 이름을 달고 나갔다.
-            twr = adjusted.values.lastOrNull()?.let { (_, cum) -> pct(cum) },
-            benchmarkAlpha = latestAlpha?.let { pct(it) },
+            twr = sinceInceptionTwrPercent(fullSeries, flows),
+            benchmarkAlpha = benchmarkAlpha,
         )
     }
 
@@ -449,8 +457,6 @@ class ReportService(
             )
         }
 
-        // 카드(portfolioReturn)와 **같은 정의**를 선에도 쓴다. 카드만 고쳤던 AF-107 이후
-        // 카드는 플로우 조정, 선은 저장 누적이라 둘이 어긋나 있었다.
         val series = buildBenchmarkSeries(dailySeries, fullSeries, flows, indexSeries, since)
 
         return BenchmarkReport(
@@ -689,43 +695,28 @@ class ReportService(
      * FE가 '데이터 부족'으로 표기하게 한다 — 모든 기간이 같은 값(+2060%)을 반환하던 버그 제거.
      */
     /**
-     * 저장된 `performance_daily`의 수익률 대신 **NAV + 외부 플로우로 다시 낸** 날짜별 수익률.
+     * 첫 관측일부터 마지막 관측일까지의 TWR(percent) — 화면의 "전체 수익률" 아래 "TWR" 줄.
      *
-     * ## 왜 저장값을 안 쓰나
+     * 저장된 `cumulative_return`을 쓰지 않는다. PerformanceSnapshotService가 그 값을
+     * `(NAV − 최초 NAV) / 최초 NAV`로 써서 입금이 통째로 수익, 출금이 손실로 잡힌다(실측 +2060%류).
+     * 기간 카드([computePeriodReturns])와 같은 엔진·같은 현금흐름으로 체인링킹한다.
      *
-     * `PerformanceSnapshotService.record()`가 쓰는 두 값에 플로우 조정이 없다:
-     * `daily_return = (NAV − 전일 NAV) / 전일 NAV`, `cumulative_return = (NAV − 최초 NAV) / 최초 NAV`.
-     * **입금일이 수익, 출금일이 손실로 잡히고**, 누적은 체인링킹조차 아니다.
-     * 같은 오염을 B-04(#253)·대시보드(#255)·거래 스냅샷(#260)이 차례로 고쳤고 여기가 마지막이다.
-     *
-     * ## 공식을 새로 만들지 않는다
-     *
-     * `ReturnsCalculator.segmentReturns`가 TWR이 체인링킹하는 바로 그 구간 수익률이다
-     * (`(NAV_i − NAV_{i−1} − 순플로우_i) / (NAV_{i−1} + 입금_i)`). 누적은 그걸 `Π(1+r) − 1`로 잇는다.
-     *
-     * **첫 관측일은 구간이 없다** — 기준점이라 누적 0이고 일간도 0으로 둔다(저장값의 첫날과 같다).
-     * 분모 ≤ 0인 구간(전량 매도 등)은 `segments()`가 건너뛰므로 그 날짜도 지도에 안 들어온다.
-     *
-     * @return 날짜 → (일간 수익률 ratio, 누적 수익률 ratio). 구간이 하나도 없으면 빈 지도
+     * 관측이 2건 미만이면 null(FE는 줄을 숨긴다). 예전엔 이때 매입 원가 기준 totalReturn을
+     * 넣었는데, 그건 TWR이 아니라 "TWR:" 라벨 아래 다른 지표가 나가는 것이었다.
+     * percent 스케일은 기간 카드와 같다(QA P1 #7).
      */
-    private fun flowAdjustedReturns(
+    private fun sinceInceptionTwrPercent(
         series: List<DailyPerf>,
         flows: List<com.allfolio.report.domain.returns.Flow>,
-    ): Map<LocalDate, Pair<BigDecimal, BigDecimal>> {
-        if (series.size < 2) return emptyMap()
+    ): BigDecimal? {
+        if (series.size < 2) return null
         val navPoints = series.map { com.allfolio.report.domain.returns.NavPoint(it.date, it.nav) }
-        var product = BigDecimal.ONE
-        val out = LinkedHashMap<LocalDate, Pair<BigDecimal, BigDecimal>>()
-        for (seg in com.allfolio.report.domain.returns.ReturnsCalculator.segmentReturns(navPoints, flows)) {
-            product = product.multiply(BigDecimal.ONE + seg.ratio)
-            out[seg.date] = seg.ratio to (product - BigDecimal.ONE)
-        }
-        return out
+        return com.allfolio.report.domain.returns.ReturnsCalculator
+            .calculate(navPoints, flows, series.first().date, series.last().date)
+            .twr
+            ?.multiply(BigDecimal(100))
+            ?.setScale(2, RoundingMode.HALF_UP)
     }
-
-    /** ratio(0~1) → percent. 화면 카드와 같은 스케일 */
-    private fun pct(ratio: BigDecimal): BigDecimal =
-        ratio.multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
 
     private fun computePeriodReturns(
         series: List<DailyPerf>,
@@ -740,14 +731,33 @@ class ReportService(
         fun twrSince(cutoff: LocalDate): BigDecimal? =
             com.allfolio.report.domain.returns.ReturnsCalculator
                 .periodTwrPercent(navPoints, flows, cutoff, now)
-        return mapOf(
-            "1W"  to twrSince(now.minusDays(7)),
-            "1M"  to twrSince(now.minusDays(30)),
-            "3M"  to twrSince(now.minusDays(90)),
-            "YTD" to twrSince(LocalDate.of(now.year, 1, 1)),
-            "1Y"  to twrSince(now.minusDays(365)),
-        )
+        return CARD_PERIODS.associateWith { twrSince(periodCutoff(it, now, series)) }
     }
+
+    /**
+     * 성과 화면의 기간 → 시작일. 기간 카드·누적선·알파가 **이 하나**를 같이 쓴다 — 갈라지면 선의 끝점이 카드와 어긋난다.
+     *
+     * ALL은 카드에 없지만 API로 올 수 있다. 시작일을 첫 관측일로 둬서 전체 기간 선이 된다.
+     * 그 밖의 값은 queryPerformanceSeries의 기본값(30일)과 맞춘다.
+     */
+    private fun periodCutoff(period: String, now: LocalDate, fullSeries: List<DailyPerf>): LocalDate = when (period) {
+        "1W"  -> now.minusDays(7)
+        "1M"  -> now.minusDays(30)
+        "3M"  -> now.minusDays(90)
+        "YTD" -> LocalDate.of(now.year, 1, 1)
+        "1Y"  -> now.minusDays(365)
+        "ALL" -> fullSeries.minOfOrNull { it.date } ?: now
+        else  -> now.minusDays(30)
+    }
+
+    /** 날짜 → 그날로 끝나는 구간 수익률(percent). 저장 daily_return은 (NAV − 전일 NAV)/전일 NAV라 입금일이 수익이다 */
+    private fun dailyReturnPercentByDate(
+        fullSeries: List<DailyPerf>,
+        flows: List<com.allfolio.report.domain.returns.Flow>,
+    ): Map<LocalDate, BigDecimal> =
+        com.allfolio.report.domain.returns.ReturnsCalculator
+            .segmentReturns(fullSeries.map { com.allfolio.report.domain.returns.NavPoint(it.date, it.nav) }, flows)
+            .associate { it.date to it.ratio.multiply(BigDecimal(100)).setScale(DAILY_PCT_SCALE, RoundingMode.HALF_UP) }
 
     private fun periodDays(period: String): Int = when (period) {
         "1W"  -> 7; "1M" -> 30; "3M" -> 90
@@ -807,16 +817,7 @@ class ReportService(
         since: LocalDate,
     ): List<BenchmarkSeries> {
         if (perfSeries.isEmpty()) return emptyList()
-
-        // 🔴 **포트폴리오 선도 지수와 같은 기준선에서 출발해야 한다.**
-        // `indexPctAt`은 `since` 이전 마지막 종가를 기저로 쓰는데 포트폴리오만 시계열 처음부터
-        // 누적하면 두 선이 다른 0점에서 시작한다 — 겹쳐 놓는 그림의 전제가 깨진다.
-        // 전 구간 누적을 `since` 시점 누적으로 나눠 다시 기준을 잡는다:
-        //   rebased(d) = (1 + cum(d)) / (1 + cum(anchor)) − 1
-        // 이렇게 하면 **마지막 점이 곧 카드의 기간 TWR**이라 둘이 구조적으로 안 어긋난다.
-        val adjusted = flowAdjustedReturns(fullSeries, flows)
-        val baseCum = adjusted.entries.lastOrNull { !it.key.isAfter(since) }?.value?.second ?: BigDecimal.ZERO
-        val baseFactor = BigDecimal.ONE + baseCum
+        val portfolioPctAt = portfolioTwrLine(fullSeries, flows, since)
 
         fun indexPctAt(type: com.allfolio.unifiedasset.domain.benchmark.BenchmarkType, date: LocalDate): BigDecimal? {
             val rows = indexSeries[type].orEmpty()
@@ -831,15 +832,47 @@ class ReportService(
         return perfSeries.map { perf ->
             BenchmarkSeries(
                 date      = perf.date,
-                portfolio = pct(
-                    if (baseFactor.signum() <= 0) BigDecimal.ZERO
-                    else (BigDecimal.ONE + (adjusted[perf.date]?.second ?: baseCum))
-                        .divide(baseFactor, 10, RoundingMode.HALF_UP) - BigDecimal.ONE,
-                ),
+                portfolio = portfolioPctAt(perf.date),
                 sp500     = indexPctAt(com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.SPX, perf.date),
                 btc       = indexPctAt(com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.BTC, perf.date),
                 kospi     = indexPctAt(com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.KOSPI, perf.date),
             )
+        }
+    }
+
+    /**
+     * 기간 시작부터의 포트폴리오 TWR 선 — 날짜 → 그날까지의 TWR(percent).
+     * 벤치마크 차트의 포트폴리오 선과 성과 화면의 누적 수익률 차트가 같이 쓴다.
+     *
+     * 저장 `cumulative_return`을 쓰지 않는다. 그 값은 `(NAV − 최초 NAV) / 최초 NAV`라 **입금일에 선이 튀었고**,
+     * 기준점도 첫 스냅샷이라 같은 차트의 지수 선(기간 시작 기준)·헤드라인 [BenchmarkReport.portfolioReturn]과
+     * 출발점이 달랐다.
+     *
+     * - 앵커: 기간 시작 이전(포함) 마지막 관측 — [ReturnsCalculator.periodTwrPercent]와 같은 규칙이라 마지막 점이
+     *   헤드라인과 같다.
+     * - 그날까지의 구간 수익률([ReturnsCalculator.segmentReturns])을 체인링킹. 분모 ≤ 0으로 빠진 구간은 직전 값을 잇는다.
+     * - 앵커가 없으면(스냅샷이 기간 시작을 못 덮음) 모든 점이 null — 헤드라인이 "데이터 부족"인 것과 같다.
+     */
+    private fun portfolioTwrLine(
+        fullSeries: List<DailyPerf>,
+        flows: List<com.allfolio.report.domain.returns.Flow>,
+        since: LocalDate,
+    ): (LocalDate) -> BigDecimal? {
+        val sorted = fullSeries.sortedBy { it.date }
+        val anchor = sorted.lastOrNull { !it.date.isAfter(since) }?.date ?: return { null }
+        val navPoints = sorted.map { com.allfolio.report.domain.returns.NavPoint(it.date, it.nav) }
+        val cumulative = java.util.TreeMap<LocalDate, BigDecimal>()
+        cumulative[anchor] = BigDecimal.ZERO
+        var growth = BigDecimal.ONE
+        for (seg in com.allfolio.report.domain.returns.ReturnsCalculator.segmentReturns(navPoints, flows)) {
+            if (!seg.date.isAfter(anchor)) continue
+            growth = growth.multiply(BigDecimal.ONE + seg.ratio, java.math.MathContext(20, RoundingMode.HALF_UP))
+            cumulative[seg.date] = growth - BigDecimal.ONE
+        }
+        return { date ->
+            cumulative.floorEntry(date)?.value
+                ?.multiply(BigDecimal(100))
+                ?.setScale(2, RoundingMode.HALF_UP)
         }
     }
 
@@ -860,5 +893,11 @@ class ReportService(
          * 읽힌다. 절대 시각은 어느 존으로 찍든 같다.
          */
         private val KST: ZoneId = ZoneId.of("Asia/Seoul")
+
+        /** 성과 화면 기간 카드 — 순서가 응답 맵 순서다 */
+        private val CARD_PERIODS = listOf("1W", "1M", "3M", "YTD", "1Y")
+
+        /** 일간 수익률 percent 소수 자릿수 — 하루치는 작아서 2자리면 0.00%로 뭉개진다 */
+        private const val DAILY_PCT_SCALE = 4
     }
 }
