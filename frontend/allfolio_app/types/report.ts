@@ -55,8 +55,10 @@ export interface AllocationReport {
 export interface DailyPerf {
   date:             string
   nav:              number
-  dailyReturn:      number
-  cumulativeReturn: number
+  // percent. 현금흐름을 뺀 그날 구간 수익률 — 구간이 없는 날(첫 관측 등)은 null
+  dailyReturn:      number | null
+  // percent. 선택 기간 시작부터 그날까지의 TWR — 스냅샷이 기간 시작을 못 덮으면 null
+  cumulativeReturn: number | null
   benchmarkReturn:  number | null
   alpha:            number | null
 }
@@ -90,8 +92,14 @@ export interface RiskReport {
   annualizedVolatility: number | null
   var95:                number | null
   maxDrawdown:          number | null
+  /** 설정 이후 연환산 기준 — 위 30일 지표와 창이 다르다 */
   sharpeRatio:          number | null
   calmarRatio:          number | null
+  /** 샤프·칼마 창(설정 이후)의 MDD. 구간 수익률 30건 미만이면 null */
+  ratioMaxDrawdown:     number | null
+  /** 샤프에 쓴 무위험 수익률(연 %, CD 91일). 수집값이 없으면 null */
+  riskFreeRate:         number | null
+  riskFreeRateDate:     string | null
   latestDate:           string | null
   series:               DailyRisk[]
 }
@@ -138,7 +146,8 @@ export interface BenchmarkItem {
 
 export interface BenchmarkSeries {
   date:      string
-  portfolio: number
+  // null = 스냅샷이 기간 시작을 못 덮음 — portfolioReturn이 null인 것과 같은 경우
+  portfolio: number | null
   // null = 해당 날짜 실데이터 없음 (합성값으로 채우지 않음)
   sp500:     number | null
   btc:       number | null

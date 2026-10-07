@@ -58,8 +58,9 @@ export default function PerformancePage() {
 
   const chartData = data.dailySeries.map((d: DailyPerf) => ({
     date: d.date,
-    cumReturn: Number(d.cumulativeReturn),
-    dailyReturn: Number(d.dailyReturn),
+    // Number(null)은 0이라 "+0.00%"를 지어낸다 — null은 그대로 둬서 선을 끊는다
+    cumReturn: d.cumulativeReturn !== null ? Number(d.cumulativeReturn) : null,
+    dailyReturn: d.dailyReturn !== null ? Number(d.dailyReturn) : null,
     nav: Number(d.nav),
   }))
 

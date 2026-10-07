@@ -36,7 +36,7 @@ const RISK_TILES: Array<{
 }> = [
   { key: 'mdd',        label: '최대 낙폭 (MDD)', note: '최근 1년 최대 하락 폭',          format: (v) => signPct(v) },
   { key: 'volatility', label: '연간 변동성',      note: '가격 변동 폭 · 낮을수록 안정',   format: (v) => signPct(v) },
-  { key: 'sharpe',     label: '샤프 지수',        note: '리스크 대비 수익 (1.0↑ 양호)',  format: (v) => v.toFixed(2) },
+  { key: 'sharpe',     label: '샤프 지수',        note: '설정 이후 연환산 · 무위험 CD 91일 (1.0↑ 양호)',  format: (v) => v.toFixed(2) },
   { key: 'var95',      label: 'VaR 95%',          note: '5% 확률 예상 최대 손실',        format: (v) => won(Math.abs(v)) },
 ]
 

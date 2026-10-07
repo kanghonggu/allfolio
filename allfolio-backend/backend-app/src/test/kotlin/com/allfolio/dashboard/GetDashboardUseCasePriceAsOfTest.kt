@@ -58,6 +58,7 @@ class GetDashboardUseCasePriceAsOfTest {
         fx,
         mock(CashFlowRepository::class.java),
         CurrencyConverter(fxRateService),
+        { null },
     )
 
     @Test
