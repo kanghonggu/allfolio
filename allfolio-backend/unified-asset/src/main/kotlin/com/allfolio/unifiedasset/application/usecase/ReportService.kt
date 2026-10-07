@@ -309,9 +309,8 @@ class ReportService(
         // 저장 alpha는 통합자산 스냅샷이 쓰지 않아 항상 null이었다(카드가 한 번도 안 떴다).
         // benchmark()의 알파와 같은 정의: 같은 창의 포트폴리오 TWR − KOSPI 수익률.
         val benchmarkAlpha = periodReturns[period]?.let { portfolio ->
-            val kospi = indexPeriodReturn(
-                benchmarkStore.series(com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.KOSPI, cutoff.minusDays(14), now),
-                cutoff,
+            val kospi = IndexPeriodReturn.of(
+                benchmarkStore, com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.KOSPI, cutoff, now,
             )
             kospi?.let { portfolio.subtract(it).setScale(2, RoundingMode.HALF_UP) }
         }
@@ -437,7 +436,7 @@ class ReportService(
         )
         val indexSeries = com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.entries.associateWith { type ->
             // 휴장일 대비 앵커 여유 2주 — 기간 시작 이전 마지막 종가를 기저로 쓴다
-            benchmarkStore.series(type, since.minusDays(14), today)
+            benchmarkStore.series(type, since.minusDays(IndexPeriodReturn.ANCHOR_LOOKBACK_DAYS), today)
         }
 
         // 보유 시장 판정 (AF-107) — *"국내주식만 가진 사용자에게 항셍은 소음이다"*.
@@ -446,7 +445,7 @@ class ReportService(
         val held = heldMarkets(assetRepository.findByUserId(userId))
 
         val benchmarks = indexSeries.mapNotNull { (type, rows) ->
-            val ret = indexPeriodReturn(rows, since) ?: return@mapNotNull null
+            val ret = IndexPeriodReturn.percent(rows, since) ?: return@mapNotNull null
             BenchmarkItem(
                 held = type in held,
                 name = type.label,
@@ -789,16 +788,6 @@ class ReportService(
                 else -> null
             }
         }
-    }
-
-    /** 기간 시작 이전 마지막 종가 대비 최종 종가 수익률(percent). 데이터 2건 미만이면 null */
-    private fun indexPeriodReturn(rows: List<Pair<LocalDate, BigDecimal>>, since: LocalDate): BigDecimal? {
-        if (rows.size < 2) return null
-        val base = (rows.lastOrNull { it.first <= since } ?: rows.first()).second
-        val last = rows.last().second
-        if (base <= BigDecimal.ZERO) return null
-        return last.subtract(base).divide(base, 4, RoundingMode.HALF_UP)
-            .multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
     }
 
     /**
