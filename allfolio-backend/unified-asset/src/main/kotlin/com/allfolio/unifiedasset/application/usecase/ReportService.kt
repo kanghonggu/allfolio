@@ -89,8 +89,14 @@ data class RiskReport(
     val annualizedVolatility: BigDecimal?,
     val var95: BigDecimal?,
     val maxDrawdown: BigDecimal?,
+    /** 설정 이후 연환산 기준 — 위 30일 지표와 창이 다르다. 근거는 [RiskAdjustedRatios] */
     val sharpeRatio: BigDecimal?,
     val calmarRatio: BigDecimal?,
+    /** 샤프·칼마 창(설정 이후)의 MDD. 구간 수익률이 모자라면 null — 화면이 "낙폭 없음"과 "데이터 부족"을 가른다 */
+    val ratioMaxDrawdown: BigDecimal?,
+    /** 샤프에 쓴 무위험 수익률(연 %, CD 91일). 수집값이 없으면 null이고 샤프도 null */
+    val riskFreeRate: BigDecimal?,
+    val riskFreeRateDate: LocalDate?,
     val latestDate: LocalDate?,
     val series: List<DailyRisk>,
 )
@@ -219,6 +225,7 @@ class ReportService(
     private val fx: FxConverter,
     private val benchmarkStore: com.allfolio.unifiedasset.application.port.BenchmarkDailyStore,
     private val cashFlowRepository: com.allfolio.unifiedasset.application.port.CashFlowRepository,
+    private val riskFreeRateSource: com.allfolio.unifiedasset.application.port.RiskFreeRateSource,
     // 상위 보유에서 제외할 먼지 포지션 임계값(KRW) — 코인 잔여 단위 등 (QA 후속 #4)
     @org.springframework.beans.factory.annotation.Value("\${allfolio.report.dust-threshold-krw:1000}")
     private val dustThresholdKrw: BigDecimal = BigDecimal(1000),
@@ -328,8 +335,11 @@ class ReportService(
         // 손실로 잡히던 문제(daily_return 미조정). 근거는 FlowAdjustedRiskSeries KDoc.
         val flows = cashFlowRepository.findByUserId(userId)
             .map { com.allfolio.report.domain.returns.Flow(it.flowDate, it.signedKrw()) }
-        val series = FlowAdjustedRiskSeries.build(queryNavSeries(userId), flows)
+        val navSeries = queryNavSeries(userId)
+        val series = FlowAdjustedRiskSeries.build(navSeries, flows)
         val latest = series.lastOrNull()
+        val riskFree = riskFreeRateSource.latest(LocalDate.now(KST))
+        val ratios = RiskAdjustedRatios.compute(navSeries, flows, riskFree?.ratePct)
 
         return RiskReport(
             userId = userId,
@@ -338,8 +348,11 @@ class ReportService(
             annualizedVolatility = latest?.annualizedVolatility,
             var95 = latest?.var95,
             maxDrawdown = latest?.maxDrawdown,
-            sharpeRatio = computeSharpe(series),
-            calmarRatio = computeCalmar(series),
+            sharpeRatio = ratios?.sharpe,
+            calmarRatio = ratios?.calmar,
+            ratioMaxDrawdown = ratios?.maxDrawdown,
+            riskFreeRate = riskFree?.ratePct,
+            riskFreeRateDate = riskFree?.quoteDate,
             latestDate = latest?.date,
             series = series,
         )
@@ -444,6 +457,8 @@ class ReportService(
             )
         }
 
+        // 카드(portfolioReturn)와 **같은 정의**를 선에도 쓴다. 카드만 고쳤던 AF-107 이후
+        // 카드는 플로우 조정, 선은 저장 누적이라 둘이 어긋나 있었다.
         val series = buildBenchmarkSeries(dailySeries, fullSeries, flows, indexSeries, since)
 
         return BenchmarkReport(
@@ -677,11 +692,6 @@ class ReportService(
     }
 
     /**
-     * 기간별 수익률 (QA P2) — flow-aware TWR로 통일(대시보드와 동일 엔진).
-     * 시계열이 요청 기간을 못 덮으면(윈도 중간 시작) 왜곡된 수치 대신 null을 내려
-     * FE가 '데이터 부족'으로 표기하게 한다 — 모든 기간이 같은 값(+2060%)을 반환하던 버그 제거.
-     */
-    /**
      * 첫 관측일부터 마지막 관측일까지의 TWR(percent) — 화면의 "전체 수익률" 아래 "TWR" 줄.
      *
      * 저장된 `cumulative_return`을 쓰지 않는다. PerformanceSnapshotService가 그 값을
@@ -705,6 +715,11 @@ class ReportService(
             ?.setScale(2, RoundingMode.HALF_UP)
     }
 
+    /**
+     * 기간별 수익률 (QA P2) — flow-aware TWR로 통일(대시보드와 동일 엔진).
+     * 시계열이 요청 기간을 못 덮으면(윈도 중간 시작) 왜곡된 수치 대신 null을 내려
+     * FE가 '데이터 부족'으로 표기하게 한다 — 모든 기간이 같은 값(+2060%)을 반환하던 버그 제거.
+     */
     private fun computePeriodReturns(
         series: List<DailyPerf>,
         flows: List<com.allfolio.report.domain.returns.Flow>,
@@ -745,23 +760,6 @@ class ReportService(
         com.allfolio.report.domain.returns.ReturnsCalculator
             .segmentReturns(fullSeries.map { com.allfolio.report.domain.returns.NavPoint(it.date, it.nav) }, flows)
             .associate { it.date to it.ratio.multiply(BigDecimal(100)).setScale(DAILY_PCT_SCALE, RoundingMode.HALF_UP) }
-
-    private fun computeSharpe(series: List<DailyRisk>): BigDecimal? {
-        if (series.isEmpty()) return null
-        // Approximation: annualized_vol from latest, assume 5% risk-free rate
-        val latest = series.last()
-        val vol = latest.annualizedVolatility
-        if (vol <= BigDecimal.ZERO) return null
-        // We don't have annualized return here, so return null
-        return null
-    }
-
-    private fun computeCalmar(series: List<DailyRisk>): BigDecimal? {
-        if (series.isEmpty()) return null
-        val mdd = series.minOf { it.maxDrawdown }
-        if (mdd >= BigDecimal.ZERO) return null
-        return null // need annual return
-    }
 
     private fun periodDays(period: String): Int = when (period) {
         "1W"  -> 7; "1M" -> 30; "3M" -> 90
@@ -821,6 +819,11 @@ class ReportService(
         since: LocalDate,
     ): List<BenchmarkSeries> {
         if (perfSeries.isEmpty()) return emptyList()
+        // 🔴 **포트폴리오 선도 지수와 같은 기준선에서 출발해야 한다.**
+        // `indexPctAt`은 `since` 이전 마지막 종가를 기저로 쓰는데 포트폴리오만 시계열 처음부터
+        // 누적하면 두 선이 다른 0점에서 시작한다 — 겹쳐 놓는 그림의 전제가 깨진다(#264).
+        // [portfolioTwrLine]이 같은 앵커(since 이전 마지막 관측)부터 체인링킹하므로
+        // **마지막 점이 곧 카드의 기간 TWR**이다.
         val portfolioPctAt = portfolioTwrLine(fullSeries, flows, since)
 
         fun indexPctAt(type: com.allfolio.unifiedasset.domain.benchmark.BenchmarkType, date: LocalDate): BigDecimal? {

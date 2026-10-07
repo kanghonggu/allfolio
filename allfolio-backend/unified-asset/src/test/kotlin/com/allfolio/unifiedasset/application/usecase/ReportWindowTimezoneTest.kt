@@ -133,6 +133,7 @@ class ReportWindowTimezoneTest {
         fx = mock(FxConverter::class.java),
         benchmarkStore = benchmarkStore,
         cashFlowRepository = mock(CashFlowRepository::class.java),
+        riskFreeRateSource = { null },
         dustThresholdKrw = BigDecimal(1000),
     )
 

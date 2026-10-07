@@ -1,11 +1,12 @@
 package com.allfolio.api.portfolio
 
 import com.allfolio.api.cache.SnapshotCacheRepository
+import com.allfolio.fx.CurrencyConverter
+import com.allfolio.fx.FxRateService
 import com.allfolio.snapshot.infrastructure.entity.PerformanceDailyEntity
-import com.allfolio.snapshot.infrastructure.entity.RiskDailyEntity
 import com.allfolio.snapshot.infrastructure.entity.SnapshotDailyId
 import com.allfolio.snapshot.infrastructure.repository.PerformanceDailyJpaRepository
-import com.allfolio.snapshot.infrastructure.repository.RiskDailyJpaRepository
+import com.allfolio.trade.infrastructure.repository.TradeRawJpaRepository
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
@@ -18,12 +19,13 @@ import java.util.UUID
 class PortfolioSnapshotQueryControllerSecurityTest {
 
     private val performanceRepository = mock(PerformanceDailyJpaRepository::class.java)
-    private val riskRepository = mock(RiskDailyJpaRepository::class.java)
+    private val tradeRepository = mock(TradeRawJpaRepository::class.java)
     private val snapshotCache = mock(SnapshotCacheRepository::class.java)
 
     private val controller = PortfolioSnapshotQueryController(
         performanceRepository,
-        riskRepository,
+        tradeRepository,
+        CurrencyConverter(mock(FxRateService::class.java)),
         snapshotCache,
     )
 
@@ -40,8 +42,6 @@ class PortfolioSnapshotQueryControllerSecurityTest {
 
         `when`(performanceRepository.findByPortfolioAndDateAndTenant(portfolioId, date, userId))
             .thenReturn(performance(userId, portfolioId, date, "100"))
-        `when`(riskRepository.findByPortfolioAndDateAndTenant(portfolioId, date, userId))
-            .thenReturn(risk(userId, portfolioId, date))
 
         mockMvc.get("/api/portfolios/$portfolioId/snapshot/$date") {
             header("X-User-Id", userId.toString())
@@ -61,8 +61,6 @@ class PortfolioSnapshotQueryControllerSecurityTest {
 
         `when`(performanceRepository.findTopByIdTenantIdAndIdPortfolioIdOrderByIdDateDesc(userId, portfolioId))
             .thenReturn(performance(userId, portfolioId, date, "100"))
-        `when`(riskRepository.findByPortfolioAndDateAndTenant(portfolioId, date, userId))
-            .thenReturn(risk(userId, portfolioId, date))
 
         mockMvc.get("/api/portfolios/$portfolioId/snapshot/latest") {
             header("X-User-Id", userId.toString())
@@ -102,17 +100,5 @@ class PortfolioSnapshotQueryControllerSecurityTest {
         cumulativeReturn = BigDecimal.ZERO,
         benchmarkReturn = null,
         alpha = null,
-    )
-
-    private fun risk(
-        tenantId: UUID,
-        portfolioId: UUID,
-        date: LocalDate,
-    ) = RiskDailyEntity(
-        id = SnapshotDailyId(tenantId, portfolioId, date),
-        volatility = BigDecimal.ZERO,
-        annualizedVolatility = BigDecimal.ZERO,
-        var95 = BigDecimal.ZERO,
-        maxDrawdown = BigDecimal.ZERO,
     )
 }
