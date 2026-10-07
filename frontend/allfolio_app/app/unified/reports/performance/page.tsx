@@ -194,7 +194,9 @@ export default function PerformancePage() {
 
         {data.benchmarkAlpha !== null && (
           <div className="mt-8 border border-line-soft bg-surface px-4 py-4">
-            <Label size="sm" tone="faint">벤치마크 대비 알파</Label>
+            <InfoTip label="벤치마크 대비 알파" text={METRIC_HELP.performanceAlpha}>
+              <Label size="sm" tone="faint">벤치마크 대비 알파</Label>
+            </InfoTip>
             <Num tone={dirTone(Number(data.benchmarkAlpha))} className="mt-1 block text-[18px]">
               {fmtPct(Number(data.benchmarkAlpha))}
             </Num>
