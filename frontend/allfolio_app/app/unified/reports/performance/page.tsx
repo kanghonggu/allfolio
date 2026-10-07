@@ -187,14 +187,10 @@ export default function PerformancePage() {
           </section>
         )}
 
-        {data.benchmarkAlpha !== null && (
-          <div className="mt-8 border border-line-soft bg-surface px-4 py-4">
-            <Label size="sm" tone="faint">벤치마크 대비 알파</Label>
-            <Num tone={dirTone(Number(data.benchmarkAlpha))} className="mt-1 block text-[18px]">
-              {fmtPct(Number(data.benchmarkAlpha))}
-            </Num>
-          </div>
-        )}
+        {/* "벤치마크 대비 알파" 카드는 숨긴다 (AF-215). benchmarkAlpha는 performance_daily.alpha의
+            마지막 하루치 일간 알파(당일 수익률 − 당일 BM)라 기간 알파가 아니다. 자동 스냅샷이
+            benchmarkReturn을 안 넘겨 사실상 늘 null이었지만, 수동 API로 한 번 채우면 그 하루치가
+            이 이름으로 떴다. 기간 알파는 B-06이 보여 준다. */}
       </div>
     </div>
   )
