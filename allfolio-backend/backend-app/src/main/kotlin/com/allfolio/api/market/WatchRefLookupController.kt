@@ -45,6 +45,10 @@ import org.springframework.web.bind.annotation.RestController
  *
  * 이름 검색(자동완성)이 필요해지면 watchpricedata에 `ref_key` 집계 엔드포인트를 먼저
  * 만들어야 한다. 우리 쪽에서 만들어 낼 수 있는 목록이 아니다.
+ *
+ * → AF-207에서 그 엔드포인트(watch-data #51 `/api/refs`)가 생겼고, [WatchRefSearchController]가
+ * 이 확인 단계 **앞에** 후보 찾기로 붙었다. 후보의 `refKey`가 여기로 그대로 들어오므로
+ * **저장 키를 정하는 곳은 여전히 이 확인 단계다.**
  */
 @RestController
 @RequestMapping("/api/watch")
