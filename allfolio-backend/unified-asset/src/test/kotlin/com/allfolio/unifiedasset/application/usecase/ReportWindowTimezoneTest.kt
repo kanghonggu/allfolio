@@ -173,22 +173,36 @@ class ReportWindowTimezoneTest {
     }
 
     /**
-     * **YTD의 시작일은 두 오류가 상쇄돼 멀쩡해 보인다.** 컨테이너가 하루 뒤지면 `dayOfYear`도 하루
-     * 작아져서 `오늘 - 경과일수`가 양쪽 다 작년 12/31로 떨어진다(실측). 그래서 시작일을 아무리 단언해도
-     * 이 결함은 안 잡힌다 — 틀린 건 **경과일수 그 자체**이고, 그건 구간 길이·일할 계산에 그대로 쓰인다.
+     * **예전 결함은 경과일수였다.** YTD 시작일을 `오늘 − dayOfYear`로 셌는데, 컨테이너가 하루 뒤지면
+     * `dayOfYear`도 하루 작아져 시작일은 양쪽 다 작년 12/31로 떨어지고(실측) **경과일수만** 틀렸다.
+     * 그래서 그때 이 테스트는 `periodDays`를 직접 불러 경과일수를 쟀다.
+     *
+     * 지금 YTD 시작일은 `now(KST).withDayOfYear(1)` — 리포트 생성기·대시보드와 같은 **1월 1일**이고,
+     * **경과일수라는 값이 코드에 없다.** 남은 위험은 호출부가 `now`를 컨테이너 시계로 읽는 것뿐인데,
+     * 그건 같은 `now`를 쓰는 고정 일수 테스트(1개월 성과 시작·벤치마크 상한)가 하루 밀림으로 잡는다.
+     * 여기서는 성과·벤치마크 두 화면의 YTD 조회가 **같은 날(올해 1월 1일)** 에서 시작하는지를 잰다.
+     *
+     * ⚠️ 연말연시가 아니면 컨테이너 시계로 읽어도 1월 1일이 같아서 이 단언만으로는 시계 출처를 못 가른다
+     * (아래 배당 YTD 테스트와 같은 한계) — 시계 출처는 위 두 테스트 몫이다.
      */
     @Test
-    fun `YTD 경과일수는 KST 달력으로 센다`() {
-        val periodDays = ReportService::class.declaredMemberFunctions
-            .first { it.name == "periodDays" }
-            .apply { isAccessible = true }
-        val service = reportService(RecordingJdbc(), mock(BenchmarkDailyStore::class.java))
+    fun `성과·벤치마크 YTD 조회는 KST 기준 올해 1월 1일부터다`() {
+        val ytdStart = LocalDate.now(KST).withDayOfYear(1)
+        val jdbc = RecordingJdbc()
 
-        val days = onTheDayBeforeKst { periodDays.call(service, "YTD") as Int }
+        onTheDayBeforeKst {
+            val service = reportService(jdbc, mock(BenchmarkDailyStore::class.java))
+            service.performance(userId, "YTD")
+            service.benchmark(userId, "YTD")
+        }
 
-        assertThat(days)
-            .describedAs("컨테이너 달력으로 세면 올해 경과일수가 하루 짧다")
-            .isEqualTo(LocalDate.now(KST).dayOfYear)
+        val perfSince = jdbc.calls
+            .filter { (sql, _) -> sql.contains("daily_return") }
+            .map { (_, args) -> args.filterIsInstance<LocalDate>().single() }
+        // performance: 기간 창 + 전체(ALL) 창, benchmark: 기간 창 + 전체 창 — 기간 창 두 개가 1월 1일이어야 한다
+        assertThat(perfSince.filter { it == ytdStart })
+            .describedAs("두 화면의 YTD 창이 모두 1월 1일에서 시작해야 한다 (예전 벤치마크 화면은 12/31): $perfSince")
+            .hasSize(2)
     }
 
     /**

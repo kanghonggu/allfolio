@@ -416,7 +416,7 @@ class ReportService(
 
         // 실제 지수 시계열(benchmark_daily, 일일 sync) 기반 — 데이터 없으면 목록에서 제외 (QA P1 #10)
         val today = LocalDate.now(KST)
-        val since = today.minusDays(periodDays(period).toLong())
+        val since = periodStart(period, today)
 
         // 🔴 **알파는 두 수가 같은 창일 때만 뜻이 있다** (AF-107).
         //
@@ -637,16 +637,7 @@ class ReportService(
     }
 
     private fun queryPerformanceSeries(userId: UUID, period: String): List<DailyPerf> {
-        val days = when (period) {
-            "1W"  -> 7
-            "1M"  -> 30
-            "3M"  -> 90
-            "YTD" -> LocalDate.now(KST).dayOfYear
-            "1Y"  -> 365
-            "ALL" -> 3650
-            else  -> 30
-        }
-        val since = LocalDate.now(KST).minusDays(days.toLong())
+        val since = periodStart(period, LocalDate.now(KST))
 
         return try {
             jdbc.query(
@@ -737,20 +728,32 @@ class ReportService(
     }
 
     /**
-     * 성과 화면의 기간 → 시작일. 기간 카드·누적선·알파가 **이 하나**를 같이 쓴다 — 갈라지면 선의 끝점이 카드와 어긋난다.
+     * 리포트의 기간 → 시작일. **성과·벤치마크 화면, 시계열 조회 창, 기간 카드가 모두 이 하나를 쓴다.**
      *
-     * ALL은 카드에 없지만 API로 올 수 있다. 시작일을 첫 관측일로 둬서 전체 기간 선이 된다.
-     * 그 밖의 값은 queryPerformanceSeries의 기본값(30일)과 맞춘다.
+     * YTD는 **1월 1일**이다. 예전엔 성과 카드만 1월 1일이고 벤치마크 화면·시계열 창은
+     * `오늘 − 연중 일수` = **전년 12월 31일**이라, 1월 1일에 관측이 있으면 두 화면의 YTD가
+     * 그날 하루치만큼 달랐다. 리포트 생성기(ReturnsReportGenerator·MonthlyReportGenerator)와
+     * 대시보드도 1월 1일이다.
+     *
+     * ALL은 시계열 조회 창(최근 3,650일)이다. 선의 기준점으로 쓸 땐 [periodCutoff]가 첫 관측일로 바꾼다.
      */
-    private fun periodCutoff(period: String, now: LocalDate, fullSeries: List<DailyPerf>): LocalDate = when (period) {
+    private fun periodStart(period: String, now: LocalDate): LocalDate = when (period) {
         "1W"  -> now.minusDays(7)
         "1M"  -> now.minusDays(30)
         "3M"  -> now.minusDays(90)
-        "YTD" -> LocalDate.of(now.year, 1, 1)
+        "YTD" -> now.withDayOfYear(1)
         "1Y"  -> now.minusDays(365)
-        "ALL" -> fullSeries.minOfOrNull { it.date } ?: now
+        "ALL" -> now.minusDays(3650)
         else  -> now.minusDays(30)
     }
+
+    /**
+     * 성과 화면의 기간 → 누적선·알파·기간 카드의 기준점. [periodStart]와 같고 ALL만 첫 관측일이다 —
+     * 3,650일 전엔 관측이 없어 앵커가 안 잡히면 전체 기간 선이 통째로 null이 된다.
+     */
+    private fun periodCutoff(period: String, now: LocalDate, fullSeries: List<DailyPerf>): LocalDate =
+        if (period == "ALL") fullSeries.minOfOrNull { it.date } ?: now
+        else periodStart(period, now)
 
     /** 날짜 → 그날로 끝나는 구간 수익률(percent). 저장 daily_return은 (NAV − 전일 NAV)/전일 NAV라 입금일이 수익이다 */
     private fun dailyReturnPercentByDate(
@@ -760,13 +763,6 @@ class ReportService(
         com.allfolio.report.domain.returns.ReturnsCalculator
             .segmentReturns(fullSeries.map { com.allfolio.report.domain.returns.NavPoint(it.date, it.nav) }, flows)
             .associate { it.date to it.ratio.multiply(BigDecimal(100)).setScale(DAILY_PCT_SCALE, RoundingMode.HALF_UP) }
-
-    private fun periodDays(period: String): Int = when (period) {
-        "1W"  -> 7; "1M" -> 30; "3M" -> 90
-        "YTD" -> LocalDate.now(KST).dayOfYear
-        "1Y"  -> 365; "ALL" -> 3650
-        else  -> 30
-    }
 
     /**
      * 보유 자산에서 "이 사람과 상관있는 지수"를 고른다 (AF-107).

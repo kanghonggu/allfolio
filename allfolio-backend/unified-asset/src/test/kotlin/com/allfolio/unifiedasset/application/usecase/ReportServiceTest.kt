@@ -592,6 +592,49 @@ class ReportServiceTest {
     }
 
     @Test
+    fun `YTD 시작일은 성과·벤치마크 화면 모두 1월 1일이다 - 두 화면의 YTD 포트폴리오 수익률이 같다`() {
+        // 12/31 100만 → 1/1 110만(1월 1일 당일 +10%) → 오늘 그대로.
+        // 1월 1일 기준이면 YTD 0.00%. 벤치마크 화면이 예전처럼 12/31을 기준으로 잡으면 +10.00%가 돼 두 화면이 갈린다.
+        val today = java.time.LocalDate.now()
+        val jan1 = today.withDayOfYear(1)
+        org.junit.jupiter.api.Assumptions.assumeTrue(today.isAfter(jan1)) { "1월 1일엔 오늘과 1/1 행이 겹친다" }
+        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
+        stubPerformanceDaily(listOf(
+            DailyPerf(jan1.minusDays(1), bd("1000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(jan1, bd("1100000"), bd("0.1"), bd("0.1"), null, null),
+            DailyPerf(today, bd("1100000"), bd("0"), bd("0.1"), null, null),
+        ))
+
+        val perf = svc().performance(userId, "YTD")
+        val bench = svc().benchmark(userId, "YTD")
+
+        assertEquals(0, bd("0.00").compareTo(perf.periodReturns["YTD"]))
+        assertEquals(0, bd("0.00").compareTo(bench.portfolioReturn)) { "benchmark YTD ${bench.portfolioReturn}" }
+        assertEquals(0, bd("0.00").compareTo(bench.series.last().portfolio))
+        // 시계열 창도 1월 1일부터 — 전년 12/31 행은 YTD 차트에 안 실린다
+        assertEquals(listOf(jan1, today), perf.dailySeries.map { it.date })
+        assertEquals(listOf(jan1, today), bench.series.map { it.date })
+    }
+
+    @Test
+    fun `performance 누적선 - ALL은 첫 관측일부터라 끝점이 전체 기간 twr과 같다`() {
+        // ALL의 조회 창은 3,650일 전부터지만 그 전엔 관측이 없다. 기준점을 창 시작으로 잡으면
+        // 앵커가 없어 선 전체가 null이 된다 — 첫 관측일을 기준점으로 쓴다.
+        `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
+        val today = java.time.LocalDate.now()
+        stubPerformanceDaily(listOf(
+            DailyPerf(today.minusDays(100), bd("1000000"), bd("0"), bd("0"), null, null),
+            DailyPerf(today.minusDays(50), bd("1100000"), bd("0.1"), bd("0.1"), null, null),
+            DailyPerf(today, bd("1210000"), bd("0.1"), bd("0.21"), null, null),
+        ))
+
+        val result = svc().performance(userId, "ALL")
+
+        assertEquals(listOf("0.00", "10.00", "21.00"), result.dailySeries.map { it.cumulativeReturn?.toPlainString() })
+        assertEquals(0, result.twr!!.compareTo(result.dailySeries.last().cumulativeReturn))
+    }
+
+    @Test
     fun `performance 일간 수익률 - 입금일은 0이고 percent다 - 저장 daily_return을 쓰지 않는다`() {
         `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
         val today = java.time.LocalDate.now()
