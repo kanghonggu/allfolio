@@ -8,7 +8,7 @@ export default function Label({
   className,
 }: {
   children: React.ReactNode
-  /** md=10px(섹션), sm=9px(테이블 컬럼) */
+  /** md=섹션, sm=테이블 컬럼 — 크기는 둘 다 caption 하한(AF-209), 자간만 다르다 */
   size?: 'sm' | 'md'
   tone?: 'muted' | 'faint' | 'ghost' | 'ink'
   className?: string
@@ -17,7 +17,7 @@ export default function Label({
     <span
       className={cx(
         'font-mono uppercase',
-        size === 'sm' ? 'text-[9px]' : 'text-[10px]',
+        'text-caption',
         size === 'sm' ? 'tracking-label' : 'tracking-wideLabel',
         tone === 'muted' && 'text-fg-muted',
         tone === 'faint' && 'text-fg-faint',

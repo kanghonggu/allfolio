@@ -28,7 +28,7 @@ export default function StartChecklist({ state }: { state: ChecklistState }) {
   return (
     <section className="border-b border-line bg-surface-muted px-5 py-4 sm:px-7">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <span className="font-mono text-[10px] tracking-wideLabel text-fg-muted">시작하기</span>
+        <span className="font-mono text-caption tracking-wideLabel text-fg-muted">시작하기</span>
         <span className="flex items-center gap-1" aria-label={`${STEPS.length}단계 중 ${done}단계 완료`}>
           {STEPS.map((s) => (
             <span
@@ -49,7 +49,7 @@ export default function StartChecklist({ state }: { state: ChecklistState }) {
         {STEPS.map((s) => {
           const isDone = state[s.key]
           return (
-            <li key={s.key} className="flex items-baseline gap-2 text-[13px]">
+            <li key={s.key} className="flex items-baseline gap-2 text-body">
               <span aria-hidden="true" className={isDone ? 'text-ok' : 'text-fg-ghost'}>
                 {isDone ? '☑' : '☐'}
               </span>

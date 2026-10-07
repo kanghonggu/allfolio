@@ -227,13 +227,13 @@ export default function UnifiedDashboard() {
           <>
             <Link
               href="/unified/recon"
-              className="border border-line bg-surface px-3.5 py-2 text-[12.5px] text-fg-2 transition-colors hover:border-ink hover:text-ink"
+              className="border border-line bg-surface px-3.5 py-2 text-body text-fg-2 transition-colors hover:border-ink hover:text-ink"
             >
               대사 내역
             </Link>
             <Link
               href="/unified/accounts"
-              className="border border-ink bg-ink px-3.5 py-2 text-[12.5px] text-white transition-colors hover:bg-fg-2"
+              className="border border-ink bg-ink px-3.5 py-2 text-body text-white transition-colors hover:bg-fg-2"
             >
               계좌 관리
             </Link>
@@ -305,13 +305,13 @@ function RealAssetTable({ assets }: { assets: RealAsset[] }) {
       key: 'name',
       header: '자산',
       width: '1.8fr',
-      cell: (a) => <span className="text-[13.5px]">{a.name}</span>,
+      cell: (a) => <span className="text-body">{a.name}</span>,
     },
     {
       key: 'type',
       header: '구분',
       width: '1fr',
-      cell: (a) => <span className="text-[12.5px] text-fg-3">{a.type}</span>,
+      cell: (a) => <span className="text-body text-fg-3">{a.type}</span>,
     },
     {
       key: 'value',
@@ -323,7 +323,7 @@ function RealAssetTable({ assets }: { assets: RealAsset[] }) {
       // 벌어진다** — 33억이 언제 거래 기준인지 화면이 말하지 않으면 알 방법이 없다.
       cell: (a) => (
         <span className="inline-flex flex-col items-end">
-          <Num className="text-[12.5px]">{won(a.value)}</Num>
+          <Num className="text-body">{won(a.value)}</Num>
           <RealAssetPriceAsOf asset={a} />
         </span>
       ),
@@ -335,13 +335,13 @@ function RealAssetTable({ assets }: { assets: RealAsset[] }) {
       align: 'right',
       cell: (a) => {
         const days = a.daysUntilMaturity
-        if (days == null) return <span className="text-xs text-fg-faint">—</span>
+        if (days == null) return <span className="text-body text-fg-faint">—</span>
         const urgent = days <= 7
         const warn = days <= 30 && !urgent
         return (
           <span className="inline-flex items-baseline gap-2">
             {urgent && <Badge variant="danger">만기 임박</Badge>}
-            <Num className={`text-xs ${urgent ? 'text-danger' : warn ? 'text-warn' : 'text-fg-3'}`}>
+            <Num className={`text-body ${urgent ? 'text-danger' : warn ? 'text-warn' : 'text-fg-3'}`}>
               D-{days}
             </Num>
           </span>
@@ -367,7 +367,7 @@ function RealAssetPriceAsOf({ asset }: { asset: RealAsset }) {
 
   return (
     <span
-      className={`font-mono text-[9.5px] tracking-[0.08em] ${stale ? 'text-warn' : 'text-fg-ghost'}`}
+      className={`font-mono text-caption tracking-[0.08em] ${stale ? 'text-warn' : 'text-fg-ghost'}`}
       title={
         stale
           ? asset.type === 'REAL_ESTATE'

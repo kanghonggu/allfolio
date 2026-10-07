@@ -66,9 +66,9 @@ export default function FxPanel({ fx }: { fx: FxSnapshot | null }) {
       {/* 고시 도장 — 사용자가 은행 화면과 직접 대조하는 신뢰 장치다.
           **회차와 기준일에만 해당한다** — 값은 우리가 1단위로 정규화해서(JPY 100엔 고시 등)
           은행 화면 숫자와 다를 수 있다. 그걸 "고치지" 말 것. */}
-      <div className="flex items-baseline justify-between gap-3">
-        <Label size="sm" tone="faint">내 통화</Label>
-        <span className="font-mono text-[10px] tracking-label text-fg-faint">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <Label size="sm" tone="faint" className="shrink-0">내 통화</Label>
+        <span className="font-mono text-caption tracking-label text-fg-faint">
           하나은행 고시 · {fx.roundNo}회차 · {fx.baseDate}
         </span>
       </div>
@@ -78,9 +78,9 @@ export default function FxPanel({ fx }: { fx: FxSnapshot | null }) {
       {/* 계좌 조회가 아직 안 끝났는데 "없습니다"를 띄우면 짧게나마 거짓을 말한다 —
           이 조회는 시장 스냅샷이 온 뒤에야 시작하므로 순간이 아니라 한 왕복만큼 보인다 */}
       {accountsPending ? (
-        <p className="text-[13px] text-fg-faint">보유 통화를 불러오는 중…</p>
+        <p className="text-body text-fg-faint">보유 통화를 불러오는 중…</p>
       ) : mine.length === 0 ? (
-        <p className="text-[13px] text-fg-2">외화 계좌가 없습니다.</p>
+        <p className="text-body text-fg-2">외화 계좌가 없습니다.</p>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {mine.map((x) => (
@@ -89,7 +89,7 @@ export default function FxPanel({ fx }: { fx: FxSnapshot | null }) {
                 <span className="font-mono text-[12px]">{x.currency}</span>
                 {/* 한글 이름이 없으면 아무것도 안 그린다 — 코드 바로 옆이라 `AED  AED`가 된다 */}
                 {currencyName(x.currency) && (
-                  <span className="text-[11px] text-fg-faint">{currencyName(x.currency)}</span>
+                  <span className="text-caption text-fg-faint">{currencyName(x.currency)}</span>
                 )}
               </div>
               <div className="mt-2 flex items-baseline gap-2">
@@ -102,7 +102,7 @@ export default function FxPanel({ fx }: { fx: FxSnapshot | null }) {
                   </Num>
                 )}
               </div>
-              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-fg-2">
+              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-caption text-fg-2">
                 <dt>현찰 살 때</dt>
                 <dd className="text-right"><Num>{fixed(x.cashBuy, FX_DIGITS)}</Num></dd>
                 <dt>현찰 팔 때</dt>
@@ -114,7 +114,7 @@ export default function FxPanel({ fx }: { fx: FxSnapshot | null }) {
               </dl>
               {/* 은행 화면은 100엔 고시다 — 안 적으면 우리 값이 틀린 걸로 보인다 */}
               {x.currency === 'JPY' && (
-                <p className="mt-2 text-[10px] text-fg-faint">1엔 기준입니다 (은행 화면은 100엔 기준)</p>
+                <p className="mt-2 text-caption text-fg-faint">1엔 기준입니다 (은행 화면은 100엔 기준)</p>
               )}
             </div>
           ))}
@@ -131,12 +131,12 @@ export default function FxPanel({ fx }: { fx: FxSnapshot | null }) {
           onChange={(e) => setQ(e.target.value)}
           placeholder="통화 검색"
           aria-label="통화 검색"
-          className="border border-line-card bg-transparent px-2 py-1 font-mono text-[11px]"
+          className="border border-line-card bg-transparent px-2 py-1 font-mono text-caption"
         />
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-[12px]">
+        <table className="w-full min-w-[420px] text-body">
           <thead>
             <tr className="border-b border-line-card text-left text-fg-faint">
               <th className="py-1 font-normal">통화</th>
@@ -172,7 +172,7 @@ export default function FxPanel({ fx }: { fx: FxSnapshot | null }) {
         </table>
       </div>
       {filtered.length === 0 && (
-        <p className="py-6 text-center text-[12px] text-fg-faint">검색 결과가 없습니다.</p>
+        <p className="py-6 text-center text-body text-fg-faint">검색 결과가 없습니다.</p>
       )}
     </div>
   )

@@ -6,7 +6,7 @@ import { cx } from '@/lib/cx'
 export function LoadingState({ label = '불러오는 중', className }: { label?: string; className?: string }) {
   return (
     <div className={cx('border-t border-ink py-14 text-center', className)} role="status">
-      <span className="animate-pulse font-mono text-[10px] tracking-wideLabel text-fg-muted">
+      <span className="animate-pulse font-mono text-caption tracking-wideLabel text-fg-muted">
         {label} …
       </span>
     </div>
@@ -26,7 +26,7 @@ export function ErrorState({
   return (
     <div className={cx('border-t border-ink py-12 text-center', className)} role="alert">
       <Label size="sm" tone="faint">오류</Label>
-      <p className="mx-auto mt-2 max-w-md text-[13px] leading-relaxed text-fg-2">{message}</p>
+      <p className="mx-auto mt-2 max-w-md text-body leading-relaxed text-fg-2">{message}</p>
       {onRetry && (
         <Button variant="outline" size="sm" className="mt-4" onClick={onRetry}>
           다시 시도
@@ -50,7 +50,7 @@ export function EmptyState({
 }) {
   return (
     <div className={cx('border-t border-ink py-12 text-center', className)}>
-      <p className="m-0 text-[13.5px] font-medium text-fg-2">{title}</p>
+      <p className="m-0 text-body font-medium text-fg-2">{title}</p>
       {description && (
         <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed text-fg-faint">{description}</p>
       )}

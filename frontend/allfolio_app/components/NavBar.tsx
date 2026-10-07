@@ -44,7 +44,7 @@ export default function NavBar() {
                 key={item.href}
                 href={item.href}
                 className={cx(
-                  'whitespace-nowrap border-b-2 px-2.5 py-1.5 text-[13px] transition-colors',
+                  'whitespace-nowrap border-b-2 px-2.5 py-1.5 text-body transition-colors',
                   isActive(item.href, item.exact)
                     ? 'border-ink text-ink'
                     : 'border-transparent text-fg-3 hover:text-ink',
@@ -59,7 +59,7 @@ export default function NavBar() {
                   key={item.href}
                   href={item.href}
                   className={cx(
-                    'whitespace-nowrap border-b-2 px-2.5 py-1.5 text-[13px] transition-colors',
+                    'whitespace-nowrap border-b-2 px-2.5 py-1.5 text-body transition-colors',
                     isActive(item.href)
                       ? 'border-warn text-warn'
                       : 'border-transparent text-warn opacity-70 hover:opacity-100',
@@ -83,7 +83,7 @@ export default function NavBar() {
           )}
           {initialized && authenticated && (
             <div className="flex items-center gap-3">
-              <span className="hidden font-mono text-[10px] tracking-label text-fg-faint sm:inline">
+              <span className="hidden font-mono text-caption tracking-label text-fg-faint sm:inline">
                 {userEmail ?? userName}
               </span>
               <button

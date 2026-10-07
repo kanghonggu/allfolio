@@ -52,6 +52,11 @@ const config: Config = {
         mono: ['var(--font-mono)', 'IBM Plex Mono', 'ui-monospace', 'monospace'],
         serif: ['var(--font-serif)', 'var(--font-serif-kr)', 'IBM Plex Serif', 'Noto Serif KR', 'serif'],
       },
+      // 글자 크기 하한 토큰 (AF-209). 값은 globals.css의 --fs-* 변수가 원본 — 인쇄에선 거기서 작아진다.
+      fontSize: {
+        caption: 'var(--fs-caption)',
+        body: 'var(--fs-body)',
+      },
       letterSpacing: {
         label: '0.14em',
         wideLabel: '0.18em',

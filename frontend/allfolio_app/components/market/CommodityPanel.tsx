@@ -71,10 +71,10 @@ function Section({
   return (
     <div>
       <Label size="sm" tone="faint">{title}</Label>
-      {note && <p className="mt-1 text-[11px] text-fg-faint">{note}</p>}
+      {note && <p className="mt-1 text-caption text-fg-faint">{note}</p>}
       {/* 390px에서도 표가 페이지를 밀지 않게 이 안에서 가로 스크롤한다 — 환율·금리 탭과 같다 */}
       <div className="mt-2 overflow-x-auto">
-        <table className="w-full text-[12px]">
+        <table className="w-full text-body">
           <thead>
             <tr className="border-b border-line-card text-left text-fg-faint">
               <th className="whitespace-nowrap py-1 font-normal">종목</th>
@@ -94,11 +94,11 @@ function Section({
                     떨어지면 위 행의 값과 붙어 보여 어느 단위가 어느 값인지 헷갈린다.
                     대신 표가 가로 스크롤로 들어간다(위 overflow-x-auto) */}
                 <td className="whitespace-nowrap py-1.5 pl-3 text-right">
-                  <Num className="text-[13px]">{fixed(c.price, PRICE_DIGITS)}</Num>{' '}
+                  <Num className="text-body">{fixed(c.price, PRICE_DIGITS)}</Num>{' '}
                   {/* **단위를 숨기지 말 것.** `USD/lb`(우라늄)와 `USc/lb`(설탕·커피)는 한 글자
                       차이에 100배 차이라, 없으면 커피 307.83이 달러로 읽힌다.
                       행에 실려 온 값을 쓴다 — 코드로 매핑한 상수를 두면 설정이 바뀐 날 조용히 틀린다 */}
-                  <span className="font-mono text-[10px] text-fg-faint">{c.unit}</span>
+                  <span className="font-mono text-caption text-fg-faint">{c.unit}</span>
                 </td>
                 <td className="py-1.5 pl-3 text-right">
                   {/* **`c.changeValue &&`로 가르면 안 된다** — number라 0이 falsy여서
@@ -118,7 +118,7 @@ function Section({
                     공통 헤더에 하나를 두면 화면이 거짓말을 한다(금리 탭이 같은 이유로 그렇게 한다) */}
                 {/* 날짜는 안 쪼갠다 — 390px에서 `2026-08-` / `13`으로 갈리면 두 줄짜리 행이
                     되고 기준일이 다른 행의 것으로 읽힌다. 대신 표가 가로 스크롤로 들어간다 */}
-                <td className="whitespace-nowrap py-1.5 pl-3 text-right font-mono text-[10px] text-fg-faint">
+                <td className="whitespace-nowrap py-1.5 pl-3 text-right font-mono text-caption text-fg-faint">
                   {monthly ? monthLabel(c.tradeDate) : c.tradeDate}
                 </td>
               </tr>
@@ -155,7 +155,7 @@ export default function CommodityPanel({ quotes }: { quotes: CommodityQuoteView[
 
       {/* **각주 두 줄 — 없애지 말 것(설계 §6).** 빼면 "왜 은이 없지"·"왜 금값이 다르지"가
           남고 다음 사람이 같은 조사를 다시 한다 */}
-      <div className="space-y-1 border-t border-line-card pt-3 text-[10px] leading-relaxed text-fg-faint">
+      <div className="space-y-1 border-t border-line-card pt-3 text-caption leading-relaxed text-fg-faint">
         <p>은·백금은 국제 시세 재배포 라이선스 때문에 싣지 않습니다.</p>
         <p>금은 KRX 금시장 원/g 기준이라 국제 금값(USD/oz)과 다릅니다.</p>
       </div>
