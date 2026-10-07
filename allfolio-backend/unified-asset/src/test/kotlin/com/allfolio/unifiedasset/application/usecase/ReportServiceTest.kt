@@ -445,8 +445,8 @@ class ReportServiceTest {
 
     @Test
     fun `performance twr는 기간 카드와 같은 percent 스케일이다`() {
-        // twr 응답은 percent여야 FE(fmtPct, x100 없음)에서 100배 축소 표시가 나지 않는다.
-        // twr는 이제 NAV + 현금흐름으로 계산한다(저장 cumulative_return 아님) — 관측 2건으로 +20.6%를 만든다.
+        // cumulative_return은 ratio(0~1) 저장 — twr 응답은 percent로 환산돼야
+        // FE(fmtPct, x100 없음)에서 100배 축소 표시가 나지 않는다.
         `when`(assetRepository.findByUserId(userId)).thenReturn(emptyList())
         // 🔴 한 행만 두면 **구간이 없어** twr이 null이다 — 저장 cumulative_return을 그대로
         // 쓰던 시절의 픽스처다. 단언(ratio → percent 환산)은 그대로 두고 입력만 구간이
