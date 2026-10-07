@@ -88,6 +88,7 @@ class ReportGeneratedAtOffsetTest {
         fx = mock(FxConverter::class.java),
         benchmarkStore = mock(BenchmarkDailyStore::class.java),
         cashFlowRepository = mock(CashFlowRepository::class.java),
+        riskFreeRateSource = { null },
         dustThresholdKrw = BigDecimal(1000),
     )
 

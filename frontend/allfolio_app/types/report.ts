@@ -90,8 +90,14 @@ export interface RiskReport {
   annualizedVolatility: number | null
   var95:                number | null
   maxDrawdown:          number | null
+  /** 설정 이후 연환산 기준 — 위 30일 지표와 창이 다르다 */
   sharpeRatio:          number | null
   calmarRatio:          number | null
+  /** 샤프·칼마 창(설정 이후)의 MDD. 구간 수익률 30건 미만이면 null */
+  ratioMaxDrawdown:     number | null
+  /** 샤프에 쓴 무위험 수익률(연 %, CD 91일). 수집값이 없으면 null */
+  riskFreeRate:         number | null
+  riskFreeRateDate:     string | null
   latestDate:           string | null
   series:               DailyRisk[]
 }

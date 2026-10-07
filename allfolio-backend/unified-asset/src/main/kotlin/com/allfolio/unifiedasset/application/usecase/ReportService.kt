@@ -83,8 +83,14 @@ data class RiskReport(
     val annualizedVolatility: BigDecimal?,
     val var95: BigDecimal?,
     val maxDrawdown: BigDecimal?,
+    /** 설정 이후 연환산 기준 — 위 30일 지표와 창이 다르다. 근거는 [RiskAdjustedRatios] */
     val sharpeRatio: BigDecimal?,
     val calmarRatio: BigDecimal?,
+    /** 샤프·칼마 창(설정 이후)의 MDD. 구간 수익률이 모자라면 null — 화면이 "낙폭 없음"과 "데이터 부족"을 가른다 */
+    val ratioMaxDrawdown: BigDecimal?,
+    /** 샤프에 쓴 무위험 수익률(연 %, CD 91일). 수집값이 없으면 null이고 샤프도 null */
+    val riskFreeRate: BigDecimal?,
+    val riskFreeRateDate: LocalDate?,
     val latestDate: LocalDate?,
     val series: List<DailyRisk>,
 )
@@ -212,6 +218,7 @@ class ReportService(
     private val fx: FxConverter,
     private val benchmarkStore: com.allfolio.unifiedasset.application.port.BenchmarkDailyStore,
     private val cashFlowRepository: com.allfolio.unifiedasset.application.port.CashFlowRepository,
+    private val riskFreeRateSource: com.allfolio.unifiedasset.application.port.RiskFreeRateSource,
     // 상위 보유에서 제외할 먼지 포지션 임계값(KRW) — 코인 잔여 단위 등 (QA 후속 #4)
     @org.springframework.beans.factory.annotation.Value("\${allfolio.report.dust-threshold-krw:1000}")
     private val dustThresholdKrw: BigDecimal = BigDecimal(1000),
@@ -320,8 +327,11 @@ class ReportService(
         // 손실로 잡히던 문제(daily_return 미조정). 근거는 FlowAdjustedRiskSeries KDoc.
         val flows = cashFlowRepository.findByUserId(userId)
             .map { com.allfolio.report.domain.returns.Flow(it.flowDate, it.signedKrw()) }
-        val series = FlowAdjustedRiskSeries.build(queryNavSeries(userId), flows)
+        val navSeries = queryNavSeries(userId)
+        val series = FlowAdjustedRiskSeries.build(navSeries, flows)
         val latest = series.lastOrNull()
+        val riskFree = riskFreeRateSource.latest(LocalDate.now(KST))
+        val ratios = RiskAdjustedRatios.compute(navSeries, flows, riskFree?.ratePct)
 
         return RiskReport(
             userId = userId,
@@ -330,8 +340,11 @@ class ReportService(
             annualizedVolatility = latest?.annualizedVolatility,
             var95 = latest?.var95,
             maxDrawdown = latest?.maxDrawdown,
-            sharpeRatio = computeSharpe(series),
-            calmarRatio = computeCalmar(series),
+            sharpeRatio = ratios?.sharpe,
+            calmarRatio = ratios?.calmar,
+            ratioMaxDrawdown = ratios?.maxDrawdown,
+            riskFreeRate = riskFree?.ratePct,
+            riskFreeRateDate = riskFree?.quoteDate,
             latestDate = latest?.date,
             series = series,
         )
@@ -734,23 +747,6 @@ class ReportService(
             "YTD" to twrSince(LocalDate.of(now.year, 1, 1)),
             "1Y"  to twrSince(now.minusDays(365)),
         )
-    }
-
-    private fun computeSharpe(series: List<DailyRisk>): BigDecimal? {
-        if (series.isEmpty()) return null
-        // Approximation: annualized_vol from latest, assume 5% risk-free rate
-        val latest = series.last()
-        val vol = latest.annualizedVolatility
-        if (vol <= BigDecimal.ZERO) return null
-        // We don't have annualized return here, so return null
-        return null
-    }
-
-    private fun computeCalmar(series: List<DailyRisk>): BigDecimal? {
-        if (series.isEmpty()) return null
-        val mdd = series.minOf { it.maxDrawdown }
-        if (mdd >= BigDecimal.ZERO) return null
-        return null // need annual return
     }
 
     private fun periodDays(period: String): Int = when (period) {
