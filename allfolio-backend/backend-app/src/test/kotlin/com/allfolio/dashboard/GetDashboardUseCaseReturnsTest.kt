@@ -4,7 +4,7 @@ import com.allfolio.fx.CurrencyConverter
 import com.allfolio.fx.FxRateService
 import com.allfolio.snapshot.infrastructure.entity.PerformanceDailyEntity
 import com.allfolio.snapshot.infrastructure.entity.SnapshotDailyId
-import com.allfolio.snapshot.infrastructure.repository.BenchmarkDailyJpaRepository
+import com.allfolio.unifiedasset.application.port.BenchmarkDailyStore
 import com.allfolio.snapshot.infrastructure.repository.PerformanceDailyJpaRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.CashFlowRepository
@@ -32,7 +32,7 @@ class GetDashboardUseCaseReturnsTest {
 
     private val assetRepository = mock(AssetRepository::class.java)
     private val performanceRepo = mock(PerformanceDailyJpaRepository::class.java)
-    private val benchmarkRepo = mock(BenchmarkDailyJpaRepository::class.java)
+    private val benchmarkStore = mock(BenchmarkDailyStore::class.java)
     private val fx = object : FxConverter {
         override fun toKrw(amount: BigDecimal, currency: String): BigDecimal = amount
         override fun rateOf(currency: String): BigDecimal = BigDecimal.ONE
@@ -75,7 +75,7 @@ class GetDashboardUseCaseReturnsTest {
         `when`(performanceRepo.findByIdPortfolioIdAndIdDateBetween(any() ?: userId, any() ?: today, any() ?: today))
             .thenReturn(series)
         return GetDashboardUseCase(
-            assetRepository, performanceRepo, benchmarkRepo, fx, FixedCashFlows(flows),
+            assetRepository, performanceRepo, benchmarkStore, fx, FixedCashFlows(flows),
             CurrencyConverter(IdentityFxRates),
             { null },
         )

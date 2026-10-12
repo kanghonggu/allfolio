@@ -4,7 +4,7 @@ import com.allfolio.fx.CurrencyConverter
 import com.allfolio.fx.FxRateService
 import com.allfolio.snapshot.infrastructure.entity.PerformanceDailyEntity
 import com.allfolio.snapshot.infrastructure.entity.SnapshotDailyId
-import com.allfolio.snapshot.infrastructure.repository.BenchmarkDailyJpaRepository
+import com.allfolio.unifiedasset.application.port.BenchmarkDailyStore
 import com.allfolio.snapshot.infrastructure.repository.PerformanceDailyJpaRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.CashFlowRepository
@@ -126,7 +126,7 @@ class GetDashboardUseCaseNetWorthChangeTest {
     ): NetWorthDto {
         val assetRepository = mock(AssetRepository::class.java)
         val performanceRepo = mock(PerformanceDailyJpaRepository::class.java)
-        val benchmarkRepo = mock(BenchmarkDailyJpaRepository::class.java)
+        val benchmarkStore = mock(BenchmarkDailyStore::class.java)
 
         `when`(assetRepository.findByUserId(userId)).thenReturn(listOf(asset(nowValue)))
         `when`(
@@ -139,7 +139,7 @@ class GetDashboardUseCaseNetWorthChangeTest {
         ).thenReturn(listOfNotNull(baseline))
 
         val useCase = GetDashboardUseCase(
-            assetRepository, performanceRepo, benchmarkRepo,
+            assetRepository, performanceRepo, benchmarkStore,
             object : FxConverter {
                 override fun toKrw(amount: BigDecimal, currency: String): BigDecimal = amount
                 override fun rateOf(currency: String): BigDecimal = BigDecimal.ONE
