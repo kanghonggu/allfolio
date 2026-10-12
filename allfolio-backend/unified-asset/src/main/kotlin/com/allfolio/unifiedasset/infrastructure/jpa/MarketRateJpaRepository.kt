@@ -37,4 +37,10 @@ interface MarketRateJpaRepository : JpaRepository<MarketRateEntity, UUID> {
         from: LocalDate,
         to: LocalDate,
     ): List<MarketRateEntity>
+
+    /** [asOf] 이하 가장 최근 한 행 — 샤프 무위험 수익률(`JpaRiskFreeRateSource`)이 쓴다 */
+    fun findFirstByRateCodeAndQuoteDateLessThanEqualOrderByQuoteDateDesc(
+        rateCode: String,
+        asOf: LocalDate,
+    ): MarketRateEntity?
 }

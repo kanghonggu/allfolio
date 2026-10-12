@@ -28,6 +28,7 @@ import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers
 import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import java.math.BigDecimal
@@ -247,9 +248,10 @@ class SnapshotTriggerNavCurrencyTest {
         // 스냅샷은 이미 커밋됐고 호출자에게 그대로 돌아가야 한다
         assertNotNull(result)
         assertEquals(0, BigDecimal("280000").compareTo(result!!.nav))
-        // try/catch 뒤에 오는 캐시 갱신도 건너뛰어져선 안 된다
+        // try/catch 뒤에 오는 캐시 무효화도 건너뛰어져선 안 된다
         verify(cache).evict(tenantId, portfolioId, date)
-        verify(cache).saveLatest(eqArg(tenantId), eqArg(portfolioId), anyArg())
+        // latest는 조회가 채운다 — 여기서 채우면 risk_daily(매수일=수익) 값이 TTL 없이 남는다
+        verify(cache, never()).saveLatest(anyArg(), anyArg(), anyArg())
     }
 
     // ── Mockito matcher를 Kotlin non-null 파라미터에 넘기기 위한 래퍼 ──

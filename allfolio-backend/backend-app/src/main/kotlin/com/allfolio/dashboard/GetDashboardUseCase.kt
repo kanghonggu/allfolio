@@ -7,12 +7,14 @@ import com.allfolio.report.domain.returns.ReturnsCalculator
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.CashFlowRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
+import com.allfolio.unifiedasset.application.port.RiskFreeRateSource
+import com.allfolio.unifiedasset.application.usecase.FlowAdjustedRiskSeries
+import com.allfolio.unifiedasset.application.usecase.RiskAdjustedRatios
 import com.allfolio.unifiedasset.application.usecase.currentValueInKrw
 import com.allfolio.unifiedasset.application.usecase.loanAmountInKrw
 import com.allfolio.unifiedasset.application.usecase.navInKrw
 import com.allfolio.unifiedasset.domain.asset.AssetLiquidityType
 import com.allfolio.snapshot.infrastructure.repository.PerformanceDailyJpaRepository
-import com.allfolio.snapshot.infrastructure.repository.RiskDailyJpaRepository
 import com.allfolio.snapshot.infrastructure.repository.BenchmarkDailyJpaRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -27,11 +29,11 @@ import java.util.UUID
 class GetDashboardUseCase(
     private val assetRepository: AssetRepository,
     private val performanceRepo: PerformanceDailyJpaRepository,
-    private val riskRepo: RiskDailyJpaRepository,
     private val benchmarkRepo: BenchmarkDailyJpaRepository,
     private val fx: FxConverter,
     private val cashFlowRepository: CashFlowRepository,
     private val currencyConverter: CurrencyConverter,
+    private val riskFreeRateSource: RiskFreeRateSource,
 ) {
     fun execute(userId: UUID): DashboardResponse {
         val assets = assetRepository.findByUserId(userId)
@@ -95,16 +97,17 @@ class GetDashboardUseCase(
         val return1m  = periodTwrPercent(today.minusDays(30))
         val return3m  = periodTwrPercent(today.minusDays(90))
 
-        // MDD
-        val latestRisk = riskRepo.findTopByIdPortfolioIdOrderByIdDateDesc(userId)
+        // MDD·변동성·VaR — risk_daily가 아니라 B-04 리스크 화면과 같은 플로우 조정 시계열의 마지막 날.
+        // risk_daily는 daily_return(입출금 미조정)을 먹어 입금일이 수익, 출금일이 손실로 잡힌다.
+        val latestRisk = FlowAdjustedRiskSeries.build(navSeries, flows).lastOrNull()
         val mdd = latestRisk?.maxDrawdown?.multiply(BigDecimal(100))
 
-        // Phase 3: Sharpe, VaR, 변동성
-        val riskFreeRate = BigDecimal("3.5")
-        val annualVol    = latestRisk?.annualizedVolatility?.multiply(BigDecimal(100))
-        val sharpe = if (returnYtd != null && annualVol != null && annualVol > BigDecimal.ZERO && dataDays >= 10)
-            returnYtd.subtract(riskFreeRate).divide(annualVol, 4, RoundingMode.HALF_UP)
-        else null
+        // 샤프는 B-04 리스크 화면과 같은 공용 계산 — 설정 이후 연환산, 무위험 = CD(91일).
+        // 예전 식은 연율이 아닌 YTD 기간 수익률에서 연 3.5%를 빼 30일 연환산 변동성으로 나눴다.
+        val annualVol = latestRisk?.annualizedVolatility?.multiply(BigDecimal(100))
+        val sharpe = RiskAdjustedRatios
+            .compute(navSeries, flows, riskFreeRateSource.latest(today)?.ratePct)
+            ?.sharpe
         val var95Amount = latestRisk?.var95?.multiply(liquidValue)
 
         // 벤치마크 KOSPI YTD

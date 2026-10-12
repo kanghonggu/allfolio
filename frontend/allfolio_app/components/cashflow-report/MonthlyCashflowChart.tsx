@@ -30,6 +30,29 @@ import { fmtKrw } from '@/lib/report-format'
  * (`offset·x·y·width·height·value·viewBox·index`가 전부이며 `viewBox`는 막대 자신이다)
  * 차트 margin top이 곧 플롯 상단이라 그 값을 상수로 둔다. clamp가 걸린 라벨은 막대
  * 윗부분에 걸치므로, **겹친 길이가 절반을 넘으면 흰 글자로 뺀다**.
+ *
+ * ## 여유(clearance) — 칼날은 도달 불가 구간에 있다 (AF-211)
+ *
+ * 막대 라벨과 선 라벨은 **같은 평면에 놓인다.** 회전 라벨의 수평 폭은 글꼴 높이에서 나오므로
+ * **10px 고정**이고(금액 자릿수와 무관), 두 라벨 중심의 수평 거리는 컬럼 폭과 월 수만으로
+ * 정해진다. 그래서 12개월·630px에서 그 거리가 정확히 10px — **여유가 0.000px**이다.
+ * 겹침 0은 설계된 여유가 아니라 **우연한 경계값**이라서, 월이 늘거나 폭이 좁아지면 즉시 깨진다
+ * (실측 겹침 쌍: 18개월 30 · 24개월 40 · 12개월@420px 20 — 630px에서는 전부 막대↔선,
+ * 420px·18개월 이상에서는 막대↔막대도 35쌍 추가).
+ *
+ * **그런데 그 구간은 제품에서 도달할 수 없다.** 기간 선택 UI는 연·월 드롭다운 둘뿐이고
+ * (`app/unified/reports/cashflow-report/page.tsx`), 생성 API는
+ * `GenerateRequest(type, year, month)` → `ReportPeriod.monthly(year, month)`로 **항상 한 달**이다
+ * (`ReportArchiveController.kt`. 월말 마감 `ClosingActions.kt`도 같은 `monthly()`를 쓴다).
+ * flows·trades는 그 기간으로 잘려 조회되므로(`findByUserIdAndFlowDateBetween…`)
+ * `monthly` 행은 **최대 1개**다. 실측 도달 케이스는 라벨 3개 · 겹침 0 ·
+ * **수평 여유 99px(630px) / 57px(420px)** · 상단 잘림 0 · 범례 교차 0 — 두 라벨이 수직으로도
+ * 안 겹쳐서 x가 어떻든 부딪히지 않는다.
+ *
+ * 그래서 좌표를 손대지 않았다. **다중 월이 도달 가능해지는 순간**(기간을 범위로 바꾸거나
+ * `ReportPeriod`를 월 밖으로 넓히면) 이 라벨은 바로 겹친다 — 그때 `offset` 분리나 `barGap`
+ * 조정으로 여유를 만들 것. 측정은 `getBoundingClientRect()` 전수 교차로 하고,
+ * **범례 교차까지 함께** 잰다(AF-206 1라운드가 놓친 자리다).
  */
 const LABEL_CHAR_W = 4.9  // 8px 모노스페이스 한 글자 폭(실측)
 const GAP = 12            // 막대 밖 라벨과 윗변 사이
