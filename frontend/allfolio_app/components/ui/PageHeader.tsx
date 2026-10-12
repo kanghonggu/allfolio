@@ -18,7 +18,7 @@ export default function PageHeader({
       <div>
         <h1 className="m-0 text-[19px] font-semibold tracking-[-0.01em]">{title}</h1>
         {meta && (
-          <div className="mt-1.5 font-mono text-[10px] tracking-label text-fg-muted">{meta}</div>
+          <div className="mt-1.5 font-mono text-caption tracking-label text-fg-muted">{meta}</div>
         )}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}

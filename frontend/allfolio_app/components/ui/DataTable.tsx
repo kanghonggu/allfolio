@@ -44,7 +44,7 @@ export default function DataTable<T>({
             <span
               key={c.key}
               className={cx(
-                'font-mono text-[9px] uppercase tracking-label text-fg-faint',
+                'font-mono text-caption uppercase tracking-label text-fg-faint',
                 c.align === 'right' && 'text-right',
               )}
             >

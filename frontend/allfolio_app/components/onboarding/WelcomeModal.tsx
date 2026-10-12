@@ -25,7 +25,7 @@ export default function WelcomeModal({ onDismiss }: { onDismiss: () => void }) {
         className="w-full max-w-md border border-ink bg-surface p-6"
         onClick={(e) => e.stopPropagation()}
       >
-        <span className="font-mono text-[10px] tracking-brand text-fg-muted">ALLFOLIO</span>
+        <span className="font-mono text-caption tracking-brand text-fg-muted">ALLFOLIO</span>
         <h2 id="welcome-title" className="m-0 mt-2.5 font-serif text-[19px] font-semibold tracking-[-0.01em]">
           자산을 어떻게 등록할까요?
         </h2>

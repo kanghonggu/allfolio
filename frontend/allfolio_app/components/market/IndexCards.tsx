@@ -24,7 +24,7 @@ export default function IndexCards({ quotes }: { quotes: IndexQuoteView[] }) {
         <div key={q.code} className="border border-line-card p-4">
           <div className="flex items-baseline justify-between gap-2">
             {/* 라벨이 없으면 코드가 그대로 나온다 — 빈칸이면 종목이 사라진 것처럼 보인다 */}
-            <span className="text-[13px]">{indexLabel(q.code)}</span>
+            <span className="text-body">{indexLabel(q.code)}</span>
             {/* 장 상태가 없으면 한국 낮에 미국 지수가 안 움직이는 걸 보고 고장으로 오해한다 */}
             <Badge>{q.marketStatus}</Badge>
           </div>
@@ -40,7 +40,7 @@ export default function IndexCards({ quotes }: { quotes: IndexQuoteView[] }) {
             </Num>
           </div>
           {/* 기준 시각 — 장마감이면 언제 종가인지까지 말한다 */}
-          <p className="mt-2 font-mono text-[10px] text-fg-faint">
+          <p className="mt-2 font-mono text-caption text-fg-faint">
             {q.tradeDate} · {q.slot}
           </p>
         </div>
