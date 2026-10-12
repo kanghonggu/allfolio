@@ -14,6 +14,8 @@ import PageHeader from '@/components/ui/PageHeader'
 import SectionHeader from '@/components/ui/SectionHeader'
 import Label from '@/components/ui/Label'
 import Num from '@/components/ui/Num'
+import InfoTip from '@/components/ui/InfoTip'
+import { METRIC_HELP } from '@/lib/metric-help'
 import { LoadingState, ErrorState, EmptyState } from '@/components/ui/states'
 import { dirTone, toneText } from '@/lib/format'
 
@@ -192,12 +194,16 @@ export default function BenchmarkPage() {
               const benchClass = toneText[dirTone(Number(b.benchmarkReturn))]
               return (
                 <div key={b.name} className="bg-surface px-3.5 py-3">
-                  <Label size="sm" tone="faint">{b.name}</Label>
+                  <InfoTip label={`${b.name} 수익률`} text={METRIC_HELP.benchmarkIndexReturn}>
+                    <Label size="sm" tone="faint">{b.name}</Label>
+                  </InfoTip>
                   <Num className={`mt-1 block text-[16px] ${benchClass}`}>
                     {fmtPct(Number(b.benchmarkReturn))}
                   </Num>
                   <div className="mt-3 border-t border-line-hair pt-3">
-                    <Label size="sm" tone="faint">알파 (초과 수익)</Label>
+                    <InfoTip label="알파" text={METRIC_HELP.benchmarkAlpha}>
+                      <Label size="sm" tone="faint">알파 (초과 수익)</Label>
+                    </InfoTip>
                     {/* 기저가 없으면 알파도 없다 — 0으로 적으면 "시장과 똑같았다"로 읽힌다 */}
                     {b.alpha !== null ? (
                       <Num className={`mt-1 block text-[14px] ${toneText[dirTone(Number(b.alpha))]}`}>

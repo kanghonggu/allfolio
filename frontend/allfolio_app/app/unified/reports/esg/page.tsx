@@ -6,6 +6,8 @@ import { useReportApi } from '@/lib/useApi'
 import PageHeader from '@/components/ui/PageHeader'
 import SectionHeader from '@/components/ui/SectionHeader'
 import Label from '@/components/ui/Label'
+import InfoTip from '@/components/ui/InfoTip'
+import { METRIC_HELP } from '@/lib/metric-help'
 import Num from '@/components/ui/Num'
 import { ErrorState, LoadingState } from '@/components/ui/states'
 import type { AssetEsgRow, EsgReport } from '@/types/report'
@@ -116,7 +118,10 @@ export default function EsgPage() {
         <div className="flex flex-col gap-6 border-b border-line pb-6 sm:flex-row sm:items-center">
           <div className="flex flex-col items-center gap-2">
             <RatingBadge rating={data.rating} />
-            <Label size="sm" tone="faint">포트폴리오 등급</Label>
+            {/* floatIcon — 부모가 items-center다. 아이콘을 흐름에 두면 글자와 등급 배지의 중심이 8.5px 어긋난다 */}
+            <InfoTip label="포트폴리오 ESG 등급" text={METRIC_HELP.esgRating} floatIcon>
+              <Label size="sm" tone="faint">포트폴리오 등급</Label>
+            </InfoTip>
           </div>
           <div className="flex-1 space-y-3">
             <ScoreBar label="환경 (E)" score={Number(data.environmentalScore)} />
@@ -125,7 +130,10 @@ export default function EsgPage() {
           </div>
           <div className="text-center">
             <Num className="block text-[32px] font-medium leading-[1.1]">{Number(data.totalScore).toFixed(1)}</Num>
-            <Label size="sm" tone="faint" className="mt-1 block">ESG 총점</Label>
+            {/* floatIcon — 부모가 text-center다. 아이콘을 흐름에 두면 글자 중심이 위 숫자보다 8.5px 왼쪽으로 밀린다 */}
+            <InfoTip label="ESG 총점" text={METRIC_HELP.esgTotal} className="mt-1" floatIcon>
+              <Label size="sm" tone="faint">ESG 총점</Label>
+            </InfoTip>
           </div>
         </div>
 

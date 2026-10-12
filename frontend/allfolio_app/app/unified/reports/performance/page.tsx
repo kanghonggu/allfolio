@@ -12,6 +12,8 @@ import {
 import PageHeader from '@/components/ui/PageHeader'
 import SectionHeader from '@/components/ui/SectionHeader'
 import Label from '@/components/ui/Label'
+import InfoTip from '@/components/ui/InfoTip'
+import { METRIC_HELP } from '@/lib/metric-help'
 import Num from '@/components/ui/Num'
 import { LoadingState, ErrorState, EmptyState } from '@/components/ui/states'
 import { dirTone } from '@/lib/format'
@@ -103,7 +105,9 @@ export default function PerformancePage() {
 
         {/* Total Return */}
         <div className="mt-6 border border-line-soft bg-surface px-4 py-4">
-          <Label size="sm" tone="faint">전체 수익률 (매입 원가 기준)</Label>
+          <InfoTip label="전체 수익률 (매입 원가 기준)" text={METRIC_HELP.costBasisReturn}>
+            <Label size="sm" tone="faint">전체 수익률 (매입 원가 기준)</Label>
+          </InfoTip>
           <Num tone={dirTone(Number(data.totalReturn))} className="mt-1.5 block text-[26px]">
             {fmtPct(Number(data.totalReturn))}
           </Num>
@@ -190,7 +194,9 @@ export default function PerformancePage() {
 
         {data.benchmarkAlpha !== null && (
           <div className="mt-8 border border-line-soft bg-surface px-4 py-4">
-            <Label size="sm" tone="faint">벤치마크 대비 알파</Label>
+            <InfoTip label="벤치마크 대비 알파" text={METRIC_HELP.performanceAlpha}>
+              <Label size="sm" tone="faint">벤치마크 대비 알파</Label>
+            </InfoTip>
             <Num tone={dirTone(Number(data.benchmarkAlpha))} className="mt-1 block text-[18px]">
               {fmtPct(Number(data.benchmarkAlpha))}
             </Num>
