@@ -309,9 +309,8 @@ class ReportService(
         // 저장 alpha는 통합자산 스냅샷이 쓰지 않아 항상 null이었다(카드가 한 번도 안 떴다).
         // benchmark()의 알파와 같은 정의: 같은 창의 포트폴리오 TWR − KOSPI 수익률.
         val benchmarkAlpha = periodReturns[period]?.let { portfolio ->
-            val kospi = indexPeriodReturn(
-                benchmarkStore.series(com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.KOSPI, cutoff.minusDays(14), now),
-                cutoff,
+            val kospi = IndexPeriodReturn.of(
+                benchmarkStore, com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.KOSPI, cutoff, now,
             )
             kospi?.let { portfolio.subtract(it).setScale(2, RoundingMode.HALF_UP) }
         }
@@ -416,7 +415,7 @@ class ReportService(
 
         // 실제 지수 시계열(benchmark_daily, 일일 sync) 기반 — 데이터 없으면 목록에서 제외 (QA P1 #10)
         val today = LocalDate.now(KST)
-        val since = today.minusDays(periodDays(period).toLong())
+        val since = periodStart(period, today)
 
         // 🔴 **알파는 두 수가 같은 창일 때만 뜻이 있다** (AF-107).
         //
@@ -437,7 +436,7 @@ class ReportService(
         )
         val indexSeries = com.allfolio.unifiedasset.domain.benchmark.BenchmarkType.entries.associateWith { type ->
             // 휴장일 대비 앵커 여유 2주 — 기간 시작 이전 마지막 종가를 기저로 쓴다
-            benchmarkStore.series(type, since.minusDays(14), today)
+            benchmarkStore.series(type, since.minusDays(IndexPeriodReturn.ANCHOR_LOOKBACK_DAYS), today)
         }
 
         // 보유 시장 판정 (AF-107) — *"국내주식만 가진 사용자에게 항셍은 소음이다"*.
@@ -446,7 +445,7 @@ class ReportService(
         val held = heldMarkets(assetRepository.findByUserId(userId))
 
         val benchmarks = indexSeries.mapNotNull { (type, rows) ->
-            val ret = indexPeriodReturn(rows, since) ?: return@mapNotNull null
+            val ret = IndexPeriodReturn.percent(rows, since) ?: return@mapNotNull null
             BenchmarkItem(
                 held = type in held,
                 name = type.label,
@@ -635,16 +634,7 @@ class ReportService(
     }
 
     private fun queryPerformanceSeries(userId: UUID, period: String): List<DailyPerf> {
-        val days = when (period) {
-            "1W"  -> 7
-            "1M"  -> 30
-            "3M"  -> 90
-            "YTD" -> LocalDate.now(KST).dayOfYear
-            "1Y"  -> 365
-            "ALL" -> 3650
-            else  -> 30
-        }
-        val since = LocalDate.now(KST).minusDays(days.toLong())
+        val since = periodStart(period, LocalDate.now(KST))
 
         return try {
             jdbc.query(
@@ -735,20 +725,32 @@ class ReportService(
     }
 
     /**
-     * 성과 화면의 기간 → 시작일. 기간 카드·누적선·알파가 **이 하나**를 같이 쓴다 — 갈라지면 선의 끝점이 카드와 어긋난다.
+     * 리포트의 기간 → 시작일. **성과·벤치마크 화면, 시계열 조회 창, 기간 카드가 모두 이 하나를 쓴다.**
      *
-     * ALL은 카드에 없지만 API로 올 수 있다. 시작일을 첫 관측일로 둬서 전체 기간 선이 된다.
-     * 그 밖의 값은 queryPerformanceSeries의 기본값(30일)과 맞춘다.
+     * YTD는 **1월 1일**이다. 예전엔 성과 카드만 1월 1일이고 벤치마크 화면·시계열 창은
+     * `오늘 − 연중 일수` = **전년 12월 31일**이라, 1월 1일에 관측이 있으면 두 화면의 YTD가
+     * 그날 하루치만큼 달랐다. 리포트 생성기(ReturnsReportGenerator·MonthlyReportGenerator)와
+     * 대시보드도 1월 1일이다.
+     *
+     * ALL은 시계열 조회 창(최근 3,650일)이다. 선의 기준점으로 쓸 땐 [periodCutoff]가 첫 관측일로 바꾼다.
      */
-    private fun periodCutoff(period: String, now: LocalDate, fullSeries: List<DailyPerf>): LocalDate = when (period) {
+    private fun periodStart(period: String, now: LocalDate): LocalDate = when (period) {
         "1W"  -> now.minusDays(7)
         "1M"  -> now.minusDays(30)
         "3M"  -> now.minusDays(90)
-        "YTD" -> LocalDate.of(now.year, 1, 1)
+        "YTD" -> now.withDayOfYear(1)
         "1Y"  -> now.minusDays(365)
-        "ALL" -> fullSeries.minOfOrNull { it.date } ?: now
+        "ALL" -> now.minusDays(3650)
         else  -> now.minusDays(30)
     }
+
+    /**
+     * 성과 화면의 기간 → 누적선·알파·기간 카드의 기준점. [periodStart]와 같고 ALL만 첫 관측일이다 —
+     * 3,650일 전엔 관측이 없어 앵커가 안 잡히면 전체 기간 선이 통째로 null이 된다.
+     */
+    private fun periodCutoff(period: String, now: LocalDate, fullSeries: List<DailyPerf>): LocalDate =
+        if (period == "ALL") fullSeries.minOfOrNull { it.date } ?: now
+        else periodStart(period, now)
 
     /** 날짜 → 그날로 끝나는 구간 수익률(percent). 저장 daily_return은 (NAV − 전일 NAV)/전일 NAV라 입금일이 수익이다 */
     private fun dailyReturnPercentByDate(
@@ -758,13 +760,6 @@ class ReportService(
         com.allfolio.report.domain.returns.ReturnsCalculator
             .segmentReturns(fullSeries.map { com.allfolio.report.domain.returns.NavPoint(it.date, it.nav) }, flows)
             .associate { it.date to it.ratio.multiply(BigDecimal(100)).setScale(DAILY_PCT_SCALE, RoundingMode.HALF_UP) }
-
-    private fun periodDays(period: String): Int = when (period) {
-        "1W"  -> 7; "1M" -> 30; "3M" -> 90
-        "YTD" -> LocalDate.now(KST).dayOfYear
-        "1Y"  -> 365; "ALL" -> 3650
-        else  -> 30
-    }
 
     /**
      * 보유 자산에서 "이 사람과 상관있는 지수"를 고른다 (AF-107).
@@ -793,16 +788,6 @@ class ReportService(
                 else -> null
             }
         }
-    }
-
-    /** 기간 시작 이전 마지막 종가 대비 최종 종가 수익률(percent). 데이터 2건 미만이면 null */
-    private fun indexPeriodReturn(rows: List<Pair<LocalDate, BigDecimal>>, since: LocalDate): BigDecimal? {
-        if (rows.size < 2) return null
-        val base = (rows.lastOrNull { it.first <= since } ?: rows.first()).second
-        val last = rows.last().second
-        if (base <= BigDecimal.ZERO) return null
-        return last.subtract(base).divide(base, 4, RoundingMode.HALF_UP)
-            .multiply(BigDecimal(100)).setScale(2, RoundingMode.HALF_UP)
     }
 
     /**
