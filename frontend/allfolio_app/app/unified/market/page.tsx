@@ -73,7 +73,7 @@ export default function MarketPage() {
           빈 화면으로 보이지 않는다. 반대로 로딩 중에 지수 탭을 미리 보여주는 것도 안 된다 —
           플래그가 off면 없어질 탭을 잠깐 광고하는 셈이다 */}
       {data && (
-        <nav className="flex gap-1 border-b border-line-card px-5 sm:px-7" aria-label="시장 탭">
+        <nav className="flex gap-1 overflow-x-auto border-b border-line-card px-5 sm:px-7" aria-label="시장 탭">
           {visibleTabs.map((t) => (
             <button
               key={t.key}
@@ -81,7 +81,7 @@ export default function MarketPage() {
               onClick={() => selectTab(t.key)}
               aria-current={tab === t.key ? 'page' : undefined}
               className={cx(
-                'px-3 py-2 font-mono text-[11px] tracking-label transition-colors',
+                'shrink-0 whitespace-nowrap px-3 py-2 font-mono text-caption tracking-label transition-colors',
                 tab === t.key ? 'border-b-2 border-ink text-ink' : 'text-fg-faint hover:text-ink',
               )}
             >

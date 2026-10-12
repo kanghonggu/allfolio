@@ -3,9 +3,8 @@ package com.allfolio.dashboard
 import com.allfolio.fx.CurrencyConverter
 import com.allfolio.fx.FxRateService
 import com.allfolio.fx.UsdQuoteRef
-import com.allfolio.snapshot.infrastructure.repository.BenchmarkDailyJpaRepository
+import com.allfolio.unifiedasset.application.port.BenchmarkDailyStore
 import com.allfolio.snapshot.infrastructure.repository.PerformanceDailyJpaRepository
-import com.allfolio.snapshot.infrastructure.repository.RiskDailyJpaRepository
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.CashFlowRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
@@ -55,11 +54,11 @@ class GetDashboardUseCasePriceAsOfTest {
     private val useCase = GetDashboardUseCase(
         assetRepository,
         mock(PerformanceDailyJpaRepository::class.java),
-        mock(RiskDailyJpaRepository::class.java),
-        mock(BenchmarkDailyJpaRepository::class.java),
+        mock(BenchmarkDailyStore::class.java),
         fx,
         mock(CashFlowRepository::class.java),
         CurrencyConverter(fxRateService),
+        { null },
     )
 
     @Test

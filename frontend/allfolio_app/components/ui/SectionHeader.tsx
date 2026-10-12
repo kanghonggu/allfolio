@@ -15,7 +15,7 @@ export default function SectionHeader({
 }) {
   return (
     <div className={cx('mb-3 flex flex-wrap items-baseline justify-between gap-2', className)}>
-      <h2 className="m-0 font-mono text-[10px] font-medium uppercase tracking-wideLabel text-fg-muted">
+      <h2 className="m-0 font-mono text-caption font-medium uppercase tracking-wideLabel text-fg-muted">
         {label}
       </h2>
       {note && <Label size="sm" tone="faint">{note}</Label>}

@@ -12,7 +12,7 @@ const variantCls: Record<Variant, string> = {
 
 const sizeCls: Record<Size, string> = {
   sm: 'px-3 py-1.5 text-xs',
-  md: 'px-3.5 py-2 text-[12.5px]',
+  md: 'px-3.5 py-2 text-body',
 }
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {

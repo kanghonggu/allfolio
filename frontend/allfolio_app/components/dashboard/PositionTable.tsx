@@ -39,7 +39,7 @@ export default function PositionTable({ positions, empty }: PositionTableProps) 
     <div>
       <div className="mb-3 flex items-baseline justify-between">
         {/* 카운터는 실질 포지션 기준 — 먼지는 별도 표기 (QA 후속 #4) */}
-        <h2 className="m-0 font-mono text-[10px] font-medium uppercase tracking-wideLabel text-fg-muted">
+        <h2 className="m-0 font-mono text-caption font-medium uppercase tracking-wideLabel text-fg-muted">
           포지션 ({mainPositions.length})
           {dustPositions.length > 0 && (
             <span className="ml-1.5 normal-case text-fg-ghost">+ 먼지 {dustPositions.length}건</span>
@@ -58,10 +58,10 @@ export default function PositionTable({ positions, empty }: PositionTableProps) 
           {visible.map((p) => (
             <div key={p.id} className={`${GRID} items-baseline border-b border-line-hair py-2.5 hover:bg-surface-muted`}>
               <span className="flex min-w-0 flex-col">
-                <span className="truncate text-[13.5px]">{p.name}</span>
+                <span className="truncate text-body">{p.name}</span>
                 <span className="flex flex-wrap items-baseline gap-x-1.5">
                   {p.symbol && (
-                    <span className="font-mono text-[9.5px] tracking-[0.08em] text-fg-ghost">{p.symbol}</span>
+                    <span className="font-mono text-caption tracking-[0.08em] text-fg-ghost">{p.symbol}</span>
                   )}
                   {/* **기준일은 자동 평가된 자산만 뜬다** (A1 · N2). 일요일에 보는 금값은
                       금요일 종가다 — 숨기면 사용자는 그게 지금 시세인 줄 안다.
@@ -69,17 +69,17 @@ export default function PositionTable({ positions, empty }: PositionTableProps) 
                   <PriceAsOf position={p} />
                 </span>
               </span>
-              <span className="font-mono text-[10px] tracking-label text-fg-3">
+              <span className="font-mono text-caption tracking-label text-fg-3">
                 {TYPE_KO[p.type] ?? p.type}
               </span>
-              <Num className="text-right text-[12.5px]">
+              <Num className="text-right text-body">
                 {/* KRW는 소수점 없이 반올림 (QA P1 #11) */}
                 ₩{(p.currency === 'KRW' ? Math.round(p.currentValue) : p.currentValue).toLocaleString('en-US')}
               </Num>
-              <Num tone={dirTone(p.returnRate)} className="text-right text-[12.5px]">
+              <Num tone={dirTone(p.returnRate)} className="text-right text-body">
                 {signPct(p.returnRate)}
               </Num>
-              <Num className="text-right text-xs text-fg-muted">
+              <Num className="text-right text-body text-fg-muted">
                 {(p.weight * 100).toFixed(1)}%
               </Num>
             </div>
@@ -88,7 +88,7 @@ export default function PositionTable({ positions, empty }: PositionTableProps) 
             <div className="border-b border-line-hair py-2">
               <button
                 onClick={() => setShowDust(v => !v)}
-                className="font-mono text-[10px] tracking-label text-fg-faint transition-colors hover:text-ink"
+                className="font-mono text-caption tracking-label text-fg-faint transition-colors hover:text-ink"
               >
                 {showDust
                   ? '먼지 포지션 접기'
@@ -117,7 +117,7 @@ function PriceAsOf({ position }: { position: Position }) {
 
   return (
     <span
-      className={`font-mono text-[9.5px] tracking-[0.08em] ${stale ? 'text-warn' : 'text-fg-ghost'}`}
+      className={`font-mono text-caption tracking-[0.08em] ${stale ? 'text-warn' : 'text-fg-ghost'}`}
       title={stale ? `시세가 ${days}일 지연됐습니다 — 소스 확인이 필요합니다` : undefined}
     >
       {priceAsOfLabel(position.priceAsOf, position.type)}

@@ -46,6 +46,12 @@
   --c-link-hover: #0a2445;
 
   --c-selection: #d8e2ee;
+
+  /* 글자 크기 하한 (AF-209 — 고령 사용자 가독성). tailwind의 text-caption·text-body가 이 값을 쓴다.
+     caption = 모노 라벨·컬럼 머리·배지·각주 / body = 본문·표 셀.
+     이보다 큰 제목·숫자 강조는 화면마다 따로 정한다. 인쇄 값은 아래 @media print에서 되돌린다. */
+  --fs-caption: 12px;
+  --fs-body: 14px;
 }
 
 @layer base {
@@ -75,6 +81,12 @@
 
 /* === 월간 운용보고서 인쇄 (#37) — 라이트 리디자인 이후: 반전 불필요, 대비 보정만 === */
 @media print {
+  /* AF-209 이전 크기로 되돌린다 — 화면 하한을 올리면서 A4 한 장 구성(AF-206)이 밀리지 않게.
+     종이는 화면보다 해상도가 높아 이 크기로도 읽힌다. */
+  :root {
+    --fs-caption: 10px;
+    --fs-body: 12.5px;
+  }
   .no-print { display: none !important; }
   nav { display: none !important; }
   .print-invert svg text { fill: #111111 !important; }
