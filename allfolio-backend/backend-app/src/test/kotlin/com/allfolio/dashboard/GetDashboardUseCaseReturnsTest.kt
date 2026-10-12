@@ -77,6 +77,7 @@ class GetDashboardUseCaseReturnsTest {
         return GetDashboardUseCase(
             assetRepository, performanceRepo, benchmarkRepo, fx, FixedCashFlows(flows),
             CurrencyConverter(IdentityFxRates),
+            { null },
         )
     }
 

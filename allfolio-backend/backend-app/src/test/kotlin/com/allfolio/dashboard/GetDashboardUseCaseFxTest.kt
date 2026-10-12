@@ -54,6 +54,7 @@ class GetDashboardUseCaseFxTest {
         assetRepository, performanceRepo, benchmarkRepo, fx,
         mock(com.allfolio.unifiedasset.application.port.CashFlowRepository::class.java),
         CurrencyConverter(fxRateService),
+        { null },
     )
 
     private fun asset(name: String, currentValue: String, currency: String) = Asset.create(

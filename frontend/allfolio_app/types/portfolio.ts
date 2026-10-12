@@ -3,17 +3,19 @@ export type PortfolioSnapshot = {
   date: string
   performance: {
     nav: number
-    dailyReturn: number
+    /** 매매 대금을 뺀 구간 수익률. 첫 관측일처럼 구간이 없는 날은 null */
+    dailyReturn: number | null
     cumulativeReturn: number
     benchmarkReturn: number | null
     alpha: number | null
   }
+  /** 구간 수익률이 2건 미만이면 null — 0으로 채우면 "변동성 0%"로 읽힌다 */
   risk: {
     volatility: number
     annualizedVolatility: number
     var95: number
     maxDrawdown: number
-  }
+  } | null
 }
 
 export type Position = {

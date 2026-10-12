@@ -148,6 +148,7 @@ class GetDashboardUseCaseNetWorthChangeTest {
             // 이 테스트의 자산은 전부 KRW라 출처가 실리지 않는다. 환율을 1로 두는 것은
             // 위 FxConverter 스텁(항등 환산)과 같은 값이라는 뜻 — 픽스처가 서로 어긋나지 않게 한다.
             CurrencyConverter(IdentityFxRates),
+            { null },
         )
         return useCase.execute(userId).netWorth
     }

@@ -8,6 +8,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import PageHeader from '@/components/ui/PageHeader'
 import SectionHeader from '@/components/ui/SectionHeader'
 import Label from '@/components/ui/Label'
+import InfoTip from '@/components/ui/InfoTip'
+import { METRIC_HELP } from '@/lib/metric-help'
 import Num from '@/components/ui/Num'
 import { LoadingState, ErrorState } from '@/components/ui/states'
 
@@ -26,6 +28,20 @@ function fmtPct(n: number | null | undefined, decimals = 2) {
 function fmtN(n: number | null | undefined, decimals = 4) {
   if (n === null || n === undefined) return '—'
   return n.toFixed(decimals)
+}
+
+// 샤프·칼마는 위 카드(직전 30일)와 달리 설정 이후 전체를 연환산한다 — 백엔드 RiskAdjustedRatios
+const RATIO_MIN_NOTE = '설정 이후 구간 수익률 30건 이상 필요'
+
+function sharpeDesc(rate: number | null, rateDate: string | null, ratioMdd: number | null) {
+  if (ratioMdd === null) return RATIO_MIN_NOTE
+  if (rate === null) return '무위험 수익률(CD 91일) 미수집'
+  return `설정 이후 연환산 · 무위험 CD 91일 ${Number(rate).toFixed(2)}% (${rateDate})`
+}
+function calmarDesc(ratioMdd: number | null) {
+  if (ratioMdd === null) return RATIO_MIN_NOTE
+  if (Number(ratioMdd) === 0) return '설정 이후 낙폭 없음 — 비율 정의 불가'
+  return '설정 이후 연환산 수익 / 설정 이후 MDD'
 }
 
 export default function RiskPage() {
@@ -86,23 +102,27 @@ export default function RiskPage() {
         <div className="grid grid-cols-2 gap-px border border-line-soft bg-line-soft lg:grid-cols-4">
           <RiskCard
             label="변동성 (일)"
+            help={METRIC_HELP.dailyVolatility}
             value={fmtPct(data.volatility !== null ? Number(data.volatility) * 100 : null)}
             desc="일별 수익률 표준편차"
           />
           <RiskCard
             label="변동성 (연환산)"
+            help={METRIC_HELP.annualizedVolatility}
             value={fmtPct(data.annualizedVolatility !== null ? Number(data.annualizedVolatility) * 100 : null)}
             valueClass={volColor}
             desc="√252 환산"
           />
           <RiskCard
             label="VaR 95%"
+            help={METRIC_HELP.var95}
             value={fmtPct(data.var95 !== null ? Number(data.var95) * 100 : null)}
             valueClass="text-danger"
             desc="95% 신뢰수준 최대 손실"
           />
           <RiskCard
             label="최대 낙폭 (MDD)"
+            help={METRIC_HELP.maxDrawdown}
             value={fmtPct(data.maxDrawdown !== null ? Number(data.maxDrawdown) * 100 : null)}
             valueClass={mddColor}
             desc="고점 대비 최대 하락"
@@ -114,14 +134,16 @@ export default function RiskPage() {
         <div className="mt-3 grid gap-px border border-line-soft bg-line-soft sm:grid-cols-2">
           <RiskCard
             label="Sharpe Ratio"
+            help={METRIC_HELP.sharpe}
             value={fmtN(data.sharpeRatio)}
-            desc="위험 대비 수익 (무위험 5% 기준)"
+            desc={sharpeDesc(data.riskFreeRate, data.riskFreeRateDate, data.ratioMaxDrawdown)}
             valueClass={data.sharpeRatio !== null ? (Number(data.sharpeRatio) > 1 ? 'text-ok' : Number(data.sharpeRatio) > 0 ? 'text-warn' : 'text-danger') : 'text-fg-faint'}
           />
           <RiskCard
             label="Calmar Ratio"
+            help={METRIC_HELP.calmar}
             value={fmtN(data.calmarRatio)}
-            desc="연수익 / MDD"
+            desc={calmarDesc(data.ratioMaxDrawdown)}
             valueClass={data.calmarRatio !== null ? (Number(data.calmarRatio) > 1 ? 'text-ok' : 'text-warn') : 'text-fg-faint'}
           />
         </div>
@@ -177,12 +199,13 @@ export default function RiskPage() {
   )
 }
 
-function RiskCard({ label, value, desc, valueClass }: {
-  label: string; value: string; desc?: string; valueClass?: string
+function RiskCard({ label, value, desc, valueClass, help }: {
+  label: string; value: string; desc?: string; valueClass?: string; help?: string
 }) {
+  const head = <Label size="sm" tone="faint">{label}</Label>
   return (
     <div className="bg-surface px-3.5 py-3">
-      <Label size="sm" tone="faint">{label}</Label>
+      {help ? <InfoTip label={label} text={help}>{head}</InfoTip> : head}
       <Num className={`mt-1 block text-[16px] ${valueClass ?? ''}`}>{value}</Num>
       {desc && <p className="mt-0.5 text-[11px] text-fg-faint">{desc}</p>}
     </div>

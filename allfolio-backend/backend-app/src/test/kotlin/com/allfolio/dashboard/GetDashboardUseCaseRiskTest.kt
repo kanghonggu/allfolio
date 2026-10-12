@@ -11,6 +11,9 @@ import com.allfolio.snapshot.infrastructure.repository.PerformanceDailyJpaReposi
 import com.allfolio.unifiedasset.application.port.AssetRepository
 import com.allfolio.unifiedasset.application.port.CashFlowRepository
 import com.allfolio.unifiedasset.application.port.FxConverter
+import com.allfolio.unifiedasset.application.port.RiskFreeRate
+import com.allfolio.unifiedasset.application.port.RiskFreeRateSource
+import com.allfolio.unifiedasset.application.usecase.RiskAdjustedRatios
 import com.allfolio.unifiedasset.application.usecase.FlowAdjustedRiskSeries
 import com.allfolio.unifiedasset.domain.asset.Asset
 import com.allfolio.unifiedasset.domain.asset.AssetCategory
@@ -86,13 +89,18 @@ class GetDashboardUseCaseRiskTest {
         currency = "KRW", valuationMethod = ValuationMethod.USER_INPUT,
     )
 
-    private fun metrics(series: List<PerformanceDailyEntity>, flows: List<CashFlow>): MetricsDto {
+    private fun metrics(
+        series: List<PerformanceDailyEntity>,
+        flows: List<CashFlow>,
+        riskFree: RiskFreeRateSource = RiskFreeRateSource { null },
+    ): MetricsDto {
         `when`(assetRepository.findByUserId(userId)).thenReturn(listOf(stock("10000000")))
         `when`(performanceRepo.findByIdPortfolioIdAndIdDateBetween(any() ?: userId, any() ?: today, any() ?: today))
             .thenReturn(series)
         return GetDashboardUseCase(
             assetRepository, performanceRepo, benchmarkRepo, fx, FixedCashFlows(flows),
             CurrencyConverter(IdentityFxRates),
+            riskFree,
         ).execute(userId).portfolio.metrics
     }
 
@@ -172,5 +180,54 @@ class GetDashboardUseCaseRiskTest {
         // 같은 숫자가 0이면 위 비교는 아무것도 못 가린다
         assertThat(m.mdd!!.value.signum()).isNegative()
         assertThat(m.var95!!.value.signum()).isNotZero()
+    }
+
+    /** 41일 이력, +1%/−0.5% 교대 운용 수익, 20일 전 1,000만 원 입금 — 구간 수익률 40건 */
+    private fun fortyDays(): Pair<List<PerformanceDailyEntity>, List<CashFlow>> {
+        var nav = 10_000_000.0
+        val series = mutableListOf(perf(40, "10000000"))
+        val flows = mutableListOf<CashFlow>()
+        for (i in 1..40) {
+            val daysAgo = 40L - i
+            val dep = if (daysAgo == 20L) 10_000_000.0 else 0.0
+            if (dep > 0) flows += flow(daysAgo, FlowType.DEPOSIT, "10000000")
+            nav = (nav + dep) * (1 + if (i % 2 == 1) 0.01 else -0.005)
+            series += perf(daysAgo, nav.toBigDecimal().setScale(0, RoundingMode.HALF_UP).toPlainString())
+        }
+        return series to flows
+    }
+
+    @Test
+    fun `대시보드 샤프는 B-04와 같은 공용 계산 — 설정 이후 연환산, 무위험은 수집된 CD 91일`() {
+        val (series, flows) = fortyDays()
+        val cd91 = RiskFreeRate("CD_91D", today.minusDays(1), BigDecimal("3.12"))
+
+        val m = metrics(series, flows) { cd91 }
+
+        val b04 = RiskAdjustedRatios.compute(
+            series.map { NavPoint(it.id.date, it.nav) },
+            flows.map { Flow(it.flowDate, it.signedKrw()) },
+            BigDecimal("3.12"),
+        )!!
+        assertThat(m.sharpe!!.value).isEqualByComparingTo(b04.sharpe!!.setScale(2, RoundingMode.HALF_UP))
+        assertThat(m.sharpe!!.value.signum()).isNotZero()
+    }
+
+    @Test
+    fun `무위험 수익률 수집값이 없으면 대시보드 샤프는 null — 상수로 메우지 않는다`() {
+        val (series, flows) = fortyDays()
+
+        assertThat(metrics(series, flows).sharpe).isNull()
+    }
+
+    @Test
+    fun `구간 수익률 30건 미만이면 대시보드 샤프는 null`() {
+        // 예전 대시보드는 dataDays >= 10이면 냈다
+        val (series, flows) = fortyDays()
+        val short = series.takeLast(30) // 관측 30건 = 구간 29건
+
+        assertThat(metrics(short, flows.filter { it.flowDate >= short.first().id.date }) {
+            RiskFreeRate("CD_91D", today, BigDecimal("3.12"))
+        }.sharpe).isNull()
     }
 }
