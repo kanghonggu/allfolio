@@ -72,10 +72,10 @@ class BrokerMetrics(
         io.micrometer.core.instrument.Gauge
             .builder("outbox.${statusLabel}.size") {
                 runCatching {
-                    outboxRepository.findTop100ByStatusOrderByCreatedAtAsc(status).size.toDouble()
+                    outboxRepository.countByStatus(status).toDouble()
                 }.getOrDefault(0.0)
             }
-            .description("Outbox $statusLabel events (sampled top-100)")
+            .description("Outbox $statusLabel events (count)")
             .register(meterRegistry)
     }
 
